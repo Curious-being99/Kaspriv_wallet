@@ -88,10 +88,13 @@ export const SendModal: React.FC = () => {
   }, [isSendOpen, activeWallet, isPasswordEnabled]);
 
   // Handle automatic on-the-fly password verification/decryption
+  const decryptingTaskRef = useRef<number>(0);
+
   useEffect(() => {
     let isMounted = true;
     if (!isSendOpen) {
       setIsPasswordCorrect(false);
+      decryptingTaskRef.current++;
       return;
     }
 
@@ -102,6 +105,7 @@ export const SendModal: React.FC = () => {
 
     if (passwordInput.length < 8) {
       setIsPasswordCorrect(false);
+      decryptingTaskRef.current++;
       return;
     }
 
@@ -111,27 +115,31 @@ export const SendModal: React.FC = () => {
     }
 
     const verifyAndDecrypt = async () => {
+      const taskId = ++decryptingTaskRef.current;
       setIsPasswordDecrypting(true);
       try {
         if (activeWallet?.encryptedMnemonic) {
-          await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, passwordInput);
-          if (isMounted) {
+          const result = await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, passwordInput);
+          // Only update if this is still the latest task and we are mounted
+          if (isMounted && taskId === decryptingTaskRef.current) {
             setIsPasswordCorrect(true);
           }
         } else {
           // Fallback if no encrypted fields but password is enabled
-          if (passwordInput === password) {
-            setIsPasswordCorrect(true);
-          } else {
-            setIsPasswordCorrect(false);
+          if (isMounted && taskId === decryptingTaskRef.current) {
+            if (passwordInput === password) {
+              setIsPasswordCorrect(true);
+            } else {
+              setIsPasswordCorrect(false);
+            }
           }
         }
       } catch (err) {
-        if (isMounted) {
+        if (isMounted && taskId === decryptingTaskRef.current) {
           setIsPasswordCorrect(false);
         }
       } finally {
-        if (isMounted) {
+        if (isMounted && taskId === decryptingTaskRef.current) {
           setIsPasswordDecrypting(false);
         }
       }
@@ -594,8 +602,8 @@ export const SendModal: React.FC = () => {
                   step="any"
                   placeholder="0.0"
                   value={amountInput}
-                  onFocus={() => openKeyboard({ value: amountInput, onChange: setAmountInput, layoutName: 'numeric' })}
-                  onClick={() => openKeyboard({ value: amountInput, onChange: setAmountInput, layoutName: 'numeric' })}
+                  onFocus={() => openKeyboard({ value: amountInput, onChange: setAmountInput, layoutName: 'numeric', type: 'number' })}
+                  onClick={() => openKeyboard({ value: amountInput, onChange: setAmountInput, layoutName: 'numeric', type: 'number' })}
                   readOnly
                   inputMode="none"
                   className="w-full pl-3 pr-14 py-2 rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] font-mono text-base font-bold text-slate-100 outline-none"

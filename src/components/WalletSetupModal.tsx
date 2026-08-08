@@ -94,7 +94,6 @@ export const WalletSetupModal: React.FC = () => {
     setIsLocked(false);
 
     await createNewWallet(name, words, passInput, addrType);
-    setIsLocked(true);
   };
 
   const handleFinishImportSeed = async () => {
@@ -121,7 +120,6 @@ export const WalletSetupModal: React.FC = () => {
     setIsLocked(false);
 
     await importSeedWallet(name, words, passInput, addrType);
-    setIsLocked(true);
   };
 
   const handleFinishImportKpub = async () => {
@@ -144,7 +142,6 @@ export const WalletSetupModal: React.FC = () => {
     resetState();
 
     importKpubWallet(name, kpub, addrType);
-    setIsLocked(true);
   };
 
   const handleFinishImportAddress = async () => {
@@ -167,7 +164,6 @@ export const WalletSetupModal: React.FC = () => {
     resetState();
 
     importKpubWallet(name, addr, addrType);
-    setIsLocked(true);
   };
 
   const resetState = () => {
@@ -949,7 +945,6 @@ export const WalletSetupModal: React.FC = () => {
                     // Close setup modal and reset state immediately so password page is never shown twice or kept open during indexing
                     setIsWalletSetupOpen(false);
                     resetState();
-                    setIsLocked(false);
 
                     if (flow === 'create') {
                       await createNewWallet(name, words, passInput, addrType, pass);
@@ -963,7 +958,6 @@ export const WalletSetupModal: React.FC = () => {
                       }
                       await setPassword(pass);
                     }
-
                     setIsLocked(true);
                   }}
                   disabled={checkPassphraseStrength(setupPassword).score < 3 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}

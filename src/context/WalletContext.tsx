@@ -1102,6 +1102,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         allTransactions: [],
       };
     } finally {
+      if (password) {
+        setIsLocked(true);
+      }
       setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
     }
     
@@ -1286,6 +1289,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         allTransactions: [],
       };
     } finally {
+      if (password) {
+        setIsLocked(true);
+      }
       setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
     }
     
@@ -1331,7 +1337,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setActiveWalletIdState(newW.id);
     setIsLoggedOut(false);
     try {
-      saveSetting('kaspa_is_logged_out', false);
+      await saveSetting('kaspa_is_logged_out', false);
     } catch (e) {}
     
     showToast(`Restored Kaspa Wallet '${newW.name}'! Found ${formatKas(scanRes.totalBalanceSompi)} KAS on chain index.`, 'success');

@@ -74,7 +74,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const inputValueRef = useRef(inputValue);
   inputValueRef.current = inputValue;
 
-  const openKeyboard = useCallback(({ value, onChange, layoutName = 'default', type = 'text' }: {
+  const openKeyboard = useCallback(({ value, onChange, layoutName: initialLayout = 'default', type = 'text' }: {
     value: string;
     onChange: (val: string) => void;
     layoutName?: string;
@@ -83,7 +83,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const val = value || '';
     setInputValue(val);
     onChangeRef.current = onChange;
-    setLayoutName(layoutName);
+    setLayoutName(initialLayout);
     setInputType(type);
     setIsOpen(true);
     if (keyboardRef.current) {
@@ -188,13 +188,14 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (button === "{shift}" || button === "{lock}") {
       setLayoutName(prev => (prev === "default" ? "shift" : "default"));
     } else if (button === "{123}") {
-      setLayoutName("numbers");
+      setLayoutName(inputType === 'number' ? "numeric" : "numbers");
     } else if (button === "{abc}") {
+      // If we are in numeric or numbers, go back to default
       setLayoutName("default");
     } else if (button === "{enter}") {
       closeKeyboard();
     }
-  }, [closeKeyboard]);
+  }, [closeKeyboard, inputType]);
 
   const handleKeyboardRef = useCallback((r: any) => {
     if (r) {
@@ -205,8 +206,14 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
+  const contextValue = React.useMemo(() => ({
+    openKeyboard,
+    closeKeyboard,
+    isKeyboardOpen: isOpen
+  }), [openKeyboard, closeKeyboard, isOpen]);
+
   return (
-    <KeyboardContext.Provider value={{ openKeyboard, closeKeyboard, isKeyboardOpen: isOpen }}>
+    <KeyboardContext.Provider value={contextValue}>
       {children}
       <AnimatePresence>
         {isOpen && (
@@ -214,10 +221,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            onMouseDown={(e) => e.preventDefault()}
-            onTouchStart={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.preventDefault()}
+            transition={{ type: 'tween', duration: 0.25, ease: 'easeOut' }}
             className="fixed bottom-0 left-0 right-0 z-[9999] bg-[#131924] border-t border-[#212B38] p-2 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] pt-safe pb-safe"
           >
             <div className="flex items-center justify-between mb-2 px-2">

@@ -122,7 +122,6 @@ export const MainLandingPage: React.FC = () => {
     setIsLocked(false);
 
     await createNewWallet(name, words, passInput, addrType);
-    setIsLocked(true);
   };
 
   const handleFinishImportSeed = async () => {
@@ -148,7 +147,6 @@ export const MainLandingPage: React.FC = () => {
     setIsLocked(false);
 
     await importSeedWallet(name, words, passInput, addrType);
-    setIsLocked(true);
   };
 
   const handleFinishImportAddress = () => {
@@ -173,7 +171,6 @@ export const MainLandingPage: React.FC = () => {
     setIsLoggedOut(false);
 
     importKpubWallet(name, addr, addrType);
-    setIsLocked(true);
   };
 
   const updatePreview = React.useCallback(async (type: 'P2PKH' | 'P2SH') => {
@@ -896,7 +893,6 @@ export const MainLandingPage: React.FC = () => {
                     // Hide landing page and reset form immediately so password page is never shown twice or kept during indexing
                     resetState();
                     setIsLoggedOut(false);
-                    setIsLocked(false);
 
                     if (flow === 'create') {
                       await createNewWallet(name, words, passInput, addrType, pass);
@@ -907,8 +903,8 @@ export const MainLandingPage: React.FC = () => {
                       await setPassword(pass);
                     }
                     
-                    setIsLoggedOut(false);
                     setIsLocked(true);
+                    setIsLoggedOut(false);
                   }}
                   disabled={checkPassphraseStrength(setupPassword).score < 3 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}
                   className={`w-full py-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 ${
