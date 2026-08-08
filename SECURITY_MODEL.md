@@ -1,4 +1,4 @@
-# Kaspa Wallet Security Model
+# Kaspriv Wallet Security Model
 
 This document outlines the security architecture, cryptographic primitives, and data protection mechanisms implemented in the Kaspa Wallet.
 
