@@ -188,7 +188,7 @@ const INITIAL_NODES: KaspaNode[] = [
 const INITIAL_MARKET_DATA: MarketData = {
   priceUsd: 0.0325,
   priceBtc: 0.00000035,
-  change24h: 2.50,
+  change24h: 0.0,
   marketCapUsd: 850000000,
   volume24hUsd: 45000000,
   lastUpdated: Date.now(),

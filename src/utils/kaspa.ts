@@ -1256,14 +1256,29 @@ export async function fetchKaspaPrice(): Promise<{ price: number; usd24hChange?:
       const data = await res.json();
       if (data && data.kaspa) {
         cachedPriceData = {
-          price: Number(data.kaspa.usd) || 0.0264,
+          price: Number(data.kaspa.usd) || 0.0,
           usd24hChange: Number(data.kaspa.usd_24h_change) || 0.0,
         };
         lastPriceFetchTime = now;
         return cachedPriceData;
       }
-    } else if (res.status === 429) {
-      if (cachedPriceData) return cachedPriceData;
+    }
+  } catch (err) {
+    // Silent catch
+  }
+
+  try {
+    const res = await fetch('https://api.coincap.io/v2/assets/kaspa');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.data) {
+        cachedPriceData = {
+          price: Number(data.data.priceUsd) || 0.0,
+          usd24hChange: Number(data.data.changePercent24Hr) || 0.0,
+        };
+        lastPriceFetchTime = now;
+        return cachedPriceData;
+      }
     }
   } catch (err) {
     // Silent catch
@@ -1274,7 +1289,7 @@ export async function fetchKaspaPrice(): Promise<{ price: number; usd24hChange?:
     if (res.ok) {
       const data = await res.json();
       cachedPriceData = { 
-        price: Number(data.price) || 0.0264, 
+        price: Number(data.price) || 0.0, 
         usd24hChange: Number(data.price_change_24h) || Number(data.priceChange24h) || Number(data.usd_24h_change) || 0.0 
       };
       lastPriceFetchTime = now;
@@ -1284,7 +1299,7 @@ export async function fetchKaspaPrice(): Promise<{ price: number; usd24hChange?:
     // Fallback silent
   }
 
-  return cachedPriceData || { price: 0.0264, usd24hChange: 0.0 };
+  return cachedPriceData || { price: 0.0325, usd24hChange: 0.0 };
 }
 
 const KASPA_API_ENDPOINTS = [
