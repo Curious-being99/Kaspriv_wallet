@@ -270,6 +270,11 @@ export const MobileCovenantView: React.FC = () => {
     >
       {/* 1. Header & Status Overview */}
       <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-4">
+        {/* Notice Banner */}
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium">
+          <p className="font-semibold text-center">Covenant page for future updates</p>
+        </div>
+
         <div className="flex items-center justify-between border-b border-[#212B38]/40 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl bg-[#70C7BA]/25 text-[#70C7BA] flex items-center justify-center font-bold">
@@ -608,17 +613,13 @@ export const MobileCovenantView: React.FC = () => {
 
           <button
             type="submit"
-            disabled={isExecuting}
-            className="w-full py-3.5 rounded-2xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] font-extrabold text-sm transition-all shadow-lg shadow-[#70C7BA]/20 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+            disabled={true}
+            className="w-full py-3.5 rounded-2xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] font-extrabold text-sm transition-all shadow-lg shadow-[#70C7BA]/20 flex items-center justify-center gap-2 cursor-not-allowed opacity-50"
           >
-            {isExecuting ? (
-              <span>Executing Covenant On-Chain...</span>
-            ) : (
-              <>
-                <Code2 className="w-4 h-4 stroke-[2.5]" />
-                <span>Deploy Covenant to Kaspa DAG</span>
-              </>
-            )}
+            <>
+              <Code2 className="w-4 h-4 stroke-[2.5]" />
+              <span>Deploy Covenant to Kaspa DAG</span>
+            </>
           </button>
         </form>
       </div>
@@ -809,17 +810,13 @@ export const MobileCovenantView: React.FC = () => {
 
           <button
             type="submit"
-            disabled={isSavingCustom}
-            className="w-full py-3.5 rounded-2xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] font-extrabold text-sm transition-all shadow-lg shadow-[#70C7BA]/20 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+            disabled={true}
+            className="w-full py-3.5 rounded-2xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] font-extrabold text-sm transition-all shadow-lg shadow-[#70C7BA]/20 flex items-center justify-center gap-2 cursor-not-allowed opacity-50"
           >
-            {isSavingCustom ? (
-              <span>Registering Covenant...</span>
-            ) : (
-              <>
-                <FileCheck className="w-4 h-4 stroke-[2.5]" />
-                <span>Save and Track Covenant</span>
-              </>
-            )}
+            <>
+              <FileCheck className="w-4 h-4 stroke-[2.5]" />
+              <span>Save and Track Covenant</span>
+            </>
           </button>
         </form>
       </div>

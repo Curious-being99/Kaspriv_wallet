@@ -25,7 +25,8 @@ import {
   Search,
   FileText,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Github
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -573,8 +574,24 @@ export const MobileSettingsView: React.FC = () => {
         </button>
       </div>
 
-      {/* 5. Terms & Conditions */}
+      {/* 5. GitHub & Terms */}
       <div className="py-3.5 px-1 space-y-2 mb-8">
+        <a
+          href="https://github.com/Curious-being99/Kaspriv_wallet"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full flex items-center justify-between p-3 rounded-2xl bg-[#090D12] hover:border-[#70C7BA] border border-[#212B38]/50 text-xs text-slate-200 transition-all group"
+        >
+          <div className="flex items-center gap-3">
+            <Github className="w-4 h-4 text-slate-400 group-hover:text-[#70C7BA] transition-colors" />
+            <div className="flex flex-col text-left">
+              <span className="font-semibold text-slate-200 group-hover:text-[#70C7BA] transition-colors">Open Source</span>
+              <span className="text-[10px] text-slate-400">View repository on GitHub</span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-200" />
+        </a>
+
         <button
           onClick={() => setShowTerms(!showTerms)}
           className="w-full flex items-center justify-between p-3 rounded-2xl bg-[#090D12] hover:border-[#70C7BA] text-xs text-slate-200 transition-all group"

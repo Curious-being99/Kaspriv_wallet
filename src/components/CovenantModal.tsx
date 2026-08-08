@@ -288,6 +288,11 @@ export const CovenantModal: React.FC = () => {
             </button>
           </div>
 
+          {/* Notice Banner */}
+          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium">
+            <p className="font-semibold text-center">Covenant page for future updates</p>
+          </div>
+
           {/* Main View Tabs */}
           <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-[#1A2330]">
             <button
@@ -562,17 +567,13 @@ export const CovenantModal: React.FC = () => {
 
                     <button
                       type="submit"
-                      disabled={isExecuting || (isPasswordEnabled && !activeWallet.mnemonic && passwordInput.length < 8)}
-                      className="w-full py-3.5 rounded-2xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] font-extrabold text-sm transition-all shadow-lg shadow-[#70C7BA]/20 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 mt-4"
+                      disabled={true}
+                      className="w-full py-3.5 rounded-2xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] font-extrabold text-sm transition-all shadow-lg shadow-[#70C7BA]/20 flex items-center justify-center gap-2 cursor-not-allowed opacity-50 mt-4"
                     >
-                      {isExecuting ? (
-                        <span>Executing Covenant On-Chain...</span>
-                      ) : (
-                        <>
-                          <Code2 className="w-4 h-4 stroke-[2.5]" />
-                          <span>Deploy Covenant to Kaspa DAG</span>
-                        </>
-                      )}
+                      <>
+                        <Code2 className="w-4 h-4 stroke-[2.5]" />
+                        <span>Deploy Covenant to Kaspa DAG</span>
+                      </>
                     </button>
                   </form>
                 </>
@@ -703,17 +704,13 @@ export const CovenantModal: React.FC = () => {
 
                   <button
                     type="submit"
-                    disabled={isSavingCustom}
-                    className="w-full py-3.5 rounded-2xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] font-extrabold text-sm transition-all shadow-lg shadow-[#70C7BA]/20 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 mt-4"
+                    disabled={true}
+                    className="w-full py-3.5 rounded-2xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] font-extrabold text-sm transition-all shadow-lg shadow-[#70C7BA]/20 flex items-center justify-center gap-2 cursor-not-allowed opacity-50 mt-4"
                   >
-                    {isSavingCustom ? (
-                      <span>Registering Covenant...</span>
-                    ) : (
-                      <>
-                        <FileCheck className="w-4 h-4 stroke-[2.5]" />
-                        <span>Save and Track Covenant</span>
-                      </>
-                    )}
+                    <>
+                      <FileCheck className="w-4 h-4 stroke-[2.5]" />
+                      <span>Save and Track Covenant</span>
+                    </>
                   </button>
                 </form>
               )}
