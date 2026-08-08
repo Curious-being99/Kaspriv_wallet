@@ -77,7 +77,6 @@ export const SendModal: React.FC = () => {
 
   const [isPasswordDecrypting, setIsPasswordDecrypting] = useState(false);
   const [isPasswordCorrect, setIsPasswordCorrect] = useState(false);
-  const [decryptedMnemonic, setDecryptedMnemonic] = useState<string | null>(null);
 
   // No auto-fill needed from worker; seed is decrypted on-the-fly with password
   useEffect(() => {
@@ -93,7 +92,6 @@ export const SendModal: React.FC = () => {
     let isMounted = true;
     if (!isSendOpen) {
       setIsPasswordCorrect(false);
-      setDecryptedMnemonic(null);
       return;
     }
 
@@ -104,7 +102,11 @@ export const SendModal: React.FC = () => {
 
     if (passwordInput.length < 8) {
       setIsPasswordCorrect(false);
-      setDecryptedMnemonic(null);
+      return;
+    }
+
+    if (password && passwordInput === password) {
+      setIsPasswordCorrect(true);
       return;
     }
 
@@ -112,21 +114,9 @@ export const SendModal: React.FC = () => {
       setIsPasswordDecrypting(true);
       try {
         if (activeWallet?.encryptedMnemonic) {
-          const decrypted = await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, passwordInput);
+          await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, passwordInput);
           if (isMounted) {
             setIsPasswordCorrect(true);
-            setDecryptedMnemonic(decrypted);
-          }
-        } else if (activeWallet?.encryptedMnemonic) {
-          const decrypted = await decryptWithPassword(
-            activeWallet.encryptedMnemonic.ciphertext,
-            activeWallet.encryptedMnemonic.salt,
-            activeWallet.encryptedMnemonic.iv,
-            passwordInput
-          );
-          if (isMounted) {
-            setIsPasswordCorrect(true);
-            setDecryptedMnemonic(decrypted);
           }
         } else {
           // Fallback if no encrypted fields but password is enabled
@@ -139,7 +129,6 @@ export const SendModal: React.FC = () => {
       } catch (err) {
         if (isMounted) {
           setIsPasswordCorrect(false);
-          setDecryptedMnemonic(null);
         }
       } finally {
         if (isMounted) {
@@ -148,7 +137,7 @@ export const SendModal: React.FC = () => {
       }
     };
 
-    const timer = setTimeout(verifyAndDecrypt, 150);
+    const timer = setTimeout(verifyAndDecrypt, 450);
     return () => {
       isMounted = false;
       clearTimeout(timer);
@@ -156,10 +145,6 @@ export const SendModal: React.FC = () => {
   }, [passwordInput, isPasswordEnabled, isSendOpen, activeWallet?.id, activeWallet?.encryptedMnemonic, password]);
 
   const getMnemonicForSigning = async (): Promise<string | null> => {
-    if (isPasswordEnabled && decryptedMnemonic) {
-      return decryptedMnemonic;
-    }
-
     if (activeWallet?.mnemonic) {
       return activeWallet.mnemonic;
     }
@@ -167,18 +152,6 @@ export const SendModal: React.FC = () => {
     if (isPasswordEnabled && activeWallet?.encryptedMnemonic && passwordInput) {
       try {
         const decrypted = await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, passwordInput);
-        return decrypted;
-      } catch (e) {}
-    }
-
-    if (isPasswordEnabled && activeWallet?.encryptedMnemonic && passwordInput) {
-      try {
-        const decrypted = await decryptWithPassword(
-          activeWallet.encryptedMnemonic.ciphertext,
-          activeWallet.encryptedMnemonic.salt,
-          activeWallet.encryptedMnemonic.iv,
-          passwordInput
-        );
         return decrypted;
       } catch (e) {
         return null;
@@ -280,7 +253,9 @@ export const SendModal: React.FC = () => {
 
   const handleMaxClick = () => {
     const maxSendable = Math.max(0, maxBalanceKas - selectedFee);
-    setAmountInput(maxSendable.toString());
+    const strVal = maxSendable.toString();
+    setAmountInput(strVal);
+    openKeyboard({ value: strVal, onChange: setAmountInput, layoutName: 'numeric' });
   };
 
   const numericAmount = parseFloat(amountInput) || 0;
@@ -297,10 +272,12 @@ export const SendModal: React.FC = () => {
   const handleProceedToConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) return;
+    closeKeyboard();
     setIsConfirmingStep(true);
   };
 
   const handleClose = () => {
+    closeKeyboard();
     setIsSendOpen(false);
     setIsConfirmingStep(false);
     setSuccessTx(null);
@@ -326,6 +303,7 @@ export const SendModal: React.FC = () => {
   };
 
   const handleExecuteSend = async () => {
+    closeKeyboard();
     if (isPasswordEnabled) {
       if (passwordInput.length < 8) {
         showToast('Please enter your wallet password', 'error');
@@ -338,39 +316,47 @@ export const SendModal: React.FC = () => {
     }
 
     setIsSending(true);
-    const mnemonicToUse = await getMnemonicForSigning();
-    const passphraseToUse = await getPassphraseForSigning();
 
-    if (!mnemonicToUse) {
-      showToast('Wallet key not found. Please unlock or re-import the wallet.', 'error');
-      setIsSending(false);
-      return;
-    }
+    setTimeout(async () => {
+      try {
+        const mnemonicToUse = await getMnemonicForSigning();
+        const passphraseToUse = await getPassphraseForSigning();
 
-    const res = await sendKaspa(toAddress, numericAmount, selectedFee, note, mnemonicToUse, passphraseToUse);
-    setIsSending(false);
+        if (!mnemonicToUse) {
+          showToast('Wallet key not found. Please unlock or re-import the wallet.', 'error');
+          setIsSending(false);
+          return;
+        }
 
-    // Immediately wipe sensitive states
-    setPasswordInput('');
-    setPassphraseInput('');
+        const res = await sendKaspa(toAddress, numericAmount, selectedFee, note, mnemonicToUse, passphraseToUse);
+        setIsSending(false);
 
-    if (res.success) {
-      setSuccessTx({
-        txid: res.txid || 'kaspa-txid-pending',
-        amountKas: numericAmount,
-        feeKas: selectedFee,
-        toAddress: toAddress.trim(),
-        fiatValue: fiatEquivalent,
-        note: note.trim() || undefined,
-        timestamp: Date.now(),
-      });
-      setIsConfirmingStep(false);
-      setToAddress('');
-      setAmountInput('');
-      setNote('');
-    } else {
-      showToast(res.error || 'Failed to send Kaspa', 'error');
-    }
+        // Immediately wipe sensitive states
+        setPasswordInput('');
+        setPassphraseInput('');
+
+        if (res.success) {
+          setSuccessTx({
+            txid: res.txid || 'kaspa-txid-pending',
+            amountKas: numericAmount,
+            feeKas: selectedFee,
+            toAddress: toAddress.trim(),
+            fiatValue: fiatEquivalent,
+            note: note.trim() || undefined,
+            timestamp: Date.now(),
+          });
+          setIsConfirmingStep(false);
+          setToAddress('');
+          setAmountInput('');
+          setNote('');
+        } else {
+          showToast(res.error || 'Failed to send Kaspa', 'error');
+        }
+      } catch (err: any) {
+        setIsSending(false);
+        showToast(err?.message || 'Failed to execute transaction', 'error');
+      }
+    }, 50);
   };
 
   return (
@@ -394,7 +380,7 @@ export const SendModal: React.FC = () => {
             </div>
             <div>
               <h3 className="text-sm font-extrabold text-slate-100 leading-tight">
-                {successTx ? 'Transaction Success' : isConfirmingStep ? 'Seed Phrase Sign & Broadcast' : 'Send Kaspa'}
+                {successTx ? 'Transaction Success' : isConfirmingStep ? 'Sign & Broadcast' : 'Send Kaspa'}
               </h3>
               <p className="text-[9px] text-slate-400">
                 {successTx ? 'Broadcasted & Accepted' : isConfirmingStep ? 'In-Memory Key Signing Zone' : 'Kaspa Fast Settlement Network'}
@@ -530,16 +516,42 @@ export const SendModal: React.FC = () => {
                 <div>
                   <p className="font-bold text-amber-200 text-xs">Watch-Only Mode Active</p>
                   <p className="text-amber-300/90 text-[10px] mt-0.5">
-                    This wallet is in Watch-Only mode. Sending Kaspa and signing transactions are disabled because no seed phrase exists for this address.
+                    This wallet is in Watch-Only mode. Sending Kaspa and signing transactions are disabled because no private key exists for this address.
                   </p>
                 </div>
               </div>
             )}
             {/* Recipient Address */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-300 uppercase tracking-wider mb-1">
-                Recipient Kaspa Address
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                  Recipient Kaspa Address
+                </label>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+                        const text = await navigator.clipboard.readText();
+                        if (text) {
+                          const trimmed = text.trim();
+                          handleAddressChange(trimmed);
+                          openKeyboard({ value: trimmed, onChange: handleAddressChange });
+                          showToast('Address pasted from clipboard!', 'success');
+                          return;
+                        }
+                      }
+                      openKeyboard({ value: toAddress, onChange: handleAddressChange });
+                    } catch (e) {
+                      openKeyboard({ value: toAddress, onChange: handleAddressChange });
+                    }
+                  }}
+                  className="text-[10px] text-[#70C7BA] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Clipboard className="w-3 h-3" />
+                  <span>Paste</span>
+                </button>
+              </div>
               <input
                 type="text"
                 placeholder={`kaspa:q...`}
@@ -682,9 +694,9 @@ export const SendModal: React.FC = () => {
             <div className="text-[9px] text-slate-400 flex items-start gap-1.5 bg-[#090D12] p-2 rounded-xl ">
               <Lock className="w-3.5 h-3.5 text-[#70C7BA] shrink-0 mt-0.5" />
               <div className="space-y-0.5">
-                <p className="font-bold text-slate-200">Zero-Storage Ram Engine</p>
+                <p className="font-bold text-slate-200">Zero-Storage RAM Engine</p>
                 <p className="leading-normal">
-                  Your seed phrase remains encrypted at rest. On-the-fly decryption occurs purely in ephemeral RAM to sign this transaction, then is immediately wiped.
+                  Your wallet keys remain encrypted at rest. On-the-fly decryption occurs purely in ephemeral RAM to sign this transaction, then is immediately wiped.
                 </p>
               </div>
             </div>
@@ -814,7 +826,10 @@ export const SendModal: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setIsConfirmingStep(false)}
+                onClick={() => {
+                  closeKeyboard();
+                  setIsConfirmingStep(false);
+                }}
                 className="w-full py-2 rounded-xl bg-[#1C2F42] hover:bg-[#273E54] text-[11px] font-bold text-slate-300 transition-colors cursor-pointer"
               >
                 Back to Transaction Details

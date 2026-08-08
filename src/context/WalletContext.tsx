@@ -25,6 +25,7 @@ import {
   encryptWithPassword, 
   decryptWithPassword, 
 } from '../utils/crypto';
+import { IsolatedSigner } from '../utils/IsolatedSigner';
 import {
   kasToSompi,
   sompiToKas,
@@ -1493,29 +1494,34 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return { success: false, error: err };
       }
 
-      // 2. Derive private key (Instant RAM exposure)
-      const privateKeyHex: string | null = getPrivateKeyFromMnemonic(seedToUse, passphraseToUse);
-
-      // 3. Create signed transaction
-      const signedTx = await createSignedTransaction(
-        selectedUtxos,
+      // 2. Build Unsigned Intent & Execute via IsolatedSigner
+      const intent = {
+        network,
         toAddress,
+        changeAddress: activeWallet.receiveAddress,
         amountSompi,
-        activeWallet.receiveAddress,
-        privateKeyHex,
         feeSompi,
-        addrType,
-        undefined, // redeemScriptHex
-        seedToUse, // mnemonic
-        passphraseToUse // passphrase
+        utxos: selectedUtxos,
+        note
+      };
+
+      const signerResult = await IsolatedSigner.signTransactionIsolated(
+        seedToUse,
+        passphraseToUse,
+        intent,
+        addrType
       );
 
-      // 4. Broadcast
-      const broadcastResult = await broadcastKaspaTransaction(signedTx);
-      
-      // Wipe sensitive variables from memory immediately
+      // Wipe seed immediately
       seedToUse = '';
       passphraseToUse = '';
+
+      if (!signerResult.success || !signerResult.transaction) {
+        return { success: false, error: signerResult.error || 'Failed to construct or sign transaction.' };
+      }
+
+      // 3. Broadcast
+      const broadcastResult = await broadcastKaspaTransaction(signerResult.transaction);
 
       if (broadcastResult.success) {
         showToast(`Transaction sent! TXID: ${shortenAddress(broadcastResult.txId!)}`, 'success');

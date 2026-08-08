@@ -71,13 +71,8 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const onChangeRef = useRef<(val: string) => void>();
   const keyboardRef = useRef<any>(null);
 
-  useEffect(() => {
-    if (isOpen && keyboardRef.current) {
-      if (keyboardRef.current.getInput() !== inputValue) {
-        keyboardRef.current.setInput(inputValue || '');
-      }
-    }
-  }, [isOpen, inputValue]);
+  const inputValueRef = useRef(inputValue);
+  inputValueRef.current = inputValue;
 
   const openKeyboard = useCallback(({ value, onChange, layoutName = 'default', type = 'text' }: {
     value: string;
@@ -85,13 +80,14 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     layoutName?: string;
     type?: string;
   }) => {
-    setInputValue(value || '');
+    const val = value || '';
+    setInputValue(val);
     onChangeRef.current = onChange;
     setLayoutName(layoutName);
     setInputType(type);
     setIsOpen(true);
     if (keyboardRef.current) {
-      keyboardRef.current.setInput(value || '');
+      keyboardRef.current.setInput(val);
     }
   }, []);
 
@@ -102,10 +98,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const onChange = useCallback((input: string) => {
     setInputValue(input);
     if (onChangeRef.current) {
-      const currentHandler = onChangeRef.current;
-      setTimeout(() => {
-        currentHandler(input);
-      }, 0);
+      onChangeRef.current(input);
     }
   }, []);
 
@@ -187,10 +180,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       keyboardRef.current.setInput('');
     }
     if (onChangeRef.current) {
-      const currentHandler = onChangeRef.current;
-      setTimeout(() => {
-        currentHandler('');
-      }, 0);
+      onChangeRef.current('');
     }
   };
 
@@ -203,25 +193,15 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setLayoutName("default");
     } else if (button === "{enter}") {
       closeKeyboard();
-    } else if (button === "{backspace}") {
-      const currentInput = keyboardRef.current ? keyboardRef.current.getInput() : '';
-      const newVal = currentInput.slice(0, -1);
-      setInputValue(newVal);
-      if (keyboardRef.current) {
-        keyboardRef.current.setInput(newVal);
-      }
-      if (onChangeRef.current) {
-        const currentHandler = onChangeRef.current;
-        setTimeout(() => {
-          currentHandler(newVal);
-        }, 0);
-      }
     }
   }, [closeKeyboard]);
 
   const handleKeyboardRef = useCallback((r: any) => {
     if (r) {
       keyboardRef.current = r;
+      if (inputValueRef.current) {
+        r.setInput(inputValueRef.current);
+      }
     }
   }, []);
 

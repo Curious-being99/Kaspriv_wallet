@@ -84,15 +84,17 @@ export const WalletSetupModal: React.FC = () => {
       return;
     }
 
-    await createNewWallet(
-      walletName.trim() || 'New Kaspa Wallet',
-      generatedWords,
-      passphraseInput.trim() || undefined,
-      addressType
-    );
-    setIsLocked(true);
+    const name = walletName.trim() || 'New Kaspa Wallet';
+    const words = generatedWords;
+    const passInput = passphraseInput.trim() || undefined;
+    const addrType = addressType;
+
     setIsWalletSetupOpen(false);
     resetState();
+    setIsLocked(false);
+
+    await createNewWallet(name, words, passInput, addrType);
+    setIsLocked(true);
   };
 
   const handleFinishImportSeed = async () => {
@@ -110,15 +112,16 @@ export const WalletSetupModal: React.FC = () => {
       return;
     }
 
-    await importSeedWallet(
-      walletName.trim() || 'Imported Wallet',
-      words,
-      passphraseInput.trim() || undefined,
-      addressType
-    );
-    setIsLocked(true);
+    const name = walletName.trim() || 'Imported Wallet';
+    const passInput = passphraseInput.trim() || undefined;
+    const addrType = addressType;
+
     setIsWalletSetupOpen(false);
     resetState();
+    setIsLocked(false);
+
+    await importSeedWallet(name, words, passInput, addrType);
+    setIsLocked(true);
   };
 
   const handleFinishImportKpub = async () => {
@@ -133,10 +136,15 @@ export const WalletSetupModal: React.FC = () => {
       return;
     }
 
-    importKpubWallet(walletName.trim() || 'Watch-Only Kpub', kpubInput.trim(), addressType);
-    setIsLocked(true);
+    const name = walletName.trim() || 'Watch-Only Kpub';
+    const kpub = kpubInput.trim();
+    const addrType = addressType;
+
     setIsWalletSetupOpen(false);
     resetState();
+
+    importKpubWallet(name, kpub, addrType);
+    setIsLocked(true);
   };
 
   const handleFinishImportAddress = async () => {
@@ -152,10 +160,14 @@ export const WalletSetupModal: React.FC = () => {
       return;
     }
 
-    importKpubWallet(walletName.trim() || 'Live Address Tracker', addr, addressType);
-    setIsLocked(true);
+    const name = walletName.trim() || 'Live Address Tracker';
+    const addrType = addressType;
+
     setIsWalletSetupOpen(false);
     resetState();
+
+    importKpubWallet(name, addr, addrType);
+    setIsLocked(true);
   };
 
   const resetState = () => {
@@ -823,7 +835,7 @@ export const WalletSetupModal: React.FC = () => {
                   <div>
                     <p className="font-bold text-[#70C7BA]">Security Encryption Setup</p>
                     <p className="mt-0.5">
-                      Create a strong password (min 8 chars). This password will be used to unlock your wallet and encrypt your seed phrase securely on this device.
+                      Create a strong password (min strength: Good). This password will be used to unlock your wallet and encrypt your seed phrase securely on this device.
                     </p>
                   </div>
                 </div>
@@ -836,7 +848,7 @@ export const WalletSetupModal: React.FC = () => {
                     <div className="relative">
                       <input
                         type={showSetupPassword ? "text" : "password"}
-                        placeholder="Min 8 characters"
+                        placeholder="Strong password required"
                         value={setupPassword}
                         onChange={(e) => setSetupPassword(e.target.value)}
                         onFocus={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
@@ -916,8 +928,8 @@ export const WalletSetupModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={async () => {
-                    if (setupPassword.length < 8) {
-                      showToast('Password must be at least 8 characters!', 'error');
+                    if (checkPassphraseStrength(setupPassword).score < 3) {
+                      showToast('Password is too weak. Please use a stronger password!', 'error');
                       return;
                     }
                     if (setupPassword !== confirmSetupPassword) {
@@ -925,39 +937,38 @@ export const WalletSetupModal: React.FC = () => {
                       return;
                     }
 
-                    if (pendingFlow === 'create') {
-                      await createNewWallet(
-                        walletName.trim() || 'New Kaspa Wallet',
-                        generatedWords,
-                        passphraseInput.trim() || undefined,
-                        addressType,
-                        setupPassword
-                      );
-                    } else if (pendingFlow === 'import-seed') {
-                      const cleaned = cleanMnemonic(importWordsText);
-                      await importSeedWallet(
-                        walletName.trim() || 'Imported Wallet',
-                        cleaned.split(' '),
-                        passphraseInput.trim() || undefined,
-                        addressType,
-                        setupPassword
-                      );
-                    } else if (pendingFlow === 'import-address' || (pendingFlow as string) === 'import-kpub') {
-                      if ((pendingFlow as string) === 'import-kpub') {
-                        importKpubWallet(walletName.trim() || 'Watch-Only Kpub', kpubInput.trim(), addressType);
+                    const flow = pendingFlow;
+                    const pass = setupPassword;
+                    const name = walletName.trim() || (flow === 'create' ? 'New Kaspa Wallet' : flow === 'import-seed' ? 'Imported Wallet' : 'Watch-Only');
+                    const words = flow === 'create' ? generatedWords : cleanMnemonic(importWordsText).split(' ');
+                    const passInput = passphraseInput.trim() || undefined;
+                    const addrType = addressType;
+                    const kpub = kpubInput.trim();
+                    const addr = addressInput.trim();
+
+                    // Close setup modal and reset state immediately so password page is never shown twice or kept open during indexing
+                    setIsWalletSetupOpen(false);
+                    resetState();
+                    setIsLocked(false);
+
+                    if (flow === 'create') {
+                      await createNewWallet(name, words, passInput, addrType, pass);
+                    } else if (flow === 'import-seed') {
+                      await importSeedWallet(name, words, passInput, addrType, pass);
+                    } else if (flow === 'import-address' || (flow as string) === 'import-kpub') {
+                      if ((flow as string) === 'import-kpub') {
+                        importKpubWallet(name || 'Watch-Only Kpub', kpub, addrType);
                       } else {
-                        importKpubWallet(walletName.trim() || 'Live Address Tracker', addressInput.trim(), addressType);
+                        importKpubWallet(name || 'Live Address Tracker', addr, addrType);
                       }
-                      await setPassword(setupPassword);
+                      await setPassword(pass);
                     }
 
                     setIsLocked(true);
-                    setIsWalletSetupOpen(false);
-                    resetState();
                   }}
-                  disabled={setupPassword.length < 8 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}
+                  disabled={checkPassphraseStrength(setupPassword).score < 3 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}
                   className={`w-full py-4 rounded-2xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
-                    setupPassword.length >= 8 && confirmSetupPassword.length >= 8 && setupPassword === confirmSetupPassword
+                    checkPassphraseStrength(setupPassword).score >= 3 && confirmSetupPassword.length >= 8 && setupPassword === confirmSetupPassword
                       ? 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] shadow-[0_0_20px_rgba(112,199,186,0.3)]'
                       : 'bg-[#1C2F42] text-slate-500 cursor-not-allowed opacity-60'
                   }`}

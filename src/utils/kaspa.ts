@@ -722,7 +722,7 @@ export async function createSignedTransaction(
 
   const outputs: any[] = [
     {
-      amount: amountSompi.toString(),
+      amount: Number(amountSompi),
       scriptPublicKey: {
         scriptPublicKey: addressToScriptPublicKeyHex(toAddress),
         version: 0,
@@ -734,7 +734,7 @@ export async function createSignedTransaction(
   const changeSompi = totalInputSompi - amountSompi - feeSompi;
   if (changeSompi > 0n && changeAddress) {
     outputs.push({
-      amount: changeSompi.toString(),
+      amount: Number(changeSompi),
       scriptPublicKey: {
         scriptPublicKey: addressToScriptPublicKeyHex(changeAddress),
         version: 0,
@@ -1423,6 +1423,34 @@ export function getPrivateKeyFromMnemonic(mnemonic: string, passphrase?: string,
   return Buffer.from(child.privateKey).toString('hex');
 }
 
+function extractKaspaError(data: any): string | null {
+  if (!data) return null;
+  if (typeof data === 'string') return data;
+  if (typeof data.message === 'string') return data.message;
+  if (typeof data.error === 'string') return data.error;
+  if (typeof data.detail === 'string') return data.detail;
+  if (Array.isArray(data.detail)) {
+    return data.detail
+      .map((d: any) => {
+        if (typeof d === 'string') return d;
+        if (d && typeof d === 'object') {
+          const loc = Array.isArray(d.loc) ? d.loc.join('.') : '';
+          const msg = d.msg || d.message || JSON.stringify(d);
+          return loc ? `${loc}: ${msg}` : msg;
+        }
+        return String(d);
+      })
+      .join('; ');
+  }
+  if (typeof data.error === 'object' && data.error !== null) {
+    return data.error.message || data.error.detail || JSON.stringify(data.error);
+  }
+  if (typeof data.message === 'object' && data.message !== null) {
+    return data.message.detail || data.message.msg || JSON.stringify(data.message);
+  }
+  return JSON.stringify(data);
+}
+
 /**
  * Broadcast Kaspa Transaction across multiple public node endpoints
  */
@@ -1430,12 +1458,38 @@ export async function broadcastKaspaTransaction(txPayload: any): Promise<{ succe
   const endpoints = getKaspaApiEndpoints();
   let lastError = 'Broadcast failed across Kaspa nodes';
 
+  const rawTx = txPayload?.transaction || txPayload;
+  
+  const formattedTx = {
+    version: Number(rawTx?.version || 0),
+    inputs: Array.isArray(rawTx?.inputs) ? rawTx.inputs.map((inTx: any) => ({
+      previousOutpoint: {
+        transactionId: String(inTx?.previousOutpoint?.transactionId || inTx?.transactionId || ''),
+        index: Number(inTx?.previousOutpoint?.index !== undefined ? inTx.previousOutpoint.index : (inTx?.index || 0))
+      },
+      signatureScript: String(inTx?.signatureScript || ''),
+      sequence: Number(inTx?.sequence || 0),
+      sigOpCount: Number(inTx?.sigOpCount !== undefined ? inTx.sigOpCount : 1)
+    })) : [],
+    outputs: Array.isArray(rawTx?.outputs) ? rawTx.outputs.map((outTx: any) => ({
+      amount: Number(outTx?.amount || 0),
+      scriptPublicKey: {
+        version: Number(outTx?.scriptPublicKey?.version || 0),
+        scriptPublicKey: String(outTx?.scriptPublicKey?.scriptPublicKey || outTx?.scriptPublicKey || '')
+      }
+    })) : [],
+    lockTime: Number(rawTx?.lockTime || 0),
+    subnetworkId: String(rawTx?.subnetworkId || '0000000000000000000000000000000000000000')
+  };
+
+  const bodyPayload = { transaction: formattedTx };
+
   for (const ep of endpoints) {
     try {
       const res = await fetch(`${ep}/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: safeStringify(txPayload),
+        body: JSON.stringify(bodyPayload),
       });
 
       const data = await res.json().catch(() => null);
@@ -1445,16 +1499,16 @@ export async function broadcastKaspaTransaction(txPayload: any): Promise<{ succe
       }
 
       if (data) {
-        const rawErr = data.message || data.error || data.detail || (typeof data === 'string' ? data : null);
+        const rawErr = extractKaspaError(data);
         if (rawErr) {
-          if (String(rawErr).toLowerCase().includes('orphan')) {
+          if (rawErr.toLowerCase().includes('orphan')) {
             lastError = 'Orphan transaction: UTXO pending or not yet on-chain.';
-          } else if (String(rawErr).toLowerCase().includes('fee')) {
+          } else if (rawErr.toLowerCase().includes('fee')) {
             lastError = `Fee too low: ${rawErr}`;
-          } else if (String(rawErr).toLowerCase().includes('signature')) {
+          } else if (rawErr.toLowerCase().includes('signature')) {
             lastError = 'Signature verification failed: Check seed phrase or script parameters.';
           } else {
-            lastError = String(rawErr);
+            lastError = rawErr;
           }
         } else {
           lastError = `Node rejected transaction (HTTP ${res.status})`;
@@ -1463,9 +1517,8 @@ export async function broadcastKaspaTransaction(txPayload: any): Promise<{ succe
         lastError = `Kaspa node endpoint ${ep} returned HTTP ${res.status}`;
       }
 
-      // If explicit 400 Bad Request with node error message, break loop to avoid redundant calls
       if (res.status === 400 || res.status === 422) {
-        console.error(`[Kaspa Node Broadcast] Node rejected transaction with 400/422 Bad Request: ${lastError}`);
+        console.error(`[Kaspa Node Broadcast] Node rejected transaction with ${res.status} Bad Request: ${lastError}`);
         break;
       }
     } catch (err: any) {

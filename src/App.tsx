@@ -56,13 +56,15 @@ const WalletAppContent: React.FC = () => {
 
             {/* Quick Mobile Action Shortcuts */}
             <div className="w-full px-4 flex items-center justify-center gap-8 py-2">
-              <button
-                onClick={() => setIsSendOpen(true)}
-                className="flex items-center gap-2 py-2 px-3 text-[#70C7BA] hover:text-[#5eead4] font-extrabold text-sm transition-all active:scale-95 cursor-pointer"
-              >
-                <ArrowUpRight className="w-5 h-5 stroke-[3]" />
-                <span>{activeWallet?.isWatchOnly || activeWallet?.isImportedKpub ? 'Send (Watch-Only)' : 'Send'}</span>
-              </button>
+              {!(activeWallet?.isWatchOnly || activeWallet?.isImportedKpub) && (
+                <button
+                  onClick={() => setIsSendOpen(true)}
+                  className="flex items-center gap-2 py-2 px-3 text-[#70C7BA] hover:text-[#5eead4] font-extrabold text-sm transition-all active:scale-95 cursor-pointer"
+                >
+                  <ArrowUpRight className="w-5 h-5 stroke-[3]" />
+                  <span>Send</span>
+                </button>
+              )}
 
               <button
                 onClick={() => setIsReceiveOpen(true)}

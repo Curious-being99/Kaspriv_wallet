@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { getPrivateKeyFromMnemonic, signKaspaMessage } from '../utils/kaspa';
 import { decryptWithPassword } from '../utils/crypto';
+import { IsolatedSigner } from '../utils/IsolatedSigner';
 import { X, FileCode, Check, Copy, Lock } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
@@ -56,18 +57,18 @@ export const SignMessageModal: React.FC = () => {
     }
 
     try {
-      let privKeyHex: string | null = getPrivateKeyFromMnemonic(seedToUse, passphraseToUse);
-      const realSig = signKaspaMessage(message.trim(), privKeyHex);
-      
-      // Short exposure & instant memory discard of raw private key string
-      privKeyHex = null;
+      const res = await IsolatedSigner.signMessageIsolated(seedToUse, passphraseToUse, message.trim());
       
       // Wipe seed from memory
       seedToUse = '';
       passphraseToUse = '';
 
-      setSignature(realSig);
-      showToast('Message signed with Kaspa Schnorr signature', 'success');
+      if (res.success && res.signature) {
+        setSignature(res.signature);
+        showToast('Message signed with Kaspa Schnorr signature', 'success');
+      } else {
+        showToast(res.error || 'Failed to sign message', 'error');
+      }
     } catch (err: any) {
       showToast('Failed to sign message', 'error');
     }

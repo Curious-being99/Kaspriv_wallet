@@ -26,9 +26,13 @@ function getDB() {
 
 export async function saveWalletToDB(wallet: Wallet) {
   const db = await getDB();
-  // Ensure we don't store plaintext if encryption is intended (though the context handles this)
+  // Zero-Trust IDB Guard: Ensure plaintext seeds or passphrases are never written to IDB
+  const sanitizedWallet = { ...wallet };
+  delete sanitizedWallet.mnemonic;
+  delete sanitizedWallet.passphrase;
+
   await db.put(WALLET_STORE, {
-    ...wallet,
+    ...sanitizedWallet,
     balanceSompi: wallet.balanceSompi.toString(), // Convert BigInt to string for DB storage
   });
 }

@@ -1,6 +1,6 @@
 {
   "name": "Kaspriv_wallet",
-  "description": "Kaspa private wallet web application imported and configured for modern web standard.",
+  "description": "Kaspriv mobile web wallet application configured for modern web standards and client-side isolation.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

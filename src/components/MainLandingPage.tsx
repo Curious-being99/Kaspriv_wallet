@@ -112,15 +112,17 @@ export const MainLandingPage: React.FC = () => {
       return;
     }
 
-    await createNewWallet(
-      walletName.trim() || 'Primary Wallet',
-      createdWords,
-      passphraseInput.trim() || undefined,
-      addressType
-    );
-    setIsLocked(true);
-    setIsLoggedOut(false);
+    const name = walletName.trim() || 'Primary Wallet';
+    const words = createdWords;
+    const passInput = passphraseInput.trim() || undefined;
+    const addrType = addressType;
+
     resetState();
+    setIsLoggedOut(false);
+    setIsLocked(false);
+
+    await createNewWallet(name, words, passInput, addrType);
+    setIsLocked(true);
   };
 
   const handleFinishImportSeed = async () => {
@@ -137,15 +139,16 @@ export const MainLandingPage: React.FC = () => {
       return;
     }
 
-    await importSeedWallet(
-      walletName.trim() || 'Restored Wallet',
-      words,
-      passphraseInput.trim() || undefined,
-      addressType
-    );
-    setIsLocked(true);
-    setIsLoggedOut(false);
+    const name = walletName.trim() || 'Restored Wallet';
+    const passInput = passphraseInput.trim() || undefined;
+    const addrType = addressType;
+
     resetState();
+    setIsLoggedOut(false);
+    setIsLocked(false);
+
+    await importSeedWallet(name, words, passInput, addrType);
+    setIsLocked(true);
   };
 
   const handleFinishImportAddress = () => {
@@ -163,10 +166,14 @@ export const MainLandingPage: React.FC = () => {
       return;
     }
 
-    importKpubWallet(walletName.trim() || 'Address Tracker', addr, addressType);
-    setIsLocked(true);
-    setIsLoggedOut(false);
+    const name = walletName.trim() || 'Address Tracker';
+    const addrType = addressType;
+
     resetState();
+    setIsLoggedOut(false);
+
+    importKpubWallet(name, addr, addrType);
+    setIsLocked(true);
   };
 
   const updatePreview = React.useCallback(async (type: 'P2PKH' | 'P2SH') => {
@@ -815,7 +822,7 @@ export const MainLandingPage: React.FC = () => {
                     <div className="relative">
                       <input
                         type={showSetupPassword ? "text" : "password"}
-                        placeholder="Min 8 characters"
+                        placeholder="Strong password required"
                         value={setupPassword}
                         onFocus={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
                         onClick={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
@@ -869,7 +876,7 @@ export const MainLandingPage: React.FC = () => {
 
                 <button
                   onClick={async () => {
-                    if (setupPassword.length < 8) {
+                    if (checkPassphraseStrength(setupPassword).score < 3) {
                       showToast('Password must be at least 8 characters', 'error');
                       return;
                     }
@@ -878,46 +885,34 @@ export const MainLandingPage: React.FC = () => {
                       return;
                     }
 
-                    // Prepare for indexing state display without locking immediately
-                    setIsLocked(false);
-                    setIsLoggedOut(false);
+                    const flow = pendingFlow;
+                    const pass = setupPassword;
+                    const name = walletName.trim() || (flow === 'create' ? 'Primary Wallet' : flow === 'import-seed' ? 'Restored Wallet' : 'Address Tracker');
+                    const words = flow === 'create' ? createdWords : cleanMnemonic(importWordsText).split(' ');
+                    const passInput = passphraseInput.trim() || undefined;
+                    const addrType = addressType;
+                    const addr = addressInput.trim();
 
-                    if (pendingFlow === 'create') {
-                      await createNewWallet(
-                        walletName.trim() || 'Primary Wallet',
-                        createdWords,
-                        passphraseInput.trim() || undefined,
-                        addressType,
-                        setupPassword
-                      );
-                    } else if (pendingFlow === 'import-seed') {
-                      const cleaned = cleanMnemonic(importWordsText);
-                      await importSeedWallet(
-                        walletName.trim() || 'Restored Wallet',
-                        cleaned.split(' '),
-                        passphraseInput.trim() || undefined,
-                        addressType,
-                        setupPassword
-                      );
-                    } else if (pendingFlow === 'import-address') {
-                      const addr = addressInput.trim();
-                      importKpubWallet(
-                        walletName.trim() || 'Address Tracker',
-                        addr,
-                        addressType
-                      );
-                      await setPassword(setupPassword);
+                    // Hide landing page and reset form immediately so password page is never shown twice or kept during indexing
+                    resetState();
+                    setIsLoggedOut(false);
+                    setIsLocked(false);
+
+                    if (flow === 'create') {
+                      await createNewWallet(name, words, passInput, addrType, pass);
+                    } else if (flow === 'import-seed') {
+                      await importSeedWallet(name, words, passInput, addrType, pass);
+                    } else if (flow === 'import-address') {
+                      importKpubWallet(name, addr, addrType);
+                      await setPassword(pass);
                     }
                     
                     setIsLoggedOut(false);
-                    resetState();
-                    
-                    // Transition flawlessly to lock screen after indexing overlay completes
                     setIsLocked(true);
                   }}
-                  disabled={setupPassword.length < 8 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}
+                  disabled={checkPassphraseStrength(setupPassword).score < 3 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}
                   className={`w-full py-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 ${
-                    setupPassword.length >= 8 && confirmSetupPassword.length >= 8 && setupPassword === confirmSetupPassword
+                    checkPassphraseStrength(setupPassword).score >= 3 && confirmSetupPassword.length >= 8 && setupPassword === confirmSetupPassword
                       ? 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] shadow-lg shadow-[#70C7BA]/20'
                       : 'bg-slate-800 text-slate-500 cursor-not-allowed'
                   }`}

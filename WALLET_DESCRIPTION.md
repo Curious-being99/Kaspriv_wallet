@@ -1,21 +1,25 @@
-# Kaspriv Secure mobile web wallet
+# Kaspriv Mobile Web Wallet
 
 ## Overview
-The Kaspriv Secure mobile web wallet is a non-custodial, client-side web application designed to provide users with a seamless and highly secure interface for managing their Kaspa (KAS) assets. Built with modern web technologies, it ensures that users maintain complete control over their private keys and funds while interacting directly with the Kaspa blockDAG network.
+The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side web application designed to provide users with a seamless and fortress-hardened interface for managing Kaspa (KAS) assets and smart covenants. Built with modern web standards and WebAssembly, it ensures users maintain 100% control over their private keys with zero server reliance and strict in-memory execution.
 
 ## Key Features
 
-*   **100% Non-Custodial:** Your keys, your crypto. The wallet generates and manages your 24-word seed phrase entirely locally on your device. Private keys and seed phrases never leave your browser and are never transmitted to any external server.
-*   **Military-Grade Security:**
-    *   **Argon2id Key Derivation:** Utilizes a memory-hard function (64 MiB memory, 4 iterations, 1 parallel lane) selected with reference to RFC 9106 and constrained for the target Android environment to derive encryption keys from your password, making brute-force attacks computationally prohibitive.
-    *   **AES-256-GCM Encryption:** All sensitive wallet data is encrypted using authenticated AES-256-GCM via the browser's native Web Crypto API. Nonces/IVs are randomly generated and strictly single-use. Furthermore, it leverages Additional Authenticated Data (AAD) to ensure ciphertext context integrity.
-    *   **In-Memory Sanitization:** Sensitive application-managed buffers (keys, plaintexts) are explicitly zeroized immediately after use; runtime-managed copies remain outside the application's direct memory-control boundary.
-*   **Native Kaspa Network Integration:** Powered by `kaspa-wasm` and `@kaspa/core-lib`, the wallet delivers high-performance, native-level transaction construction, Schnorr signing, and address derivation (P2PKH and P2SH) natively in the browser.
-*   **Modern, Responsive UI:** Built with React and Tailwind CSS, offering a clean, intuitive, and mobile-friendly interface. It features real-time balance fetching, a streamlined full-view transaction history, and an accessible layout for both desktop and mobile users.
-*   **Zero-Trust Storage Model:** The application treats the browser's local storage (IndexedDB/LocalStorage) as compromised by default, ensuring your wallet remains impenetrable without the master password.
+* **100% Non-Custodial & Client-Side:** Private keys and seed phrases are generated and managed strictly inside your browser environment. Private data is never transmitted across network boundaries or stored unencrypted.
+* **Military-Grade Encryption & Authentication:**
+    * **Argon2id Key Derivation:** Uses memory-hard Argon2id (64 MiB memory, 4 iterations, 1 parallel lane) via `hash-wasm` to derive strong AES keys from user passwords, rendering GPU/ASIC brute-force attacks computationally infeasible.
+    * **AES-256-GCM with AAD:** All wallet seeds and private keys are encrypted using native Web Crypto API (`window.crypto.subtle`) AES-256-GCM with 12-byte single-use random IVs and Context-Bound Additional Authenticated Data (AAD) (`KASPRIV-WALLET-v1|...`).
+* **Isolated Signing Environment & Instant Memory Sanitization:**
+    * **Isolated Signing (`IsolatedSigner`):** Key derivation and signature generation execute in isolated transient scopes.
+    * **Cryptographic Wiping:** Secret buffers and key byte arrays are immediately zeroized using explicit byte-overwriting (`wipe()`) in `finally` blocks to minimize in-memory lifecycle.
+* **Independent Transaction Intent Verification:**
+    * Before deriving keys or signing, `verifyTransactionIntent` independently validates recipient address prefix/network match, positive output amounts, fee parameters, and input UTXO sufficiency.
+* **Native Kaspa Network Integration:** Powered by `kaspa-wasm` and `@kaspa/core-lib`, providing native-level transaction construction, Schnorr signatures, P2PKH/P2SH address derivation, and covenant handling directly in the browser.
+* **Modern Mobile-First UI:** Built with React 18, TypeScript, and Tailwind CSS, featuring an intuitive touch-friendly interface, real-time balance tracking, virtual keyboard option, covenant creator, and full dev console monitoring.
 
 ## Technical Stack
-*   **Frontend Framework:** React 18, TypeScript, Vite
-*   **Styling:** Tailwind CSS, Lucide React (Icons)
-*   **Cryptography:** Web Crypto API (`window.crypto.subtle`), `hash-wasm` (Argon2id)
-*   **Kaspa Core Tooling:** `kaspa-wasm`, `@kaspa/core-lib`
+* **Frontend Framework:** React 18, TypeScript, Vite
+* **Styling:** Tailwind CSS, Lucide React (Icons), Motion (Animations)
+* **Cryptography:** Web Crypto API (`window.crypto.subtle`), `hash-wasm` (Argon2id), `@noble/secp256k1`
+* **Kaspa Core Tooling:** `kaspa-wasm`, `@kaspa/core-lib`
+
