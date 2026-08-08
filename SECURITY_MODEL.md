@@ -98,6 +98,15 @@ Before password verification, seed decryption, or private key derivation occurs,
 
 ---
 
+## 5. Transitive Dependency Audit & Elliptic Mitigation
+
+* **Transitive Origin**: The `elliptic` library (<= 6.6.1) is pulled in strictly as a transitive dependency via legacy utility packages (`@kaspa/core-lib` and `vite-plugin-node-polyfills`).
+* **Zero Usage in Application Logic**: Kaspriv contains zero direct or indirect calls to `elliptic`. 
+* **Immunity to RFC 6979 Nonce Vulnerability**: Kaspriv uses **Kaspa Schnorr signatures** (`kaspa-wasm` Rust/WASM core) and modern curves (`@noble/secp256k1` / `@noble/hashes`), completely bypassing legacy ECDSA signing routines affected by the `elliptic` nonce truncation advisory.
+* **IndexedDB & LocalStorage Zero-Trust**: All local state strictly adheres to zero-trust IndexedDB (`idb`) storage with encrypted payloads and zero plaintext sensitive credentials.
+
+---
+
 ## Architectural Flow Summary
 
 ```

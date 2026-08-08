@@ -31,6 +31,9 @@
     "react-simple-keyboard": "^3.8.255",
     "tailwind-merge": "^3.0.1"
   },
+  "overrides": {
+    "bn.js": "^4.12.3"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.13.4",
