@@ -22,8 +22,8 @@ An internal security audit confirms the following zero-trust constraints across 
 The wallet uses **Argon2id** (via `hash-wasm`) to derive a secure cryptographic key from the user's master password. Argon2id is the RFC 9106 recommended memory-hard key derivation function, providing resistance against GPU/ASIC hardware brute-force attacks.
 
 **Argon2id Parameters (`v1.0.0-argon2id-aes256gcm`):**
-* **Iterations (Time Cost):** 4 passes
-* **Memory Size:** 64 MiB (65,536 KiB)
+* **Iterations (Time Cost):** 10 passes
+* **Memory Size:** 128 MiB (131,072 KiB)
 * **Parallelism:** 1 lane/thread
 * **Hash Length:** 32 bytes (yielding a 256-bit key for AES-256)
 * **Salt:** Cryptographically secure 16-byte random salt (`window.crypto.getRandomValues`) generated per wallet.
