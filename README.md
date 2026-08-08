@@ -1,7 +1,7 @@
-# Kaspa Secure Web Wallet
+# Kaspriv Secure mobile Web Wallet
 
 ## Overview
-The Kaspa Secure mobile web Wallet is a non-custodial, client-side web application designed to provide users with a seamless and highly secure interface for managing their Kaspa (KAS) assets. Built with modern web technologies, it ensures that users maintain complete control over their private keys and funds while interacting directly with the Kaspa blockDAG network.
+The Kaspriv Secure mobile web Wallet is a non-custodial, client-side web application designed to provide users with a seamless and highly secure interface for managing their Kaspa (KAS) assets. Built with modern web technologies, it ensures that users maintain complete control over their private keys and funds while interacting directly with the Kaspa blockDAG network.
 
 ## Key Features
 
