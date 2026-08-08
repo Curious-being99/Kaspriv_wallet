@@ -27,7 +27,7 @@ interface TransactionListProps {
 }
 
 export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = false, hideAssetCard = false }) => {
-  const { transactions, activeWallet, marketData, currency, fiatRate, showToast, currentDaaScore, isBalanceVisible, setIsBalanceVisible } = useWallet();
+  const { transactions, activeWallet, marketData, currency, fiatRate, showToast, currentDaaScore, isBalanceVisible, setIsBalanceVisible, setIsAssetDetailOpen } = useWallet();
 
   const [filter, setFilter] = useState<'all' | 'receive' | 'send' | 'compound'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,7 +65,10 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
     <div className="w-full mt-3 mb-6 space-y-4">
       {/* Asset Card matching user screenshot precisely with CoinGecko Kaspa meta icon */}
       {!hideAssetCard && (
-        <div className="p-3.5 sm:p-4 kaspriv-card flex items-center justify-between gap-3">
+        <div
+          onClick={() => setIsAssetDetailOpen(true)}
+          className="p-3.5 sm:p-4 kaspriv-card flex items-center justify-between gap-3 cursor-pointer hover:border-[#70C7BA]/60 transition-all active:scale-[0.99] group shadow-sm hover:shadow-md"
+        >
           <div className="flex items-center gap-3">
             {/* Official Kaspa logo from cryptologos.cc */}
             <div className="w-10 h-10 rounded-full bg-[#70C7BA] flex items-center justify-center overflow-hidden shadow-sm shrink-0">
@@ -158,9 +161,9 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
             </span>
           )}
         </div>
-        <div className="space-y-2.5">
+        <div className="divide-y divide-[#212B38]/50">
           {filteredTxs.length === 0 ? (
-            <div className="text-center py-12 px-4 rounded-2xl bg-[#131924] border border-[#212B38]">
+            <div className="text-center py-8 px-4 text-slate-400">
               <FileText className="w-10 h-10 text-slate-500 mx-auto mb-2" />
               <div className="text-sm font-semibold text-slate-300">No transactions found</div>
               <p className="text-xs text-slate-500 mt-1">
@@ -179,8 +182,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   onClick={() => isBalanceVisible && setSelectedTx(tx)}
-                  className={`flex items-center justify-between p-3.5 rounded-2xl bg-[#131924] border border-[#212B38] transition-all group ${
-                    isBalanceVisible ? 'hover:border-[#70C7BA]/50 cursor-pointer' : 'cursor-default opacity-80'
+                  className={`flex items-center justify-between py-3.5 px-2 transition-all group ${
+                    isBalanceVisible ? 'hover:bg-[#131924]/50 cursor-pointer rounded-xl' : 'cursor-default opacity-80'
                   }`}
                 >
                 {/* Type Icon & Info */}

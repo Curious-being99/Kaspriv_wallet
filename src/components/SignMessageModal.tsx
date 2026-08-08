@@ -41,12 +41,7 @@ export const SignMessageModal: React.FC = () => {
           );
           
           if (activeWallet.encryptedPassphrase) {
-            passphraseToUse = await decryptWithPassword(
-              activeWallet.encryptedPassphrase.ciphertext,
-              activeWallet.encryptedPassphrase.salt,
-              activeWallet.encryptedPassphrase.iv,
-              activePassword
-            );
+            passphraseToUse = await decryptWithPassword(activeWallet.encryptedPassphrase.ciphertext, activeWallet.encryptedPassphrase.salt, activeWallet.encryptedPassphrase.iv, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
           }
         } catch (err) {
           showToast('Invalid password. Decryption failed.', 'error');

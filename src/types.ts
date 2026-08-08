@@ -11,8 +11,6 @@ export interface Wallet {
   passphrase?: string; // Optional BIP39 passphrase
   encryptedMnemonic?: { ciphertext: string; salt: string; iv: string };
   encryptedPassphrase?: { ciphertext: string; salt: string; iv: string };
-  encryptedMnemonicFragments?: { ciphertext: string; salt: string; iv: string }[];
-  encryptedPassphraseFragments?: { ciphertext: string; salt: string; iv: string }[];
   kpub?: string;
   isImportedKpub?: boolean;
   isWatchOnly?: boolean;

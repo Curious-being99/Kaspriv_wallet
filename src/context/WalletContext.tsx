@@ -24,10 +24,6 @@ import * as secp from '@noble/secp256k1';
 import { 
   encryptWithPassword, 
   decryptWithPassword, 
-  encryptPieces, 
-  decryptPieces,
-  encryptMnemonicToFragments,
-  decryptMnemonicFromFragments
 } from '../utils/crypto';
 import {
   kasToSompi,
@@ -132,6 +128,8 @@ interface WalletContextType {
   setIsSignMessageOpen: (open: boolean) => void;
   isCovenantOpen: boolean;
   setIsCovenantOpen: (open: boolean) => void;
+  isAssetDetailOpen: boolean;
+  setIsAssetDetailOpen: (open: boolean) => void;
 
   // Bottom Navigation Tab
   activeBottomTab: 'home' | 'history' | 'covenant' | 'settings';
@@ -280,7 +278,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       try {
         for (const wallet of wallets) {
           const toSave = { ...wallet };
-          if (toSave.encryptedMnemonic || toSave.encryptedMnemonicFragments) {
+          if (toSave.encryptedMnemonic) {
             delete toSave.mnemonic;
             delete toSave.passphrase;
           }
@@ -438,6 +436,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isCompoundOpen, setIsCompoundOpen] = useState(false);
   const [isSignMessageOpen, setIsSignMessageOpen] = useState(false);
   const [isCovenantOpen, setIsCovenantOpen] = useState(false);
+  const [isAssetDetailOpen, setIsAssetDetailOpen] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'history' | 'covenant' | 'settings'>('home');
   const [isBalanceVisible, setIsBalanceVisible] = useState<boolean>(true);
 
@@ -550,7 +549,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
     runMigration();
     return () => { isMounted = false; };
-  }, [deployedCovenants.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const addCovenant = (cov: Omit<Covenant, 'id' | 'timestamp'> & { genesisInputTxId?: string; genesisInputIndex?: number }) => {
     let finalId = `cov-${Date.now()}`;
@@ -868,18 +868,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       let pubKeyHex: string | null = null;
       let seedToUse = wallet.mnemonic;
-      if (!seedToUse && (wallet.encryptedMnemonic || wallet.encryptedMnemonicFragments) && activePassword) {
+      if (!seedToUse && wallet.encryptedMnemonic && activePassword) {
         try {
-          if (wallet.encryptedMnemonicFragments) {
-            seedToUse = await decryptMnemonicFromFragments(wallet.encryptedMnemonicFragments, activePassword);
-          } else if (wallet.encryptedMnemonic) {
-            seedToUse = await decryptWithPassword(
-              wallet.encryptedMnemonic.ciphertext,
-              wallet.encryptedMnemonic.salt,
-              wallet.encryptedMnemonic.iv,
-              activePassword
-            );
-          }
+          seedToUse = await decryptWithPassword(
+            wallet.encryptedMnemonic.ciphertext,
+            wallet.encryptedMnemonic.salt,
+            wallet.encryptedMnemonic.iv,
+            activePassword
+          );
         } catch (e) {
           // ignore
         }
@@ -1117,13 +1113,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     addrPaths[scanRes.primaryAddress] = "m/44'/111111'/0'/0/0";
 
     const activePassword = password || passwordRef.current;
-    let encryptedMnemonicFragments;
-    let encryptedPassphraseFragments;
+    let encryptedMnemonic;
+    let encryptedPassphrase;
     
     if (activePassword) {
-      encryptedMnemonicFragments = await encryptMnemonicToFragments(mStr, activePassword);
+      encryptedMnemonic = await encryptWithPassword(mStr, activePassword);
       if (passphrase) {
-        encryptedPassphraseFragments = await encryptPieces([passphrase], activePassword);
+        encryptedPassphrase = await encryptWithPassword(passphrase, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
       }
     }
 
@@ -1134,8 +1130,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       changeAddress: scanRes.primaryAddress,
       mnemonic: activePassword ? undefined : mStr, // Do not store plaintext if password is active
       passphrase: activePassword ? undefined : (passphrase || undefined),
-      encryptedMnemonicFragments,
-      encryptedPassphraseFragments,
+      encryptedMnemonic,
+      encryptedPassphrase,
       balanceSompi: scanRes.totalBalanceSompi,
       createdAt: Date.now(),
       addressType,
@@ -1167,12 +1163,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let passToUse = activeWallet.passphrase;
 
     // Handle decryption if seed is encrypted at rest
-    if (!seedToUse && (activeWallet.encryptedMnemonic || activeWallet.encryptedMnemonicFragments)) {
+    if (!seedToUse && (activeWallet.encryptedMnemonic)) {
       if (password) {
         try {
-          if (activeWallet.encryptedMnemonicFragments) {
-            seedToUse = await decryptMnemonicFromFragments(activeWallet.encryptedMnemonicFragments, password);
-          } else if (activeWallet.encryptedMnemonic) {
+          if (activeWallet.encryptedMnemonic) {
             seedToUse = await decryptWithPassword(
               activeWallet.encryptedMnemonic.ciphertext,
               activeWallet.encryptedMnemonic.salt,
@@ -1181,15 +1175,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             );
           }
           
-          if (activeWallet.encryptedPassphraseFragments) {
-            const parts = await decryptPieces(activeWallet.encryptedPassphraseFragments, password);
-            passToUse = parts.join('');
-          } else if (activeWallet.encryptedPassphrase) {
+          if (activeWallet.encryptedPassphrase) {
             passToUse = await decryptWithPassword(
               activeWallet.encryptedPassphrase.ciphertext,
               activeWallet.encryptedPassphrase.salt,
               activeWallet.encryptedPassphrase.iv,
-              password
+              password,
+              "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE"
             );
           }
         } catch (err) {
@@ -1305,12 +1297,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     addrPaths[scanRes.primaryAddress] = `m/44'/${addressType === 'P2SH' ? '111111' : '111111'}'/0'/0/0`; // default to standard bip44 path format
 
     const activePassword = password || passwordRef.current;
-    let encryptedMnemonicFragments;
-    let encryptedPassphraseFragments;
+    let encryptedMnemonic;
+    let encryptedPassphrase;
     if (activePassword) {
-      encryptedMnemonicFragments = await encryptMnemonicToFragments(mStr, activePassword);
+      encryptedMnemonic = await encryptWithPassword(mStr, activePassword);
       if (passphrase) {
-        encryptedPassphraseFragments = await encryptPieces([passphrase], activePassword);
+        encryptedPassphrase = await encryptWithPassword(passphrase, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
       }
     }
 
@@ -1321,8 +1313,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       changeAddress: scanRes.primaryAddress,
       mnemonic: activePassword ? undefined : mStr,
       passphrase: activePassword ? undefined : (passphrase || undefined),
-      encryptedMnemonicFragments,
-      encryptedPassphraseFragments,
+      encryptedMnemonic,
+      encryptedPassphrase,
       balanceSompi: scanRes.totalBalanceSompi,
       createdAt: Date.now(),
       addressType,
@@ -1399,13 +1391,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let passphraseToUse = providedPassphrase !== undefined ? providedPassphrase : activeWallet.passphrase;
 
     // Handle decryption if seed is encrypted at rest
-    if (!seedToUse && (activeWallet.encryptedMnemonic || activeWallet.encryptedMnemonicFragments)) {
+    if (!seedToUse && (activeWallet.encryptedMnemonic)) {
       const activePassword = providedPassphrase || password; // Use provided Password if available
       if (activePassword) {
         try {
-          if (activeWallet.encryptedMnemonicFragments) {
-            seedToUse = await decryptMnemonicFromFragments(activeWallet.encryptedMnemonicFragments, activePassword);
-          } else if (activeWallet.encryptedMnemonic) {
+          if (activeWallet.encryptedMnemonic) {
             seedToUse = await decryptWithPassword(
               activeWallet.encryptedMnemonic.ciphertext,
               activeWallet.encryptedMnemonic.salt,
@@ -1414,15 +1404,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             );
           }
           
-          if (activeWallet.encryptedPassphraseFragments) {
-            const parts = await decryptPieces(activeWallet.encryptedPassphraseFragments, activePassword);
-            passphraseToUse = parts.join('');
-          } else if (activeWallet.encryptedPassphrase) {
+          if (activeWallet.encryptedPassphrase) {
             passphraseToUse = await decryptWithPassword(
               activeWallet.encryptedPassphrase.ciphertext,
               activeWallet.encryptedPassphrase.salt,
               activeWallet.encryptedPassphrase.iv,
-              activePassword
+              activePassword,
+              "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE"
             );
           }
         } catch (err) {
@@ -1551,12 +1539,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let passphraseToUse = activeWallet.passphrase;
 
     // Handle decryption if seed is encrypted at rest
-    if (!seedToUse && (activeWallet.encryptedMnemonic || activeWallet.encryptedMnemonicFragments)) {
+    if (!seedToUse && (activeWallet.encryptedMnemonic)) {
       if (password) {
         try {
-          if (activeWallet.encryptedMnemonicFragments) {
-            seedToUse = await decryptMnemonicFromFragments(activeWallet.encryptedMnemonicFragments, password);
-          } else if (activeWallet.encryptedMnemonic) {
+          if (activeWallet.encryptedMnemonic) {
             seedToUse = await decryptWithPassword(
               activeWallet.encryptedMnemonic.ciphertext,
               activeWallet.encryptedMnemonic.salt,
@@ -1565,15 +1551,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             );
           }
           
-          if (activeWallet.encryptedPassphraseFragments) {
-            const parts = await decryptPieces(activeWallet.encryptedPassphraseFragments, password);
-            passphraseToUse = parts.join('');
-          } else if (activeWallet.encryptedPassphrase) {
+          if (activeWallet.encryptedPassphrase) {
             passphraseToUse = await decryptWithPassword(
               activeWallet.encryptedPassphrase.ciphertext,
               activeWallet.encryptedPassphrase.salt,
               activeWallet.encryptedPassphrase.iv,
-              password
+              password,
+              "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE"
             );
           }
         } catch (err) {
@@ -1677,7 +1661,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       await saveSetting('wallet_password_enabled', true);
       
       try {
-        const canaryObj = await encryptWithPassword("kaspriv-canary", password);
+        const canaryObj = await encryptWithPassword("kaspriv-canary", password, "KASPRIV-WALLET-v1|KASPA-MAINNET|CANARY");
         await saveSetting('wallet_password_canary', canaryObj);
       } catch (err) {
         console.error('Failed to save password canary:', err);
@@ -1685,16 +1669,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       
       try {
         const updatedWallets = await Promise.all(wallets.map(async (w) => {
-          let encryptedMnemonicFragments = w.encryptedMnemonicFragments;
-          let encryptedPassphraseFragments = w.encryptedPassphraseFragments;
+          let encryptedMnemonic = w.encryptedMnemonic;
+          let encryptedPassphrase = w.encryptedPassphrase;
           
           const seedToUse = w.mnemonic;
           const passToUse = w.passphrase;
           
           if (seedToUse) {
-            encryptedMnemonicFragments = await encryptMnemonicToFragments(seedToUse, password);
+            encryptedMnemonic = await encryptWithPassword(seedToUse, password);
             if (passToUse) {
-              encryptedPassphraseFragments = await encryptPieces([passToUse], password);
+              encryptedPassphrase = await encryptWithPassword(passToUse, password, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
             }
           }
           
@@ -1702,10 +1686,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             ...w,
             mnemonic: undefined,
             passphrase: undefined,
-            encryptedMnemonic: undefined, // Clear old single-piece storage
-            encryptedPassphrase: undefined,
-            encryptedMnemonicFragments,
-            encryptedPassphraseFragments
+            encryptedMnemonic,
+            encryptedPassphrase
           };
         }));
         setWallets(updatedWallets);
@@ -1713,20 +1695,51 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       } catch (err) {
         showToast('Password enabled, but error encrypting existing keys', 'warning');
       }
-    } else {
+        } else {
+      const activePassword = passwordState || passwordRef.current;
       setIsPasswordEnabled(false);
       setPasswordState(null);
       await saveSetting('wallet_password_enabled', false);
       await removeSetting('wallet_password_canary');
       setIsLocked(false);
       
-      setWallets(prev => prev.map(w => ({
-        ...w,
-        encryptedMnemonic: undefined,
-        encryptedPassphrase: undefined,
-        encryptedMnemonicFragments: undefined,
-        encryptedPassphraseFragments: undefined
-      })));
+      if (activePassword) {
+        const updatedWallets = await Promise.all(wallets.map(async (w) => {
+          let decryptedMnemonic = w.mnemonic;
+          let decryptedPassphrase = w.passphrase;
+          
+          if (!decryptedMnemonic && w.encryptedMnemonic) {
+            try {
+              decryptedMnemonic = await decryptWithPassword(w.encryptedMnemonic.ciphertext, w.encryptedMnemonic.salt, w.encryptedMnemonic.iv, activePassword);
+            } catch (e) {
+              // ignore
+            }
+          }
+          
+          if (!decryptedPassphrase && w.encryptedPassphrase) {
+            try {
+              decryptedPassphrase = await decryptWithPassword(w.encryptedPassphrase.ciphertext, w.encryptedPassphrase.salt, w.encryptedPassphrase.iv, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+            } catch (e) {
+              // ignore
+            }
+          }
+          
+          return {
+            ...w,
+            mnemonic: decryptedMnemonic,
+            passphrase: decryptedPassphrase,
+            encryptedMnemonic: undefined,
+            encryptedPassphrase: undefined
+          };
+        }));
+        setWallets(updatedWallets);
+      } else {
+        setWallets(prev => prev.map(w => ({
+          ...w,
+          encryptedPassphrase: undefined,
+          encryptedMnemonic: undefined
+        })));
+      }
       showToast('Password security disabled', 'info');
     }
   };
@@ -1737,12 +1750,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     
     if (canaryObj) {
       try {
-        const decryptedCanary = await decryptWithPassword(
-          canaryObj.ciphertext,
-          canaryObj.salt,
-          canaryObj.iv,
-          password
-        );
+        const decryptedCanary = await decryptWithPassword(canaryObj.ciphertext, canaryObj.salt, canaryObj.iv, password, "KASPRIV-WALLET-v1|KASPA-MAINNET|CANARY");
         if (decryptedCanary === "kaspriv-canary") {
           passwordValid = true;
         }
@@ -1751,18 +1759,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     } else {
       // Fallback for wallets without canary (legacy)
-      const firstW = wallets.find(w => w.encryptedMnemonic || w.encryptedMnemonicFragments);
+      const firstW = wallets.find(w => w.encryptedMnemonic);
       if (firstW) {
         try {
-          if (firstW.encryptedMnemonicFragments) {
-            await decryptMnemonicFromFragments(firstW.encryptedMnemonicFragments, password);
-          } else if (firstW.encryptedMnemonic) {
-            await decryptWithPassword(
-              firstW.encryptedMnemonic.ciphertext,
-              firstW.encryptedMnemonic.salt,
-              firstW.encryptedMnemonic.iv,
-              password
-            );
+          if (firstW.encryptedMnemonic) {
+            await decryptWithPassword(firstW.encryptedMnemonic.ciphertext, firstW.encryptedMnemonic.salt, firstW.encryptedMnemonic.iv, password);
           }
           passwordValid = true;
         } catch (err) {
@@ -1848,6 +1849,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setIsSignMessageOpen,
         isCovenantOpen,
         setIsCovenantOpen,
+        isAssetDetailOpen,
+        setIsAssetDetailOpen,
         activeBottomTab,
         setActiveBottomTab,
         isBalanceVisible,

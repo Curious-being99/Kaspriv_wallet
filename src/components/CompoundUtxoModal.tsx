@@ -82,7 +82,7 @@ export const CompoundUtxoModal: React.FC = () => {
               </label>
               <input
                 type="text"
-                placeholder="Enter 12/24 word seed phrase to sign..."
+                placeholder="Enter 24-word seed phrase to sign..."
                 value={providedSeed}
                 onChange={(e) => setProvidedSeed(e.target.value)}
                 className="w-full px-3.5 py-2.5 font-mono text-xs rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] text-slate-100 outline-none"

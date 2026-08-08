@@ -269,8 +269,8 @@ export const MobileCovenantView: React.FC = () => {
       className="w-full space-y-4 py-2"
     >
       {/* 1. Header & Status Overview */}
-      <div className="p-3.5 sm:p-5 kaspriv-card space-y-4">
-        <div className="flex items-center justify-between border-b border-[#212B38] pb-3">
+      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-4">
+        <div className="flex items-center justify-between border-b border-[#212B38]/40 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl bg-[#70C7BA]/25 text-[#70C7BA] flex items-center justify-center font-bold">
               <Code2 className="w-6 h-6 stroke-[2.5]" />
@@ -292,7 +292,7 @@ export const MobileCovenantView: React.FC = () => {
       </div>
 
       {/* 2. On-Chain Covenant Deployer */}
-      <div className="p-3.5 sm:p-5 kaspriv-card space-y-4">
+      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-4">
         <div className="flex items-center gap-2">
           <Lock className="w-5 h-5 text-[#70C7BA]" />
           <h3 className="text-sm font-extrabold text-slate-100">Deploy New Covenant</h3>
@@ -624,7 +624,7 @@ export const MobileCovenantView: React.FC = () => {
       </div>
 
       {/* 3. Track Custom Covenant */}
-      <div className="p-3.5 sm:p-5 kaspriv-card space-y-4">
+      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-4">
         <div className="flex items-center gap-2">
           <FileText className="w-5 h-5 text-[#70C7BA]" />
           <h3 className="text-sm font-extrabold text-slate-100">Track Custom Covenant</h3>
@@ -825,7 +825,7 @@ export const MobileCovenantView: React.FC = () => {
       </div>
 
       {/* 4. Active Deployed Covenants */}
-      <div className="p-3.5 sm:p-5 kaspriv-card space-y-4">
+      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-[#70C7BA]" />
@@ -845,14 +845,14 @@ export const MobileCovenantView: React.FC = () => {
 
         <div className="space-y-3">
           {deployedCovenants.length === 0 ? (
-            <div className="text-center py-6 rounded-2xl bg-[#090D12] border border-[#212B38]/50 text-xs text-slate-500 italic">
+            <div className="text-center py-6 text-xs text-slate-500 italic">
               No active covenants deployed. Create or write one above to get started!
             </div>
           ) : (
             deployedCovenants.map((cov) => {
               const links = getCovenantExplorerLinks(cov, activeWallet?.receiveAddress || '');
               return (
-                <div key={cov.id} className="p-4 rounded-2xl bg-[#090D12] border border-[#212B38]/60 text-xs space-y-2">
+                <div key={cov.id} className="p-3.5 rounded-2xl bg-[#090D12] border border-[#212B38]/60 text-xs space-y-2">
                   <div className="flex justify-between items-center font-bold">
                     <span className="text-slate-100">{cov.type}</span>
                     <div className="flex items-center gap-1.5">
@@ -933,7 +933,7 @@ export const MobileCovenantView: React.FC = () => {
       </div>
 
       {/* 5. Covenant Activity Timeline */}
-      <div className="p-3.5 sm:p-5 kaspriv-card space-y-4">
+      <div className="py-3.5 px-1 space-y-4 mb-8">
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-[#70C7BA]" />
           <h3 className="text-sm font-extrabold text-slate-100">Covenant Activity Timeline</h3>

@@ -127,7 +127,7 @@ export const MainLandingPage: React.FC = () => {
     const cleaned = cleanMnemonic(importWordsText);
     const words = cleaned ? cleaned.split(' ') : [];
     if (words.length !== 12 && words.length !== 24) {
-      showToast('Please enter exactly 12 or 24 seed words separated by spaces', 'error');
+      showToast('Please enter valid seed words separated by spaces', 'error');
       return;
     }
 

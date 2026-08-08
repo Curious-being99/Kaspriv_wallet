@@ -14,6 +14,7 @@ import { WalletSetupModal } from './components/WalletSetupModal';
 import { SignMessageModal } from './components/SignMessageModal';
 import { CompoundUtxoModal } from './components/CompoundUtxoModal';
 import { CovenantModal } from './components/CovenantModal';
+import { AssetDetailModal } from './components/AssetDetailModal';
 import { MainLandingPage } from './components/MainLandingPage';
 import { LogoutModal } from './components/LogoutModal';
 import { DevConsoleDrawer } from './components/DevConsoleDrawer';
@@ -54,24 +55,20 @@ const WalletAppContent: React.FC = () => {
             <MainCard />
 
             {/* Quick Mobile Action Shortcuts */}
-            <div className="w-full px-4 space-y-2.5 py-1">
+            <div className="w-full px-4 flex items-center justify-center gap-8 py-2">
               <button
                 onClick={() => setIsSendOpen(true)}
-                className={`w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-2xl font-extrabold text-sm transition-all shadow-md active:scale-[0.98] ${
-                  activeWallet?.isWatchOnly || activeWallet?.isImportedKpub
-                    ? 'bg-[#131924] text-slate-400 border border-[#212B38] opacity-80'
-                    : 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] shadow-[#70C7BA]/15'
-                }`}
+                className="flex items-center gap-2 py-2 px-3 text-[#70C7BA] hover:text-[#5eead4] font-extrabold text-sm transition-all active:scale-95 cursor-pointer"
               >
-                <ArrowUpRight className="w-4.5 h-4.5 stroke-[3]" />
+                <ArrowUpRight className="w-5 h-5 stroke-[3]" />
                 <span>{activeWallet?.isWatchOnly || activeWallet?.isImportedKpub ? 'Send (Watch-Only)' : 'Send'}</span>
               </button>
 
               <button
                 onClick={() => setIsReceiveOpen(true)}
-                className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-2xl bg-[#131924] hover:bg-[#1A2330] border border-[#212B38] text-slate-100 font-bold text-sm transition-all shadow-md active:scale-[0.98]"
+                className="flex items-center gap-2 py-2 px-3 text-slate-100 hover:text-[#70C7BA] font-extrabold text-sm transition-all active:scale-95 cursor-pointer"
               >
-                <ArrowDownLeft className="w-4.5 h-4.5 text-[#70C7BA] stroke-[2.5]" />
+                <ArrowDownLeft className="w-5 h-5 stroke-[2.5]" />
                 <span>Receive</span>
               </button>
             </div>
@@ -98,6 +95,7 @@ const WalletAppContent: React.FC = () => {
       <SignMessageModal />
       <CompoundUtxoModal />
       <CovenantModal />
+      <AssetDetailModal />
       <LogoutModal />
       <DevConsoleDrawer />
       <IndexingOverlay />

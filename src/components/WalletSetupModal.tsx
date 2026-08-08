@@ -100,7 +100,7 @@ export const WalletSetupModal: React.FC = () => {
     const words = cleaned ? cleaned.split(' ') : [];
 
     if (words.length !== 12 && words.length !== 24) {
-      showToast('Kaspa seed phrase must be 12 or 24 words', 'error');
+      showToast('Kaspa seed phrase must be 24 words', 'error');
       return;
     }
 
@@ -317,7 +317,7 @@ export const WalletSetupModal: React.FC = () => {
                     </div>
                     <div>
                       <h3 className="text-xs font-extrabold text-slate-100">Import Seed</h3>
-                      <p className="text-[10px] text-slate-400 mt-0.5">12 or 24-word seed phrase</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">24-word seed phrase</p>
                     </div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition-all" />

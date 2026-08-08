@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { CurrencyType } from '../types';
-import { decryptWithPassword, decryptMnemonicFromFragments, decryptPieces } from '../utils/crypto';
+import { decryptWithPassword } from '../utils/crypto';
 import { checkPassphraseStrength } from '../utils/strength';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 import {
@@ -22,7 +22,10 @@ import {
   Copy,
   Check,
   Trash2,
-  Search
+  Search,
+  FileText,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -56,6 +59,7 @@ export const MobileSettingsView: React.FC = () => {
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [showSeed, setShowSeed] = useState(false);
   const [copiedSeed, setCopiedSeed] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
 
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
 
@@ -95,23 +99,12 @@ export const MobileSettingsView: React.FC = () => {
     const decryptSeed = async () => {
       setIsDecrypting(true);
       try {
-        if (activeWallet?.encryptedMnemonicFragments) {
-          const decryptedM = await decryptMnemonicFromFragments(
-            activeWallet.encryptedMnemonicFragments,
-            seedPasswordInput
-          );
+        if (activeWallet?.encryptedMnemonic) {
+          const decryptedM = await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, seedPasswordInput);
           
           let decryptedP = null;
-          if (activeWallet?.encryptedPassphraseFragments) {
-            const parts = await decryptPieces(activeWallet.encryptedPassphraseFragments, seedPasswordInput);
-            decryptedP = parts.join('');
-          } else if (activeWallet?.encryptedPassphrase) {
-            decryptedP = await decryptWithPassword(
-              activeWallet.encryptedPassphrase.ciphertext,
-              activeWallet.encryptedPassphrase.salt,
-              activeWallet.encryptedPassphrase.iv,
-              seedPasswordInput
-            );
+          if (activeWallet?.encryptedPassphrase) {
+            decryptedP = await decryptWithPassword(activeWallet.encryptedPassphrase.ciphertext, activeWallet.encryptedPassphrase.salt, activeWallet.encryptedPassphrase.iv, seedPasswordInput, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
           }
           
           if (isMounted) {
@@ -128,12 +121,7 @@ export const MobileSettingsView: React.FC = () => {
           
           let decryptedP = null;
           if (activeWallet?.encryptedPassphrase) {
-            decryptedP = await decryptWithPassword(
-              activeWallet.encryptedPassphrase.ciphertext,
-              activeWallet.encryptedPassphrase.salt,
-              activeWallet.encryptedPassphrase.iv,
-              seedPasswordInput
-            );
+            decryptedP = await decryptWithPassword(activeWallet.encryptedPassphrase.ciphertext, activeWallet.encryptedPassphrase.salt, activeWallet.encryptedPassphrase.iv, seedPasswordInput, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
           }
           
           if (isMounted) {
@@ -203,10 +191,10 @@ export const MobileSettingsView: React.FC = () => {
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full space-y-4 py-2"
+      className="w-full space-y-2 py-2"
     >
       {/* 1. Connection Settings */}
-      <div className="p-3.5 sm:p-5 kaspriv-card space-y-4">
+      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Wifi className="w-5 h-5 text-[#70C7BA]" />
@@ -218,7 +206,7 @@ export const MobileSettingsView: React.FC = () => {
         </div>
         
         <div className="space-y-3">
-          <div className="flex items-start gap-3 p-3 rounded-2xl bg-[#090D12] ">
+          <div className="flex items-start gap-3 py-2 px-1">
             <Database className="w-4 h-4 text-slate-400 mt-0.5" />
             <div>
               <div className="text-xs font-bold text-slate-200">Kaspa Node</div>
@@ -226,7 +214,7 @@ export const MobileSettingsView: React.FC = () => {
             </div>
           </div>
           
-          <div className="flex items-start gap-3 p-3 rounded-2xl bg-[#090D12] ">
+          <div className="flex items-start gap-3 py-2 px-1">
             <Globe className="w-4 h-4 text-slate-400 mt-0.5" />
             <div>
               <div className="text-xs font-bold text-slate-200">REST API</div>
@@ -235,7 +223,7 @@ export const MobileSettingsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-start gap-3 p-3 rounded-2xl bg-[#090D12] ">
+          <div className="flex items-start gap-3 py-2 px-1">
             <Compass className="w-4 h-4 text-slate-400 mt-0.5" />
             <div>
               <div className="text-xs font-bold text-slate-200">Kaspa Explorer</div>
@@ -246,7 +234,7 @@ export const MobileSettingsView: React.FC = () => {
       </div>
 
       {/* 2. Display Currency */}
-      <div className="p-3.5 sm:p-5 kaspriv-card space-y-3">
+      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-3">
         <div className="flex items-center gap-2">
           <Coins className="w-5 h-5 text-[#70C7BA]" />
           <h3 className="text-sm font-extrabold text-slate-100">Display Currency</h3>
@@ -269,7 +257,7 @@ export const MobileSettingsView: React.FC = () => {
       </div>
 
       {/* 2. Password Lock Security */}
-      <div className="p-3.5 sm:p-5 kaspriv-card space-y-3">
+      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Lock className="w-5 h-5 text-[#70C7BA]" />
@@ -330,7 +318,7 @@ export const MobileSettingsView: React.FC = () => {
       </div>
 
       {/* 3. Encrypted Seed Phrase Backup Card */}
-      <div className="p-3.5 sm:p-5 kaspriv-card space-y-3">
+      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Cpu className="w-5 h-5 text-[#70C7BA]" />
@@ -467,7 +455,7 @@ export const MobileSettingsView: React.FC = () => {
       </div>
 
       {/* 4. Auto Lock Security */}
-      <div className={`p-4 sm:p-5 kaspriv-card space-y-4 transition-all duration-300 ${!isPasswordEnabled ? 'opacity-60 grayscale-[0.5]' : ''}`}>
+      <div className={`py-3.5 px-1 border-b border-[#212B38]/40 space-y-4 transition-all duration-300 ${!isPasswordEnabled ? 'opacity-60 grayscale-[0.5]' : ''}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-[#70C7BA]/10 text-[#70C7BA]">
@@ -546,7 +534,7 @@ export const MobileSettingsView: React.FC = () => {
       </div>
 
       {/* 4. Tools & Actions */}
-      <div className="p-3.5 sm:p-5 kaspriv-card space-y-2">
+      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-2">
         <button
           onClick={scanWalletChainIndex}
           disabled={isScanningChain}
@@ -583,6 +571,41 @@ export const MobileSettingsView: React.FC = () => {
           </div>
           <ChevronRight className="w-4 h-4" />
         </button>
+      </div>
+
+      {/* 5. Terms & Conditions */}
+      <div className="py-3.5 px-1 space-y-2 mb-8">
+        <button
+          onClick={() => setShowTerms(!showTerms)}
+          className="w-full flex items-center justify-between p-3 rounded-2xl bg-[#090D12] hover:border-[#70C7BA] text-xs text-slate-200 transition-all group"
+        >
+          <div className="flex items-center gap-3">
+            <FileText className="w-4 h-4 text-slate-400 group-hover:text-[#70C7BA] transition-colors" />
+            <span className="font-semibold text-slate-300">Terms and Conditions</span>
+          </div>
+          {showTerms ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+        </button>
+        {showTerms && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="p-4 rounded-2xl bg-[#090D12] border border-[#212B38]/50 text-[10px] text-slate-400 space-y-3 leading-relaxed"
+          >
+            <h4 className="text-xs font-bold text-slate-200 mb-2">Kaspriv Secure mobile web wallet Terms</h4>
+            <p>
+              By using this non-custodial wallet, you acknowledge and agree to the following terms:
+            </p>
+            <ul className="list-disc pl-4 space-y-1.5">
+              <li><strong className="text-slate-300">Self-Custody:</strong> You are solely responsible for securing your 24-word seed phrase and any password or passphrase. The wallet operates entirely locally on your device; no servers store your sensitive data.</li>
+              <li><strong className="text-slate-300">No Recovery:</strong> If you lose your seed phrase, password, or passphrase, your funds will be permanently lost. There is no mechanism to recover them.</li>
+              <li><strong className="text-slate-300">Risk Acknowledgment:</strong> Cryptocurrency transactions are irreversible. You assume all risks associated with sending, receiving, and storing digital assets.</li>
+              <li><strong className="text-slate-300">Software Usage:</strong> The wallet is provided "as is" without warranties of any kind. You are responsible for ensuring your device environment (browser, OS) is free of malware.</li>
+            </ul>
+            <p className="mt-2 text-rose-400/80">
+              Never share your seed phrase, password, or passphrase with anyone.
+            </p>
+          </motion.div>
+        )}
       </div>
     </motion.div>
   );

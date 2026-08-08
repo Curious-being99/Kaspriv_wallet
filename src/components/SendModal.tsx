@@ -8,7 +8,7 @@ import {
   shortenAddress,
   generateDeterministicAddress,
 } from '../utils/kaspa';
-import { decryptWithPassword, decryptMnemonicFromFragments, decryptPieces } from '../utils/crypto';
+import { decryptWithPassword } from '../utils/crypto';
 import {
   X,
   ArrowUpRight,
@@ -111,11 +111,8 @@ export const SendModal: React.FC = () => {
     const verifyAndDecrypt = async () => {
       setIsPasswordDecrypting(true);
       try {
-        if (activeWallet?.encryptedMnemonicFragments) {
-          const decrypted = await decryptMnemonicFromFragments(
-            activeWallet.encryptedMnemonicFragments,
-            passwordInput
-          );
+        if (activeWallet?.encryptedMnemonic) {
+          const decrypted = await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, passwordInput);
           if (isMounted) {
             setIsPasswordCorrect(true);
             setDecryptedMnemonic(decrypted);
@@ -156,7 +153,7 @@ export const SendModal: React.FC = () => {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [passwordInput, isPasswordEnabled, isSendOpen, activeWallet?.id, activeWallet?.encryptedMnemonic, activeWallet?.encryptedMnemonicFragments, password]);
+  }, [passwordInput, isPasswordEnabled, isSendOpen, activeWallet?.id, activeWallet?.encryptedMnemonic, password]);
 
   const getMnemonicForSigning = async (): Promise<string | null> => {
     if (isPasswordEnabled && decryptedMnemonic) {
@@ -167,12 +164,9 @@ export const SendModal: React.FC = () => {
       return activeWallet.mnemonic;
     }
 
-    if (isPasswordEnabled && activeWallet?.encryptedMnemonicFragments && passwordInput) {
+    if (isPasswordEnabled && activeWallet?.encryptedMnemonic && passwordInput) {
       try {
-        const decrypted = await decryptMnemonicFromFragments(
-          activeWallet.encryptedMnemonicFragments,
-          passwordInput
-        );
+        const decrypted = await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, passwordInput);
         return decrypted;
       } catch (e) {}
     }
@@ -199,21 +193,9 @@ export const SendModal: React.FC = () => {
       return passphraseInput;
     }
 
-    if (isPasswordEnabled && activeWallet?.encryptedPassphraseFragments && passwordInput) {
-      try {
-        const parts = await decryptPieces(activeWallet.encryptedPassphraseFragments, passwordInput);
-        return parts.join('') || undefined;
-      } catch (e) {}
-    }
-
     if (isPasswordEnabled && activeWallet?.encryptedPassphrase && passwordInput) {
       try {
-        const decrypted = await decryptWithPassword(
-          activeWallet.encryptedPassphrase.ciphertext,
-          activeWallet.encryptedPassphrase.salt,
-          activeWallet.encryptedPassphrase.iv,
-          passwordInput
-        );
+        const decrypted = await decryptWithPassword(activeWallet.encryptedPassphrase.ciphertext, activeWallet.encryptedPassphrase.salt, activeWallet.encryptedPassphrase.iv, passwordInput, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
         return decrypted || undefined;
       } catch (e) {}
     }

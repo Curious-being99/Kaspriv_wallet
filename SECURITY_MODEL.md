@@ -1,4 +1,4 @@
-# Kaspriv Wallet Security Model
+# Kaspa Wallet Security Model
 
 This document outlines the security architecture, cryptographic primitives, and data protection mechanisms implemented in the Kaspa Wallet.
 
@@ -14,26 +14,20 @@ The wallet uses **Argon2id** (via `hash-wasm`) to derive a secure cryptographic 
 *   **Hash Length:** 32 bytes (yielding a 256-bit key for AES)
 *   **Salt:** A unique, cryptographically secure 16-byte random salt is generated for key derivation.
 
+*Note: These parameters are selected with reference to RFC 9106 and constrained for the target Android environment, balancing robust security against brute-force attacks with reasonable on-device performance.*
+
 ### Symmetric Encryption: AES-256-GCM
 All sensitive data (e.g., mnemonic seed phrases) is encrypted using **AES-256 in Galois/Counter Mode (GCM)** via the native Web Crypto API (`window.crypto.subtle`).
 
 *   **Key:** Derived from the user's password using the Argon2id parameters defined above. The password is *never* used directly as an encryption key.
 *   **Nonce/IV:** A cryptographically secure, fresh 12-byte random Initialization Vector (IV) is generated for *every single encryption operation*. Nonces are never reused.
-*   **Authentication:** AES-GCM provides authenticated encryption. The GCM authentication tag is automatically verified during decryption. If the ciphertext or IV has been tampered with, decryption fails securely, preventing chosen-ciphertext attacks.
+*   **Authentication (AAD):** AES-GCM provides authenticated encryption. The GCM authentication tag is automatically verified during decryption. Furthermore, the wallet leverages **Additional Authenticated Data (AAD)** to bind the ciphertext to a specific context (e.g., `KASPRIV-WALLET-v1|KASPA-MAINNET|MNEMONIC`). If the ciphertext, IV, or context has been tampered with, decryption fails securely, preventing chosen-ciphertext and context-manipulation attacks.
 
 ## 2. Data Storage and Obfuscation
 
-### Fragmented Mnemonic Storage
-To mitigate the risk of data extraction from untrusted storage environments (like browser IndexedDB or LocalStorage), the wallet employs a fragmented storage mechanism for the seed phrase.
-
-1.  **Splitting:** The 24-word mnemonic is split into three distinct fragments (parts).
-2.  **Shuffling:** The fragments are cryptographically shuffled so their storage order does not match their logical order.
-3.  **Unique Encryption:** While all fragments share the same Argon2id-derived master key, *each fragment is encrypted with its own unique 12-byte random IV*.
-4.  **Verification:** Each fragment retains a cryptographic order index, ensuring the mnemonic can only be reconstructed if the decryption is fully authenticated and successful.
-
 ### Untrusted Storage Model
 The wallet treats the underlying storage (IndexedDB) as entirely untrusted. Even if an attacker gains full read access to the local database file, they will only retrieve:
-*   Hex-encoded AES-GCM ciphertext fragments
+*   Hex-encoded AES-GCM ciphertexts
 *   Random 16-byte Argon2id salts
 *   Random 12-byte AES-GCM IVs
 
@@ -49,13 +43,17 @@ While JavaScript's garbage collector makes absolute memory wiping challenging, t
     *   Derived Argon2id key material (`keyBytes`)
     *   Plaintext mnemonic arrays (`plaintextBytes`)
     *   Decrypted data buffers (`decryptedArray`)
-*   **Lifecycle:** These buffers are zeroed out synchronously before the function returns or the promise resolves, minimizing the window in which plaintext secrets reside in memory.
+*   **Lifecycle:** Sensitive application-managed buffers are explicitly zeroized immediately after use; runtime-managed copies remain outside the application's direct memory-control boundary.
 
 ## 4. Execution Environment Security
 
 *   **WebAssembly (WASM):** Heavy cryptographic operations (Argon2id hashing, Kaspa core operations via `kaspa-wasm`) run within WebAssembly sandboxes, reducing the risk of side-channel leaks typical of pure JavaScript implementations.
 *   **Web Crypto API:** AES-GCM operations utilize the browser's native, highly optimized, and audited `crypto.subtle` API, ensuring that key material (once imported into the `CryptoKey` object) is managed securely by the browser engine and cannot be exported back to JavaScript.
 
-## Summary
+## Summary & Security Assessment
 
-The wallet's security model assumes the host device may be compromised at the storage layer. By combining **Argon2id** (for robust key derivation), **AES-256-GCM** (for authenticated encryption), **fragmented and shuffled storage**, and **in-memory wiping**, the wallet ensures that the user's seed phrase remains secure at rest and is only briefly exposed in memory during active, authenticated use.
+The wallet's architecture represents a solid encrypted-at-rest design. The security boundary relies on a single cohesive, authenticated ciphertext:
+
+`Password -> Argon2id -> AES-256-GCM -> encrypted seed -> untrusted IndexedDB`
+
+By combining **Argon2id** (for robust key derivation), **AES-256-GCM with Context Binding (AAD)** (for authenticated encryption), and **in-memory wiping**, the wallet ensures that the user's seed phrase remains secure at rest and is only briefly exposed in memory during active, authenticated use.
