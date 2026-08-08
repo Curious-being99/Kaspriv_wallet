@@ -358,15 +358,15 @@ export function getCovenantAddressAndScript(
 }
 
 /**
- * Helper to convert a Kaspa address into a scriptPublicKey hex string
+ * Helper to convert a Kaspa address into a scriptPublicKey bytes
  */
-export function addressToScriptPublicKeyHex(address: string): string {
-  if (!address) return '';
+export function addressToScriptPublicKeyBytes(address: string): Uint8Array {
+  if (!address) return new Uint8Array(0);
   const trimmed = address.trim();
 
   // If already hex
   if (/^[0-9a-fA-F]{64,80}$/.test(trimmed)) {
-    return trimmed;
+    return Buffer.from(trimmed, 'hex');
   }
 
   // Extract payload after prefix
@@ -379,25 +379,45 @@ export function addressToScriptPublicKeyHex(address: string): string {
     if (idx !== -1) words.push(idx);
   }
 
-  if (words.length < 8) return '';
+  if (words.length < 8) return new Uint8Array(0);
   // Remove 8 checksum words
   const dataWords = words.slice(0, words.length - 8);
   const bytes = convertBits(dataWords, 5, 8, false);
 
-  if (bytes.length < 33) return '';
+  if (bytes.length < 33) return new Uint8Array(0);
   const version = bytes[0];
-  const payloadHex = Buffer.from(bytes.slice(1)).toString('hex');
+  const payload = bytes.slice(1);
 
   // P2PKH (version 0x00): 20 + [32 bytes pubkey hash] + ac
   if (version === 0x00) {
-    return `20${payloadHex}ac`;
+    const script = new Uint8Array(34);
+    script[0] = 0x20;
+    script.set(payload, 1);
+    script[33] = 0xAC;
+    return script;
   }
   // P2SH (version 0x08): aa + 20 + [32 bytes script hash] + 87
   if (version === 0x08) {
-    return `aa20${payloadHex}87`;
+    const script = new Uint8Array(35);
+    script[0] = 0xAA;
+    script[1] = 0x20;
+    script.set(payload, 2);
+    script[34] = 0x87;
+    return script;
   }
 
-  return `20${payloadHex}ac`;
+  const script = new Uint8Array(34);
+  script[0] = 0x20;
+  script.set(payload, 1);
+  script[33] = 0xAC;
+  return script;
+}
+
+/**
+ * Helper to convert a Kaspa address into a scriptPublicKey hex string
+ */
+export function addressToScriptPublicKey(address: string): string {
+  return Buffer.from(addressToScriptPublicKeyBytes(address)).toString('hex');
 }
 
 /**
@@ -611,7 +631,7 @@ export async function buildKaspaTransaction(
         },
         utxoEntry: {
           amount: BigInt(u.utxoEntry?.amount || u.amount || 0),
-          scriptPublicKey: u.utxoEntry?.scriptPublicKey?.scriptPublicKey || u.utxoEntry?.scriptPublicKey || addressToScriptPublicKeyHex(u.address || changeAddress || toAddress),
+          scriptPublicKey: u.utxoEntry?.scriptPublicKey?.scriptPublicKey || u.utxoEntry?.scriptPublicKey || addressToScriptPublicKey(u.address || changeAddress || toAddress),
           blockDaaScore: BigInt(u.utxoEntry?.blockDaaScore || u.blockdaaScore || u.blockDaaScore || 0),
           isCoinbase: Boolean(u.utxoEntry?.isCoinbase || u.isCoinbase || false)
         }
@@ -648,7 +668,7 @@ export async function buildKaspaTransaction(
 
   const outputs = [{
     amount: Number(amountSompi),
-    scriptPublicKey: { scriptPublicKey: addressToScriptPublicKeyHex(toAddress), version: 0 }
+    scriptPublicKey: { scriptPublicKey: addressToScriptPublicKey(toAddress), version: 0 }
   }];
 
   const totalInputSompi = utxos.reduce((acc, u) => acc + BigInt(u.utxoEntry?.amount || u.amount || 0), 0n);
@@ -656,7 +676,7 @@ export async function buildKaspaTransaction(
   if (changeSompi > 0n && changeAddress) {
     outputs.push({
       amount: Number(changeSompi),
-      scriptPublicKey: { scriptPublicKey: addressToScriptPublicKeyHex(changeAddress), version: 0 }
+        scriptPublicKey: { scriptPublicKey: addressToScriptPublicKey(changeAddress), version: 0 }
     });
   }
 
@@ -737,7 +757,7 @@ export async function signTransactionWithPrivateKeyBytes(
   txData.inputs.forEach((input: any, i: number) => {
     const u = input.utxo;
     const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
-    const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || u.scriptPublicKey || addressToScriptPublicKeyHex(u.address);
+    const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || u.scriptPublicKey || addressToScriptPublicKey(u.address);
     const scriptForSighashBytes = hexToBytes(spkHex);
 
     const preimage = concatBytes(

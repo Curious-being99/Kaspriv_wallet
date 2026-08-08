@@ -3,7 +3,7 @@ import {
   buildKaspaTransaction, 
   signTransactionWithPrivateKeyBytes, 
   signKaspaMessage, 
-  addressToScriptPublicKeyHex,
+  addressToScriptPublicKey,
   wipe 
 } from './kaspa';
 import { NetworkType } from '../types';
@@ -132,7 +132,7 @@ function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): voi
     
     // Check deep into WASM structure if possible
     if (transaction.mtx && Array.isArray(transaction.mtx.outputs)) {
-      const expectedScriptPubKey = addressToScriptPublicKeyHex(intent.toAddress);
+      const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress);
       const destinationOutput = transaction.mtx.outputs.find((o: any) => 
         (BigInt(o.amount) === intent.amountSompi) && 
         (o.scriptPublicKey?.scriptPublicKey === expectedScriptPubKey || o.script_public_key?.script_public_key === expectedScriptPubKey)
@@ -143,7 +143,7 @@ function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): voi
     }
   } else {
     // For manual transactions, we can inspect the outputs array
-    const expectedScriptPubKey = addressToScriptPublicKeyHex(intent.toAddress);
+    const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress);
     const destinationOutput = transaction.outputs.find((o: any) => 
       o.amount === Number(intent.amountSompi) && 
       o.scriptPublicKey?.scriptPublicKey === expectedScriptPubKey

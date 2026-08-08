@@ -52,6 +52,8 @@ import {
   createCovenantRedeemScript,
   covenantIdManager,
   CovenantType,
+  getPrivateKeyBytesFromMnemonic,
+  wipe,
 } from '../utils/kaspa';
 
 export interface IndexingState {
