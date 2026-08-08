@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
-import { getPrivateKeyFromMnemonic, signKaspaMessage } from '../utils/kaspa';
 import { decryptWithPassword } from '../utils/crypto';
 import { IsolatedSigner } from '../utils/IsolatedSigner';
-import { X, FileCode, Check, Copy, Lock } from 'lucide-react';
+import { X, FileCode, Check, Copy, Lock, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 
@@ -59,10 +58,6 @@ export const SignMessageModal: React.FC = () => {
     try {
       const res = await IsolatedSigner.signMessageIsolated(seedToUse, passphraseToUse, message.trim());
       
-      // Wipe seed from memory
-      seedToUse = '';
-      passphraseToUse = '';
-
       if (res.success && res.signature) {
         setSignature(res.signature);
         showToast('Message signed with Kaspa Schnorr signature', 'success');
@@ -71,6 +66,12 @@ export const SignMessageModal: React.FC = () => {
       }
     } catch (err: any) {
       showToast('Failed to sign message', 'error');
+    } finally {
+      // --------------------------------------------------------
+      // ALWAYS wipe application-managed sensitive references
+      // --------------------------------------------------------
+      seedToUse = null;
+      passphraseToUse = null;
     }
   };
 

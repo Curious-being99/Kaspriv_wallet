@@ -18,6 +18,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { wipeStringArray } from '../utils/crypto';
 
 export const MainLandingPage: React.FC = () => {
   const {
@@ -113,15 +114,22 @@ export const MainLandingPage: React.FC = () => {
     }
 
     const name = walletName.trim() || 'Primary Wallet';
-    const words = createdWords;
+    const words = [...createdWords]; // copy to avoid mutation
     const passInput = passphraseInput.trim() || undefined;
     const addrType = addressType;
 
-    resetState();
-    setIsLoggedOut(false);
-    setIsLocked(false);
+    try {
+      resetState();
+      setIsLoggedOut(false);
+      setIsLocked(false);
 
-    await createNewWallet(name, words, passInput, addrType);
+      await createNewWallet(name, words, passInput, addrType);
+    } finally {
+      // Clear local sensitive variables
+      wipeStringArray(words);
+      setCreatedWords([]);
+      setPassphraseInput('');
+    }
   };
 
   const handleFinishImportSeed = async () => {
@@ -142,11 +150,18 @@ export const MainLandingPage: React.FC = () => {
     const passInput = passphraseInput.trim() || undefined;
     const addrType = addressType;
 
-    resetState();
-    setIsLoggedOut(false);
-    setIsLocked(false);
+    try {
+      resetState();
+      setIsLoggedOut(false);
+      setIsLocked(false);
 
-    await importSeedWallet(name, words, passInput, addrType);
+      await importSeedWallet(name, words, passInput, addrType);
+    } finally {
+      // Clear sensitive local variables
+      wipeStringArray(words);
+      setImportWordsText('');
+      setPassphraseInput('');
+    }
   };
 
   const handleFinishImportAddress = () => {
@@ -885,26 +900,36 @@ export const MainLandingPage: React.FC = () => {
                     const flow = pendingFlow;
                     const pass = setupPassword;
                     const name = walletName.trim() || (flow === 'create' ? 'Primary Wallet' : flow === 'import-seed' ? 'Restored Wallet' : 'Address Tracker');
-                    const words = flow === 'create' ? createdWords : cleanMnemonic(importWordsText).split(' ');
+                    const words = flow === 'create' ? [...createdWords] : cleanMnemonic(importWordsText).split(' ');
                     const passInput = passphraseInput.trim() || undefined;
                     const addrType = addressType;
                     const addr = addressInput.trim();
 
-                    // Hide landing page and reset form immediately so password page is never shown twice or kept during indexing
-                    resetState();
-                    setIsLoggedOut(false);
+                    try {
+                      // Hide landing page and reset form immediately so password page is never shown twice or kept during indexing
+                      resetState();
+                      setIsLoggedOut(false);
 
-                    if (flow === 'create') {
-                      await createNewWallet(name, words, passInput, addrType, pass);
-                    } else if (flow === 'import-seed') {
-                      await importSeedWallet(name, words, passInput, addrType, pass);
-                    } else if (flow === 'import-address') {
-                      importKpubWallet(name, addr, addrType);
-                      await setPassword(pass);
+                      if (flow === 'create') {
+                        await createNewWallet(name, words, passInput, addrType, pass);
+                      } else if (flow === 'import-seed') {
+                        await importSeedWallet(name, words, passInput, addrType, pass);
+                      } else if (flow === 'import-address') {
+                        importKpubWallet(name, addr, addrType);
+                        await setPassword(pass);
+                      }
+                      
+                      setIsLocked(true);
+                      setIsLoggedOut(false);
+                    } finally {
+                      // Clear sensitive local variables
+                      wipeStringArray(words);
+                      setCreatedWords([]);
+                      setImportWordsText('');
+                      setPassphraseInput('');
+                      setSetupPassword('');
+                      setConfirmSetupPassword('');
                     }
-                    
-                    setIsLocked(true);
-                    setIsLoggedOut(false);
                   }}
                   disabled={checkPassphraseStrength(setupPassword).score < 3 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}
                   className={`w-full py-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 ${

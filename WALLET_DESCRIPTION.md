@@ -11,7 +11,7 @@ The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side
     * **AES-256-GCM with AAD:** All wallet seeds and private keys are encrypted using native Web Crypto API (`window.crypto.subtle`) AES-256-GCM with 12-byte single-use random IVs and Context-Bound Additional Authenticated Data (AAD) (`KASPRIV-WALLET-v1|...`).
 * **Isolated Signing Environment & Instant Memory Sanitization:**
     * **Isolated Signing (`IsolatedSigner`):** Key derivation and signature generation execute in isolated transient scopes.
-    * **Cryptographic Wiping:** Secret buffers and key byte arrays are immediately zeroized using explicit byte-overwriting (`wipe()`) in `finally` blocks to minimize in-memory lifecycle.
+    * **Cryptographic Wiping:** Secret buffers are explicitly zeroized using byte-overwriting (`wipe()`) and WASM-side objects are released via `.free()` in `finally` blocks to return native memory as a best-effort release of the native representation.
 * **Independent Transaction Intent Verification:**
     * Before deriving keys or signing, `verifyTransactionIntent` independently validates recipient address prefix/network match, positive output amounts, fee parameters, and input UTXO sufficiency.
 * **Native Kaspa Network Integration:** Powered by `kaspa-wasm` and `@kaspa/core-lib`, providing native-level transaction construction, Schnorr signatures, P2PKH/P2SH address derivation, and covenant handling directly in the browser.

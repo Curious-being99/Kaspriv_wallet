@@ -1,12 +1,23 @@
 import { NetworkType } from '../types';
+import { mnemonicToSeedSync } from '@scure/bip39';
+import { HDKey } from '@scure/bip32';
 import { safeStringify } from './json';
 import * as bip39 from 'bip39';
-import { HDKey } from '@scure/bip32';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { concatBytes } from '@noble/hashes/utils.js';
 import * as secp from '@noble/secp256k1';
+/**
+ * Best-effort zeroization of application-managed byte buffers.
+ */
+export function wipe(
+  buffer: Uint8Array | null | undefined
+): void {
+  if (buffer) {
+    buffer.fill(0);
+  }
+}
 
 // Polyfill global TextDecoder/TextEncoder for WASM environment
 if (typeof globalThis !== 'undefined') {
@@ -327,19 +338,23 @@ export function getCovenantAddressAndScript(
   daaLock?: number,
   type?: string
 ): { address: string; redeemScriptHex: string; publicKeyHex: string } {
-  const privateKeyHex = getPrivateKeyFromMnemonic(mnemonic, passphrase);
-  const privKeyClean = privateKeyHex.startsWith('0x') ? privateKeyHex.slice(2) : privateKeyHex;
-  const privKeyBytes = new Uint8Array(privKeyClean.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
-  const pubKeyBytes = secp.schnorr.getPublicKey(privKeyBytes);
-  const pubKeyHex = Buffer.from(pubKeyBytes).toString('hex');
+  const privKeyBytes = getPrivateKeyBytesFromMnemonic(mnemonic, passphrase);
+  try {
+    const pubKeyBytes = secp.schnorr.getPublicKey(privKeyBytes);
+    const pubKeyHex = Buffer.from(pubKeyBytes).toString('hex');
 
-  const lock = daaLock || 0;
-  const res = createCovenantRedeemScript(pubKeyHex, lock, type || 'timelock');
-  return {
-    address: res.address,
-    redeemScriptHex: res.redeemScriptHex,
-    publicKeyHex: pubKeyHex,
-  };
+    const lock = daaLock || 0;
+    const res = createCovenantRedeemScript(pubKeyHex, lock, type || 'timelock');
+    
+    return {
+      address: res.address,
+      redeemScriptHex: res.redeemScriptHex,
+      publicKeyHex: pubKeyHex,
+    };
+  } finally {
+    // Wipe derived bytes
+    wipe(privKeyBytes);
+  }
 }
 
 /**
@@ -570,59 +585,39 @@ export class CovenantIDManager {
 
 export const covenantIdManager = new CovenantIDManager();
 
-export async function createSignedTransaction(
+/**
+ * Internal helper to build an unsigned Kaspa transaction structure.
+ */
+export async function buildKaspaTransaction(
   utxos: any[],
   toAddress: string,
   amountSompi: bigint,
   changeAddress: string,
-  privateKeyHex: string,
-  feeSompi: bigint = 1000n,
+  feeSompi: bigint,
   addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
   redeemScriptHex?: string,
-  mnemonic?: string,
-  passphrase?: string,
   lockTime?: number
 ): Promise<any> {
   await ensureKaspaRuntime();
 
-  const privKeyClean = privateKeyHex.startsWith('0x') ? privateKeyHex.slice(2) : privateKeyHex;
-  const privKeyBytes = new Uint8Array(privKeyClean.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
-  const pubKeyBytes = secp.schnorr.getPublicKey(privKeyBytes);
-  const pubKeyHex = Buffer.from(pubKeyBytes).toString('hex');
-
-  const isP2SH = addressType === 'P2SH' || 
-    Boolean(changeAddress && changeAddress.includes(':p')) || 
-    utxos.some(u => (u.address && u.address.includes(':p')) || (typeof u.utxoEntry?.scriptPublicKey?.scriptPublicKey === 'string' && u.utxoEntry.scriptPublicKey.scriptPublicKey.startsWith('aa20')));
-
-  let p2shRedeemScript = redeemScriptHex;
-  if (isP2SH && !p2shRedeemScript) {
-    p2shRedeemScript = createP2SHRedeemScript(pubKeyHex).redeemScriptHex;
-  }
-
-  // Attempt WASM transaction creation if available
-  if (kaspaWasmModule && typeof kaspaWasmModule.createTransaction === 'function' && typeof kaspaWasmModule.signTransaction === 'function') {
+  // Try WASM first if available
+  if (kaspaWasmModule && typeof kaspaWasmModule.createTransaction === 'function') {
     try {
       const formattedUtxos = utxos.map(u => ({
-        address: changeAddress || toAddress,
+        address: u.address || changeAddress || toAddress,
         outpoint: {
           transactionId: u.outpoint?.transactionId || u.transactionId,
           index: Number(u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0))
         },
         utxoEntry: {
           amount: BigInt(u.utxoEntry?.amount || u.amount || 0),
-          scriptPublicKey: u.utxoEntry?.scriptPublicKey?.scriptPublicKey || u.utxoEntry?.scriptPublicKey || addressToScriptPublicKeyHex(changeAddress || toAddress),
-          blockDaaScore: BigInt(u.utxoEntry?.blockDaaScore || u.blockDaaScore || 0),
+          scriptPublicKey: u.utxoEntry?.scriptPublicKey?.scriptPublicKey || u.utxoEntry?.scriptPublicKey || addressToScriptPublicKeyHex(u.address || changeAddress || toAddress),
+          blockDaaScore: BigInt(u.utxoEntry?.blockDaaScore || u.blockdaaScore || u.blockDaaScore || 0),
           isCoinbase: Boolean(u.utxoEntry?.isCoinbase || u.isCoinbase || false)
         }
       }));
 
-      const outputs = [
-        {
-          address: toAddress,
-          amount: BigInt(amountSompi)
-        }
-      ];
-
+      const outputs = [{ address: toAddress, amount: BigInt(amountSompi) }];
       const mtx = kaspaWasmModule.createTransaction(
         formattedUtxos,
         outputs,
@@ -633,129 +628,93 @@ export async function createSignedTransaction(
         1n
       );
 
-      const privateKeyObj = new kaspaWasmModule.PrivateKey(privKeyClean);
-      const signedMtx = kaspaWasmModule.signTransaction(mtx, [privateKeyObj], true);
-
-      if (signedMtx) {
-        const jsonStr = typeof signedMtx.toJSON === 'function' ? signedMtx.toJSON() : safeStringify(signedMtx);
-        const txObj = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
-        const tx = txObj.tx || txObj;
-        if (tx && tx.inputs && tx.outputs) {
-          return { transaction: tx };
-        }
-      }
-    } catch (wasmErr) {
-      console.warn('kaspa-wasm tx creation notice, proceeding with exact JS sighash:', wasmErr);
+      return { type: 'wasm', mtx, utxos: formattedUtxos, toAddress, amountSompi, changeAddress, feeSompi, addressType, redeemScriptHex, lockTime };
+    } catch (err) {
+      console.warn('kaspa-wasm build failed, falling back to manual:', err);
     }
   }
 
-  // Primary/Fallback Exact Kaspa Sighash & Schnorr Transaction Builder
-  const SIGHASH_KEY = new TextEncoder().encode("TransactionSigningHash");
-
-  function writeUint16LE(val: number): Uint8Array {
-    const buf = new Uint8Array(2);
-    buf[0] = val & 0xff;
-    buf[1] = (val >> 8) & 0xff;
-    return buf;
-  }
-
-  function writeUint32LE(val: number): Uint8Array {
-    const buf = new Uint8Array(4);
-    const view = new DataView(buf.buffer);
-    view.setUint32(0, val, true);
-    return buf;
-  }
-
-  function writeUint64LE(val: bigint): Uint8Array {
-    const buf = new Uint8Array(8);
-    const view = new DataView(buf.buffer);
-    view.setBigUint64(0, BigInt(val), true);
-    return buf;
-  }
-
-  function hexToBytes(hex: string): Uint8Array {
-    const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
-    if (!clean) return new Uint8Array(0);
-    const matches = clean.match(/.{1,2}/g);
-    return matches ? new Uint8Array(matches.map(b => parseInt(b, 16))) : new Uint8Array(0);
-  }
-
-  function encodeScriptPushData(hexStr: string): string {
-    const bytes = hexToBytes(hexStr);
-    const len = bytes.length;
-    if (len <= 75) {
-      const lenHex = len.toString(16).padStart(2, '0');
-      return `${lenHex}${hexStr}`;
-    } else if (len <= 255) {
-      const lenHex = len.toString(16).padStart(2, '0');
-      return `4c${lenHex}${hexStr}`;
-    } else {
-      const lenHex = writeUint16LE(len);
-      return `4d${Buffer.from(lenHex).toString('hex')}${hexStr}`;
-    }
-  }
-
-  function hashBlake2bKeyed(data: Uint8Array): Uint8Array {
-    return blake2b(data, { key: SIGHASH_KEY, dkLen: 32 });
-  }
-
-  // Calculate total UTXO input sum
-  let totalInputSompi = 0n;
-  const inputs: any[] = [];
-
-  utxos.forEach(u => {
-    const txId = u.outpoint?.transactionId || u.transactionId || '0000000000000000000000000000000000000000000000000000000000000000';
-    const vout = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
-    const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
-    totalInputSompi += amt;
-
-    inputs.push({
-      previousOutpoint: {
-        transactionId: txId,
-        index: Number(vout),
-      },
-      signatureScript: '',
-      sequence: 0,
-      sigOpCount: 1,
-    });
-  });
-
-  const outputs: any[] = [
-    {
-      amount: Number(amountSompi),
-      scriptPublicKey: {
-        scriptPublicKey: addressToScriptPublicKeyHex(toAddress),
-        version: 0,
-      },
+  // Manual construction
+  const inputs: any[] = utxos.map(u => ({
+    previousOutpoint: {
+      transactionId: u.outpoint?.transactionId || u.transactionId || '0000000000000000000000000000000000000000000000000000000000000000',
+      index: Number(u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)),
     },
-  ];
+    signatureScript: '',
+    sequence: 0,
+    sigOpCount: 1,
+    utxo: u // Keep reference for signing
+  }));
 
-  // Calculate change
+  const outputs = [{
+    amount: Number(amountSompi),
+    scriptPublicKey: { scriptPublicKey: addressToScriptPublicKeyHex(toAddress), version: 0 }
+  }];
+
+  const totalInputSompi = utxos.reduce((acc, u) => acc + BigInt(u.utxoEntry?.amount || u.amount || 0), 0n);
   const changeSompi = totalInputSompi - amountSompi - feeSompi;
   if (changeSompi > 0n && changeAddress) {
     outputs.push({
       amount: Number(changeSompi),
-      scriptPublicKey: {
-        scriptPublicKey: addressToScriptPublicKeyHex(changeAddress),
-        version: 0,
-      },
+      scriptPublicKey: { scriptPublicKey: addressToScriptPublicKeyHex(changeAddress), version: 0 }
     });
   }
 
-  // Pre-calculate outpointsHash, sequencesHash, sigOpCountsHash, outputsHash, payloadHash
+  return { type: 'manual', inputs, outputs, utxos, lockTime: lockTime || 0, addressType, redeemScriptHex };
+}
+
+/**
+ * Internal helper to sign a transaction structure with raw private key bytes.
+ */
+export async function signTransactionWithPrivateKeyBytes(
+  txData: any,
+  privateKeyBytes: Uint8Array
+): Promise<any> {
+  if (kaspaWasmModule && txData.type === 'wasm') {
+    const privateKeyObj = new kaspaWasmModule.PrivateKey(privateKeyBytes);
+    try {
+      const signedMtx = kaspaWasmModule.signTransaction(txData.mtx, [privateKeyObj], true);
+      
+      if (signedMtx) {
+        const jsonStr = typeof signedMtx.toJSON === 'function' ? signedMtx.toJSON() : safeStringify(signedMtx);
+        const txObj = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+        return (txObj.tx || txObj);
+      }
+      throw new Error('Security failure: kaspa-wasm signing failed to produce a valid signed transaction.');
+    } finally {
+      if (typeof privateKeyObj.free === 'function') {
+        privateKeyObj.free();
+      }
+    }
+  }
+
+  if (txData.type === 'wasm') {
+    throw new Error('Security failure: Transaction was prepared for WASM signing but the WASM module is unavailable.');
+  }
+
+  // Manual signing logic for non-WASM data types
+  const SIGHASH_KEY = new TextEncoder().encode("TransactionSigningHash");
+  const hashBlake2bKeyed = (data: Uint8Array) => blake2b(data, { key: SIGHASH_KEY, dkLen: 32 });
+  const writeUint16LE = (val: number) => { const b = new Uint8Array(2); b[0] = val & 0xff; b[1] = (val >> 8) & 0xff; return b; };
+  const writeUint32LE = (val: number) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, val, true); return b; };
+  const writeUint64LE = (val: bigint) => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(val), true); return b; };
+  const hexToBytes = (hex: string) => {
+    const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+    const matches = clean.match(/.{1,2}/g);
+    return matches ? new Uint8Array(matches.map(b => parseInt(b, 16))) : new Uint8Array(0);
+  };
+
+  const pubKeyBytes = secp.schnorr.getPublicKey(privateKeyBytes);
+  const pubKeyHex = Buffer.from(pubKeyBytes).toString('hex');
+
   const outpointParts: Uint8Array[] = [];
   const seqParts: Uint8Array[] = [];
   const sigOpCountParts: Uint8Array[] = [];
-  const sigOpCountVal = 1;
-
-  utxos.forEach(u => {
-    const txId = u.outpoint?.transactionId || u.transactionId || '0000000000000000000000000000000000000000000000000000000000000000';
-    const vout = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
-    outpointParts.push(hexToBytes(txId));
-    outpointParts.push(writeUint32LE(Number(vout)));
-
+  txData.inputs.forEach((input: any) => {
+    outpointParts.push(hexToBytes(input.previousOutpoint.transactionId));
+    outpointParts.push(writeUint32LE(input.previousOutpoint.index));
     seqParts.push(writeUint64LE(0n));
-    sigOpCountParts.push(new Uint8Array([sigOpCountVal]));
+    sigOpCountParts.push(new Uint8Array([1]));
   });
 
   const previousOutpointsHash = hashBlake2bKeyed(concatBytes(...outpointParts));
@@ -763,7 +722,7 @@ export async function createSignedTransaction(
   const sigOpCountsHash = hashBlake2bKeyed(concatBytes(...sigOpCountParts));
 
   const outputParts: Uint8Array[] = [];
-  outputs.forEach(out => {
+  txData.outputs.forEach((out: any) => {
     const amt = BigInt(out.amount);
     const spkBytes = hexToBytes(out.scriptPublicKey.scriptPublicKey);
     outputParts.push(writeUint64LE(amt));
@@ -772,88 +731,116 @@ export async function createSignedTransaction(
     outputParts.push(spkBytes);
   });
   const outputsHash = hashBlake2bKeyed(concatBytes(...outputParts));
-  const payloadHash = new Uint8Array(32); // native subnetwork with no payload uses 32 bytes of zeros
+  const payloadHash = new Uint8Array(32);
   const subnetworkIdBytes = new Uint8Array(20);
 
-  // Generate Schnorr signatures for inputs using Kaspa Sighash preimage
-  utxos.forEach((u, i) => {
-    const txId = u.outpoint?.transactionId || u.transactionId || '0000000000000000000000000000000000000000000000000000000000000000';
-    const vout = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
+  txData.inputs.forEach((input: any, i: number) => {
+    const u = input.utxo;
     const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
-    const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || 
-      (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || 
-      u.scriptPublicKey || 
-      addressToScriptPublicKeyHex(u.address || changeAddress || toAddress);
-    
-    // Kaspa sighash preimage ALWAYS uses the UTXO's scriptPublicKey, even for P2SH inputs!
-    const scriptForSighashHex = spkHex;
-    const scriptForSighashBytes = hexToBytes(scriptForSighashHex);
+    const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || u.scriptPublicKey || addressToScriptPublicKeyHex(u.address);
+    const scriptForSighashBytes = hexToBytes(spkHex);
 
     const preimage = concatBytes(
-      writeUint16LE(0), // version
+      writeUint16LE(0),
       previousOutpointsHash,
       sequencesHash,
       sigOpCountsHash,
-      hexToBytes(txId),
-      writeUint32LE(Number(vout)),
-      writeUint16LE(0), // script version
+      hexToBytes(input.previousOutpoint.transactionId),
+      writeUint32LE(input.previousOutpoint.index),
+      writeUint16LE(0),
       writeUint64LE(BigInt(scriptForSighashBytes.length)),
       scriptForSighashBytes,
       writeUint64LE(amt),
-      writeUint64LE(0n), // sequence
-      new Uint8Array([sigOpCountVal]),
+      writeUint64LE(0n),
+      new Uint8Array([1]),
       outputsHash,
-      writeUint64LE(BigInt(lockTime || 0)), // lockTime
+      writeUint64LE(BigInt(txData.lockTime || 0)),
       subnetworkIdBytes,
-      writeUint64LE(0n), // gas
+      writeUint64LE(0n),
       payloadHash,
-      new Uint8Array([0x01]) // SIGHASH_ALL
+      new Uint8Array([0x01])
     );
 
-    // Derive correct private key and public key for this UTXO if a derivation path is present
-    let inputPrivKeyBytes = privKeyBytes;
-    let inputPubKeyHex = pubKeyHex;
-
-    if (mnemonic && u.derivationPath) {
-      try {
-        const derivedPrivKey = getPrivateKeyFromMnemonic(mnemonic, passphrase, u.derivationPath);
-        const inputPrivKeyClean = derivedPrivKey.startsWith('0x') ? derivedPrivKey.slice(2) : derivedPrivKey;
-        inputPrivKeyBytes = new Uint8Array(inputPrivKeyClean.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
-        const inputPubKeyBytes = secp.schnorr.getPublicKey(inputPrivKeyBytes);
-        inputPubKeyHex = Buffer.from(inputPubKeyBytes).toString('hex');
-      } catch (err) {
-        console.warn('Failed to derive custom key for UTXO path:', u.derivationPath, err);
-      }
-    }
-
     const sigHash = hashBlake2bKeyed(preimage);
-    const rawSig = secp.schnorr.sign(sigHash, inputPrivKeyBytes);
+    const rawSig = secp.schnorr.sign(sigHash, privateKeyBytes);
     const sigWithSighash = `${Buffer.from(rawSig).toString('hex')}01`;
 
-    const isInputP2SH = 
-      Boolean(u.address && u.address.includes(':p')) || 
-      Boolean(spkHex && spkHex.startsWith('aa20'));
+    const isInputP2SH = txData.addressType === 'P2SH' || Boolean(u.address && u.address.includes(':p')) || Boolean(spkHex && spkHex.startsWith('aa20'));
 
     if (isInputP2SH) {
-      const inputRedeemScript = redeemScriptHex || createP2SHRedeemScript(inputPubKeyHex).redeemScriptHex;
-      const pushRedeemScript = encodeScriptPushData(inputRedeemScript);
-      inputs[i].signatureScript = `41${sigWithSighash}${pushRedeemScript}`;
-      inputs[i].sigOpCount = 1;
+      const inputRedeemScript = txData.redeemScriptHex || createP2SHRedeemScript(pubKeyHex).redeemScriptHex;
+      const pushRedeemScript = (()=>{
+        const bytes = hexToBytes(inputRedeemScript);
+        if (bytes.length <= 75) return `${bytes.length.toString(16).padStart(2, '0')}${inputRedeemScript}`;
+        if (bytes.length <= 255) return `4c${bytes.length.toString(16).padStart(2, '0')}${inputRedeemScript}`;
+        return `4d${Buffer.from(writeUint16LE(bytes.length)).toString('hex')}${inputRedeemScript}`;
+      })();
+      input.signatureScript = `41${sigWithSighash}${pushRedeemScript}`;
     } else {
-      inputs[i].signatureScript = `41${sigWithSighash}`;
-      inputs[i].sigOpCount = 1;
+      input.signatureScript = `41${sigWithSighash}`;
     }
   });
 
   return {
-    transaction: {
-      version: 0,
-      inputs,
-      outputs,
-      lockTime: lockTime || 0,
-      subnetworkId: '0000000000000000000000000000000000000000',
-    },
+    version: 0,
+    inputs: txData.inputs.map((inpt: any) => ({
+      previousOutpoint: inpt.previousOutpoint,
+      signatureScript: inpt.signatureScript,
+      sequence: inpt.sequence,
+      sigOpCount: inpt.sigOpCount
+    })),
+    outputs: txData.outputs,
+    lockTime: txData.lockTime,
+    subnetworkId: '0000000000000000000000000000000000000000'
   };
+}
+
+export async function createSignedTransaction(
+  utxos: any[],
+  toAddress: string,
+  amountSompi: bigint,
+  changeAddress: string,
+  privateKeyBytes: Uint8Array,
+  feeSompi: bigint,
+  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  redeemScriptHex?: string,
+  lockTime?: number
+): Promise<{
+  transaction: any;
+}> {
+  if (!(privateKeyBytes instanceof Uint8Array)) {
+    throw new TypeError('Private key must be provided as Uint8Array');
+  }
+
+  if (privateKeyBytes.length !== 32) {
+    throw new Error('Invalid private-key length');
+  }
+
+  const privateKeyCopy = new Uint8Array(privateKeyBytes);
+
+  try {
+    const transaction = await buildKaspaTransaction(
+      utxos,
+      toAddress,
+      amountSompi,
+      changeAddress,
+      feeSompi,
+      addressType,
+      redeemScriptHex,
+      lockTime
+    );
+
+    const signedTransaction = await signTransactionWithPrivateKeyBytes(
+      transaction,
+      privateKeyCopy
+    );
+
+    return {
+      transaction: signedTransaction
+    };
+  } finally {
+    wipe(privateKeyCopy);
+  }
 }
 
 /**
@@ -946,15 +933,19 @@ export async function generateDeterministicAddress(
   coinType: number = 111111
 ): Promise<string> {
   const seed = await bip39.mnemonicToSeed(mnemonic, passphrase || '');
-  const root = HDKey.fromMasterSeed(new Uint8Array(seed));
-  
-  const changeVal = isChange ? 1 : 0;
-  const path = `m/44'/${coinType}'/0'/${changeVal}/${index}`;
-  const child = root.derive(path);
-  
-  if (!child.publicKey) throw new Error('Failed to derive public key');
+  const seedArray = new Uint8Array(seed);
+  try {
+    const root = HDKey.fromMasterSeed(seedArray);
+    const changeVal = isChange ? 1 : 0;
+    const path = `m/44'/${coinType}'/0'/${changeVal}/${index}`;
+    const child = root.derive(path);
+    
+    if (!child.publicKey) throw new Error('Failed to derive public key');
 
-  return getAddressFromPublicKey(child.publicKey, addressType, prefix);
+    return getAddressFromPublicKey(child.publicKey, addressType, prefix);
+  } finally {
+    wipe(seedArray);
+  }
 }
 
 export interface DiscoveredAddressInfo {
@@ -987,51 +978,158 @@ export async function scanKaspaWalletChain(
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<ScannedWalletChainResult> {
   const seed = await bip39.mnemonicToSeed(mnemonic, passphrase || '');
-  const root = HDKey.fromMasterSeed(new Uint8Array(seed));
+  const seedArray = new Uint8Array(seed);
+  
+  try {
+    const root = HDKey.fromMasterSeed(seedArray);
+    const discoveredAddresses: DiscoveredAddressInfo[] = [];
+    const allUtxos: any[] = [];
+    const allTransactionsMap = new Map<string, any>();
+    let totalBalanceSompi = 0n;
 
-  const discoveredAddresses: DiscoveredAddressInfo[] = [];
-  const allUtxos: any[] = [];
-  const allTransactionsMap = new Map<string, any>();
-  let totalBalanceSompi = 0n;
+    // Derive primary address immediately
+    const primaryChild = root.derive("m/44'/111111'/0'/0/0");
+    const primaryAddress = getAddressFromPublicKey(primaryChild.publicKey!, addressType, prefix);
 
-  // Derive primary address immediately
-  const primaryChild = root.derive("m/44'/111111'/0'/0/0");
-  const primaryAddress = getAddressFromPublicKey(primaryChild.publicKey!, addressType, prefix);
-
-  // Quick mode for brand new wallet creation (gapLimit <= 1)
-  if (gapLimit <= 1) {
-    if (onProgress) onProgress(1, 0, 0n);
-    try {
-      const [balance, utxos, txs] = await Promise.all([
-        fetchKaspaAddressBalance(primaryAddress),
-        fetchKaspaAddressUtxos(primaryAddress),
-        fetchKaspaAddressTransactions(primaryAddress),
-      ]);
-      const currentBal = balance || 0n;
-      totalBalanceSompi = currentBal;
-      if (currentBal > 0n || (utxos && utxos.length > 0) || (txs && txs.length > 0)) {
-        discoveredAddresses.push({
-          address: primaryAddress,
-          balanceSompi: currentBal,
-          path: "m/44'/111111'/0'/0/0",
-          index: 0,
-          isChange: false,
-          coinType: 111111,
-        });
-        if (utxos && Array.isArray(utxos)) {
-          utxos.forEach((u: any) => allUtxos.push({ ...u, address: primaryAddress, derivationPath: "m/44'/111111'/0'/0/0" }));
-        }
-        if (txs && Array.isArray(txs)) {
-          txs.forEach((t: any) => {
-            const txid = t.transaction_id || t.txid;
-            if (txid) allTransactionsMap.set(txid, t);
+    // Quick mode for brand new wallet creation (gapLimit <= 1)
+    if (gapLimit <= 1) {
+      if (onProgress) onProgress(1, 0, 0n);
+      try {
+        const [balance, utxos, txs] = await Promise.all([
+          fetchKaspaAddressBalance(primaryAddress),
+          fetchKaspaAddressUtxos(primaryAddress),
+          fetchKaspaAddressTransactions(primaryAddress),
+        ]);
+        const currentBal = balance || 0n;
+        totalBalanceSompi = currentBal;
+        if (currentBal > 0n || (utxos && utxos.length > 0) || (txs && txs.length > 0)) {
+          discoveredAddresses.push({
+            address: primaryAddress,
+            balanceSompi: currentBal,
+            path: "m/44'/111111'/0'/0/0",
+            index: 0,
+            isChange: false,
+            coinType: 111111,
           });
+          if (utxos && Array.isArray(utxos)) {
+            utxos.forEach((u: any) => allUtxos.push({ ...u, address: primaryAddress, derivationPath: "m/44'/111111'/0'/0/0" }));
+          }
+          if (txs && Array.isArray(txs)) {
+            txs.forEach((t: any) => {
+              const txid = t.transaction_id || t.txid;
+              if (txid) allTransactionsMap.set(txid, t);
+            });
+          }
+        }
+      } catch {
+        // Return primary address cleanly on network fail
+      }
+      if (onProgress) onProgress(1, discoveredAddresses.length, totalBalanceSompi);
+
+      return {
+        primaryAddress,
+        totalBalanceSompi,
+        discoveredAddresses,
+        allUtxos,
+        allTransactions: Array.from(allTransactionsMap.values()),
+      };
+    }
+
+    // Full scanning with parallel batching for seed restoration / index scan
+    const coinTypes = [111111, 972];
+    let totalScanned = 0;
+
+    for (const coinType of coinTypes) {
+      for (const isChange of [false, true]) {
+        const changeVal = isChange ? 1 : 0;
+        const batchSize = 4;
+
+        for (let i = 0; i < gapLimit; i += batchSize) {
+          const batchIndices = Array.from({ length: Math.min(batchSize, gapLimit - i) }, (_, idx) => i + idx);
+          
+          const batchItems = batchIndices.map((idx) => {
+            const path = `m/44'/${coinType}'/0'/${changeVal}/${idx}`;
+            try {
+              const child = root.derive(path);
+              if (!child || !child.publicKey) return null;
+              const addr = getAddressFromPublicKey(child.publicKey, addressType, prefix);
+              return { idx, path, addr };
+            } catch {
+              return null;
+            }
+          }).filter(Boolean) as { idx: number; path: string; addr: string }[];
+
+          if (batchItems.length === 0) break;
+
+          const results = await Promise.all(
+            batchItems.map(async (item) => {
+              try {
+                const [balance, utxos, txs] = await Promise.all([
+                  fetchKaspaAddressBalance(item.addr),
+                  fetchKaspaAddressUtxos(item.addr),
+                  fetchKaspaAddressTransactions(item.addr),
+                ]);
+                return { item, balance, utxos, txs };
+              } catch {
+                return { item, balance: null, utxos: null, txs: null };
+              }
+            })
+          );
+
+          let batchHasActivity = false;
+
+          for (const res of results) {
+            totalScanned++;
+            const hasBalance = res.balance !== null && res.balance > 0n;
+            const hasUtxos = res.utxos !== null && Array.isArray(res.utxos) && res.utxos.length > 0;
+            const hasTxs = res.txs !== null && Array.isArray(res.txs) && res.txs.length > 0;
+
+            if (hasBalance || hasUtxos || hasTxs) {
+              batchHasActivity = true;
+              const currentBal = res.balance || 0n;
+              totalBalanceSompi += currentBal;
+
+              discoveredAddresses.push({
+                address: res.item.addr,
+                balanceSompi: currentBal,
+                path: res.item.path,
+                index: res.item.idx,
+                isChange,
+                coinType,
+              });
+
+              if (res.utxos && Array.isArray(res.utxos)) {
+                res.utxos.forEach((u: any) => {
+                  allUtxos.push({
+                    ...u,
+                    derivationPath: res.item.path,
+                    address: res.item.addr,
+                  });
+                });
+              }
+
+              if (res.txs && Array.isArray(res.txs)) {
+                res.txs.forEach((t: any) => {
+                  const txid = t.transaction_id || t.txid;
+                  if (txid && !allTransactionsMap.has(txid)) {
+                    allTransactionsMap.set(txid, t);
+                  }
+                });
+              }
+            }
+          }
+
+          if (onProgress) {
+            onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
+          }
+
+          // If this entire batch of 4 paths has no activity and we're past index 0, stop scanning this subchain early
+          if (!batchHasActivity && i >= 4) {
+            break;
+          }
         }
       }
-    } catch {
-      // Return primary address cleanly on network fail
     }
-    if (onProgress) onProgress(1, discoveredAddresses.length, totalBalanceSompi);
 
     return {
       primaryAddress,
@@ -1040,111 +1138,9 @@ export async function scanKaspaWalletChain(
       allUtxos,
       allTransactions: Array.from(allTransactionsMap.values()),
     };
+  } finally {
+    wipe(seedArray);
   }
-
-  // Full scanning with parallel batching for seed restoration / index scan
-  const coinTypes = [111111, 972];
-  let totalScanned = 0;
-
-  for (const coinType of coinTypes) {
-    for (const isChange of [false, true]) {
-      const changeVal = isChange ? 1 : 0;
-      const batchSize = 4;
-
-      for (let i = 0; i < gapLimit; i += batchSize) {
-        const batchIndices = Array.from({ length: Math.min(batchSize, gapLimit - i) }, (_, idx) => i + idx);
-        
-        const batchItems = batchIndices.map((idx) => {
-          const path = `m/44'/${coinType}'/0'/${changeVal}/${idx}`;
-          try {
-            const child = root.derive(path);
-            if (!child || !child.publicKey) return null;
-            const addr = getAddressFromPublicKey(child.publicKey, addressType, prefix);
-            return { idx, path, addr };
-          } catch {
-            return null;
-          }
-        }).filter(Boolean) as { idx: number; path: string; addr: string }[];
-
-        if (batchItems.length === 0) break;
-
-        const results = await Promise.all(
-          batchItems.map(async (item) => {
-            try {
-              const [balance, utxos, txs] = await Promise.all([
-                fetchKaspaAddressBalance(item.addr),
-                fetchKaspaAddressUtxos(item.addr),
-                fetchKaspaAddressTransactions(item.addr),
-              ]);
-              return { item, balance, utxos, txs };
-            } catch {
-              return { item, balance: null, utxos: null, txs: null };
-            }
-          })
-        );
-
-        let batchHasActivity = false;
-
-        for (const res of results) {
-          totalScanned++;
-          const hasBalance = res.balance !== null && res.balance > 0n;
-          const hasUtxos = res.utxos !== null && Array.isArray(res.utxos) && res.utxos.length > 0;
-          const hasTxs = res.txs !== null && Array.isArray(res.txs) && res.txs.length > 0;
-
-          if (hasBalance || hasUtxos || hasTxs) {
-            batchHasActivity = true;
-            const currentBal = res.balance || 0n;
-            totalBalanceSompi += currentBal;
-
-            discoveredAddresses.push({
-              address: res.item.addr,
-              balanceSompi: currentBal,
-              path: res.item.path,
-              index: res.item.idx,
-              isChange,
-              coinType,
-            });
-
-            if (res.utxos && Array.isArray(res.utxos)) {
-              res.utxos.forEach((u: any) => {
-                allUtxos.push({
-                  ...u,
-                  derivationPath: res.item.path,
-                  address: res.item.addr,
-                });
-              });
-            }
-
-            if (res.txs && Array.isArray(res.txs)) {
-              res.txs.forEach((t: any) => {
-                const txid = t.transaction_id || t.txid;
-                if (txid && !allTransactionsMap.has(txid)) {
-                  allTransactionsMap.set(txid, t);
-                }
-              });
-            }
-          }
-        }
-
-        if (onProgress) {
-          onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
-        }
-
-        // If this entire batch of 4 paths has no activity and we're past index 0, stop scanning this subchain early
-        if (!batchHasActivity && i >= 4) {
-          break;
-        }
-      }
-    }
-  }
-
-  return {
-    primaryAddress,
-    totalBalanceSompi,
-    discoveredAddresses,
-    allUtxos,
-    allTransactions: Array.from(allTransactionsMap.values()),
-  };
 }
 
 /**
@@ -1166,26 +1162,67 @@ export function generateRandomKaspaAddress(prefix: string = 'kaspa:'): string {
 /**
  * Sign message using kaspa-wasm / Schnorr signatures
  */
-export function signKaspaMessage(message: string, privateKeyHex: string): string {
-  try {
-    if (kaspaWasmModule && typeof kaspaWasmModule.signMessage === 'function') {
+/**
+ * Internal helper to sign a message with raw private key bytes.
+ */
+async function signMessageWithPrivateKeyBytes(
+  message: string,
+  privateKeyBytes: Uint8Array
+): Promise<string> {
+  if (kaspaWasmModule && typeof kaspaWasmModule.signMessage === 'function') {
+    // Create an explicit PrivateKey object to ensure we can free it
+    const privateKeyObj = new kaspaWasmModule.PrivateKey(privateKeyBytes);
+    try {
       const sig = kaspaWasmModule.signMessage({
         message,
-        privateKey: privateKeyHex,
+        privateKey: privateKeyObj,
       });
-      if (sig) return sig;
+      if (!sig) {
+        throw new Error('kaspa-wasm message signing returned no signature');
+      }
+      return sig;
+    } finally {
+      if (typeof privateKeyObj.free === 'function') {
+        privateKeyObj.free();
+      }
     }
-  } catch (err) {
-    console.warn('kaspa-wasm message signing notice:', err);
   }
 
-  // Fallback Schnorr signature generation using noble/secp256k1
+  // Manual fallback logic only if WASM is not available or hasn't returned yet
   const msgBytes = new TextEncoder().encode(message);
   const msgHash = blake2b(msgBytes, { dkLen: 32 });
-  const privKeyBytes = new Uint8Array(privateKeyHex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
   
-  const sig = secp.schnorr.sign(msgHash, privKeyBytes);
+  const sig = await secp.schnorr.sign(msgHash, privateKeyBytes);
   return Buffer.from(sig).toString('hex');
+}
+
+/**
+ * Sign a message using Kaspa-style Schnorr signature
+ */
+export async function signKaspaMessage(
+  message: string,
+  privateKeyBytes: Uint8Array
+): Promise<string> {
+  if (!(privateKeyBytes instanceof Uint8Array)) {
+    throw new TypeError('Private key must be provided as Uint8Array');
+  }
+
+  if (privateKeyBytes.length !== 32) {
+    throw new Error('Invalid private-key length');
+  }
+
+  const keyCopy = new Uint8Array(privateKeyBytes);
+
+  try {
+    const signature = await signMessageWithPrivateKeyBytes(
+      message,
+      keyCopy
+    );
+
+    return signature;
+  } finally {
+    wipe(keyCopy);
+  }
 }
 
 /**
@@ -1427,15 +1464,41 @@ export async function fetchKaspaFeeEstimate(): Promise<{ priorityBucketFeeRate: 
 }
 
 /**
- * Derive private key from mnemonic for a specific HD derivation path
+ * Derive the private key as raw bytes.
+ *
+ * The caller owns the returned buffer and MUST wipe it
+ * after the signing operation.
  */
-export function getPrivateKeyFromMnemonic(mnemonic: string, passphrase?: string, derivationPath: string = "m/44'/111111'/0'/0/0"): string {
-  const seed = bip39.mnemonicToSeedSync(mnemonic, passphrase || '');
-  const root = HDKey.fromMasterSeed(new Uint8Array(seed));
-  const child = root.derive(derivationPath);
-  if (!child.privateKey) throw new Error('Failed to derive private key');
-  
-  return Buffer.from(child.privateKey).toString('hex');
+export function getPrivateKeyBytesFromMnemonic(
+  mnemonic: string,
+  passphrase = '',
+  derivationPath = "m/44'/111111'/0'/0/0"
+): Uint8Array {
+
+  const seed = mnemonicToSeedSync(
+    mnemonic,
+    passphrase
+  );
+
+  try {
+    const root = HDKey.fromMasterSeed(seed);
+    const child = root.derive(derivationPath);
+
+    if (!child.privateKey) {
+      throw new Error(
+        'Private key derivation failed'
+      );
+    }
+
+    // Independent application-managed copy.
+    return new Uint8Array(
+      child.privateKey
+    );
+
+  } finally {
+    // Remove the application-managed seed buffer.
+    wipe(seed);
+  }
 }
 
 function extractKaspaError(data: any): string | null {

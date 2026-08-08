@@ -326,9 +326,12 @@ export const SendModal: React.FC = () => {
     setIsSending(true);
 
     setTimeout(async () => {
+      let mnemonicToUse: string | null = null;
+      let passphraseToUse: string | undefined = undefined;
+
       try {
-        const mnemonicToUse = await getMnemonicForSigning();
-        const passphraseToUse = await getPassphraseForSigning();
+        mnemonicToUse = await getMnemonicForSigning();
+        passphraseToUse = await getPassphraseForSigning();
 
         if (!mnemonicToUse) {
           showToast('Wallet key not found. Please unlock or re-import the wallet.', 'error');
@@ -337,11 +340,6 @@ export const SendModal: React.FC = () => {
         }
 
         const res = await sendKaspa(toAddress, numericAmount, selectedFee, note, mnemonicToUse, passphraseToUse);
-        setIsSending(false);
-
-        // Immediately wipe sensitive states
-        setPasswordInput('');
-        setPassphraseInput('');
 
         if (res.success) {
           setSuccessTx({
@@ -361,8 +359,18 @@ export const SendModal: React.FC = () => {
           showToast(res.error || 'Failed to send Kaspa', 'error');
         }
       } catch (err: any) {
-        setIsSending(false);
         showToast(err?.message || 'Failed to execute transaction', 'error');
+      } finally {
+        setIsSending(false);
+        // --------------------------------------------------------
+        // ALWAYS wipe application-managed sensitive references
+        // --------------------------------------------------------
+        mnemonicToUse = null;
+        passphraseToUse = null;
+        
+        // Clear sensitive UI state
+        setPasswordInput('');
+        setPassphraseInput('');
       }
     }, 50);
   };

@@ -34,12 +34,12 @@ export const LockScreen: React.FC = () => {
         setIsLocked(false);
       } else {
         setError('Incorrect password');
-        setPassword('');
       }
     } catch (err) {
       setError('An error occurred');
     } finally {
       setIsDecrypting(false);
+      setPassword('');
     }
   };
 

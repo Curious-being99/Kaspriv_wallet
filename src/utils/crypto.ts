@@ -8,6 +8,16 @@ export function wipe(buffer: Uint8Array): void {
 }
 
 /**
+ * Best-effort clearing of an array containing
+ * sensitive string values such as mnemonic words.
+ */
+export function wipeStringArray(values: string[] | null | undefined): void {
+  if (values) {
+    values.fill('');
+  }
+}
+
+/**
  * Secure Encryption & Decryption Utilities
  * Utilizes Argon2id for key derivation and AES-GCM 256-bit for encryption/decryption.
  * Designed to encrypt/decrypt sensitive wallet seed phrases on device using the user's password.
@@ -19,10 +29,10 @@ export const KDF_SPEC_VERSION = 'v1.0.0-argon2id-aes256gcm';
 // AAD Context Binding
 export const AAD_CONTEXT = "KASPRIV-WALLET-v1|KASPA-MAINNET|MNEMONIC";
 
-// Argon2id Parameters (RFC 9106 recommended parameters for memory-hard key derivation)
+// Argon2id Parameters (Strong security parameters for memory-hard key derivation)
 export const ARGON2_CONFIG = {
   version: 1,
-  iterations: 10,     // 10 passes for stronger offline resistance
+  iterations: 6,      // Adjusted to 6 passes as per user request
   memorySize: 131072, // 128 MiB (131,072 KiB)
   parallelism: 1,     // 1 thread/lane
   hashLength: 32,     // 32 bytes (256-bit AES key)

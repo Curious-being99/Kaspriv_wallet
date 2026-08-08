@@ -62,6 +62,24 @@ export const useVirtualKeyboard = () => {
   return ctx;
 };
 
+const KeyboardWrapper = React.memo(({ keyboardRef, layoutName, onChange, onKeyPress }: any) => {
+  return (
+    <div className="text-black">
+      <Keyboard
+        keyboardRef={keyboardRef}
+        layoutName={layoutName}
+        onChange={onChange}
+        onKeyPress={onKeyPress}
+        layout={KEYBOARD_LAYOUTS}
+        display={KEYBOARD_DISPLAY}
+        preventMouseDownDefault={true}
+        preventMouseUpDefault={true}
+        theme={"hg-theme-default hg-layout-default myTheme"}
+      />
+    </div>
+  );
+});
+
 export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -274,19 +292,12 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 </button>
               </div>
             )}
-            <div className="text-black">
-              <Keyboard
-                keyboardRef={handleKeyboardRef}
-                layoutName={layoutName}
-                onChange={onChange}
-                onKeyPress={onKeyPress}
-                layout={KEYBOARD_LAYOUTS}
-                display={KEYBOARD_DISPLAY}
-                preventMouseDownDefault={true}
-                preventMouseUpDefault={true}
-                theme={"hg-theme-default hg-layout-default myTheme"}
-              />
-            </div>
+            <KeyboardWrapper
+              keyboardRef={handleKeyboardRef}
+              layoutName={layoutName}
+              onChange={onChange}
+              onKeyPress={onKeyPress}
+            />
           </motion.div>
         )}
       </AnimatePresence>

@@ -1,6 +1,6 @@
 {
-  "name": "Kaspriv_wallet",
-  "description": "Kaspriv mobile web wallet application configured for modern web standards and client-side isolation.",
+  "name": "Kaspriv Wallet",
+  "description": "Kaspriv Wallet is a high-security mobile-first Kaspa wallet application featuring client-side isolation, AES-256-GCM encryption, and a zero-trust memory sanitization model.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

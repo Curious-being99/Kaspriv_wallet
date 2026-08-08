@@ -5,6 +5,7 @@ import { generate24WordMnemonic, generateDeterministicAddress, getAddressFromPub
 import { checkPassphraseStrength } from '../utils/strength';
 import { X, Plus, Key, Eye, EyeOff, Copy, Check, ShieldCheck, Lock, ChevronLeft, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { wipeStringArray } from '../utils/crypto';
 
 export const WalletSetupModal: React.FC = () => {
   const {
@@ -85,15 +86,21 @@ export const WalletSetupModal: React.FC = () => {
     }
 
     const name = walletName.trim() || 'New Kaspa Wallet';
-    const words = generatedWords;
+    const words = [...generatedWords];
     const passInput = passphraseInput.trim() || undefined;
     const addrType = addressType;
 
-    setIsWalletSetupOpen(false);
-    resetState();
-    setIsLocked(false);
+    try {
+      setIsWalletSetupOpen(false);
+      resetState();
+      setIsLocked(false);
 
-    await createNewWallet(name, words, passInput, addrType);
+      await createNewWallet(name, words, passInput, addrType);
+    } finally {
+      wipeStringArray(words);
+      setGeneratedWords([]);
+      setPassphraseInput('');
+    }
   };
 
   const handleFinishImportSeed = async () => {
@@ -115,11 +122,17 @@ export const WalletSetupModal: React.FC = () => {
     const passInput = passphraseInput.trim() || undefined;
     const addrType = addressType;
 
-    setIsWalletSetupOpen(false);
-    resetState();
-    setIsLocked(false);
+    try {
+      setIsWalletSetupOpen(false);
+      resetState();
+      setIsLocked(false);
 
-    await importSeedWallet(name, words, passInput, addrType);
+      await importSeedWallet(name, words, passInput, addrType);
+    } finally {
+      wipeStringArray(words);
+      setImportWordsText('');
+      setPassphraseInput('');
+    }
   };
 
   const handleFinishImportKpub = async () => {
@@ -936,29 +949,38 @@ export const WalletSetupModal: React.FC = () => {
                     const flow = pendingFlow;
                     const pass = setupPassword;
                     const name = walletName.trim() || (flow === 'create' ? 'New Kaspa Wallet' : flow === 'import-seed' ? 'Imported Wallet' : 'Watch-Only');
-                    const words = flow === 'create' ? generatedWords : cleanMnemonic(importWordsText).split(' ');
+                    const words = flow === 'create' ? [...generatedWords] : cleanMnemonic(importWordsText).split(' ');
                     const passInput = passphraseInput.trim() || undefined;
                     const addrType = addressType;
                     const kpub = kpubInput.trim();
                     const addr = addressInput.trim();
 
-                    // Close setup modal and reset state immediately so password page is never shown twice or kept open during indexing
-                    setIsWalletSetupOpen(false);
-                    resetState();
+                    try {
+                      // Close setup modal and reset state immediately so password page is never shown twice or kept open during indexing
+                      setIsWalletSetupOpen(false);
+                      resetState();
 
-                    if (flow === 'create') {
-                      await createNewWallet(name, words, passInput, addrType, pass);
-                    } else if (flow === 'import-seed') {
-                      await importSeedWallet(name, words, passInput, addrType, pass);
-                    } else if (flow === 'import-address' || (flow as string) === 'import-kpub') {
-                      if ((flow as string) === 'import-kpub') {
-                        importKpubWallet(name || 'Watch-Only Kpub', kpub, addrType);
-                      } else {
-                        importKpubWallet(name || 'Live Address Tracker', addr, addrType);
+                      if (flow === 'create') {
+                        await createNewWallet(name, words, passInput, addrType, pass);
+                      } else if (flow === 'import-seed') {
+                        await importSeedWallet(name, words, passInput, addrType, pass);
+                      } else if (flow === 'import-address' || (flow as string) === 'import-kpub') {
+                        if ((flow as string) === 'import-kpub') {
+                          importKpubWallet(name || 'Watch-Only Kpub', kpub, addrType);
+                        } else {
+                          importKpubWallet(name || 'Live Address Tracker', addr, addrType);
+                        }
+                        await setPassword(pass);
                       }
-                      await setPassword(pass);
+                      setIsLocked(true);
+                    } finally {
+                      wipeStringArray(words);
+                      setGeneratedWords([]);
+                      setImportWordsText('');
+                      setPassphraseInput('');
+                      setSetupPassword('');
+                      setConfirmSetupPassword('');
                     }
-                    setIsLocked(true);
                   }}
                   disabled={checkPassphraseStrength(setupPassword).score < 3 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}
                   className={`w-full py-4 rounded-2xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${

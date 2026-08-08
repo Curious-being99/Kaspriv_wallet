@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
-import { shortenAddress, sompiToKas, getKaspaExplorerUrl, getPrivateKeyFromMnemonic, getCovenantExplorerLinks, getCovenantAddressAndScript, addressToScriptPublicKeyHex, kasToSompi, covenantIdManager, CovenantType } from '../utils/kaspa';
+import { shortenAddress, sompiToKas, getKaspaExplorerUrl, getCovenantExplorerLinks, getCovenantAddressAndScript, addressToScriptPublicKeyHex, kasToSompi, covenantIdManager, CovenantType } from '../utils/kaspa';
 import { Buffer } from 'buffer';
 import { Lock, Code2, FileCheck, Layers, ShieldAlert, ExternalLink, Trash2, RefreshCw, Activity, Sparkles, FileText, Check } from 'lucide-react';
 import { motion } from 'motion/react';

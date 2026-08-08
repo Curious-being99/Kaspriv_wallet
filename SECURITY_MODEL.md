@@ -13,7 +13,7 @@ An internal security assessment confirms the following zero-trust constraints ac
 - **Zero LocalStorage / SessionStorage Dependency**: Standard browser `localStorage` and `sessionStorage` are completely eliminated. All local application data resides strictly within IndexedDB (`idb`).
 - **IndexedDB Zero-Trust Storage Guard**: The database persistence layer (`saveWalletToDB`) explicitly strips unencrypted `mnemonic` and `passphrase` credentials prior to saving any record to IndexedDB.
 - **Isolated Memory Lifecycle**: Derived private-key material is kept within transient application execution scopes and is not intentionally retained in React state, global state, or persistent storage.
-- **Best-Effort Memory Sanitization**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes in `finally` blocks as a best-effort memory-sanitization measure.
+- **Best-Effort Memory Sanitization**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes and WASM-side objects are released via `.free()` in `finally` blocks as a best-effort memory-sanitization measure.
 - **Pre-Execution Intent Verification**: Transactions pass through independent intent validation before key decryption or derivation begins.
 
 ---
@@ -77,13 +77,14 @@ To eliminate private key leaks across component render cycles or long-lived stat
 
 1. **Transient Execution**: Key derivation, address re-generation, and Schnorr signing execute inside isolated helper routines (`IsolatedSigner.signTransactionIsolated` & `IsolatedSigner.signMessageIsolated`).
 2. **Transient Scope Guard**: Derived private-key material is kept within transient application execution scopes and is not intentionally retained in React state, global state, or persistent storage.
-3. **Strict Memory Sanitization (`wipe()`)**:
+3. **Strict Memory Sanitization (`wipe()` and `.free()`)**:
    ```typescript
    function wipe(buffer: Uint8Array) {
      if (buffer) buffer.fill(0);
    }
    ```
-   Application-managed sensitive byte buffers are explicitly overwritten with zeroes in `finally` blocks as a best-effort memory-sanitization measure.
+   * **Byte Buffers**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes in `finally` blocks as a best-effort memory-sanitization measure.
+   * **WASM Objects**: For cryptographic operations using `kaspa-wasm`, explicit `PrivateKey` objects are created from byte buffers and released using `.free()` in `finally` blocks. This returns the native allocation to the WASM allocator; the application treats this as a best-effort release of the native representation.
 
 ### Transaction Intent Verifier & Cryptographic Binding
 Before password verification, seed decryption, or private key derivation occurs, transaction parameters pass through independent verification:
@@ -153,7 +154,7 @@ For a mobile web wallet, JavaScript supply-chain integrity and runtime hardening
        ↓
 [ Signature Only Returned ]
        ↓
-[ Zero Application Buffers ] (Application-managed sensitive byte buffers explicitly overwritten with zeroes in finally blocks)
+[ Zero Application Buffers & Release WASM Memory ] (Sensitive byte buffers overwritten with zeroes; WASM objects released via .free() in finally blocks)
        ↓
 [ Broadcast ] (Submit signed transaction to Kaspa P2P Network)
 ```

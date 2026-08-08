@@ -177,9 +177,12 @@ export const CovenantModal: React.FC = () => {
 
     setIsExecuting(true);
 
+    let seedToUse: string | null = null;
+    let passphraseToUse: string | null | undefined = null;
+
     try {
-      let seedToUse = providedSeed.trim() || activeWallet.mnemonic || '';
-      let passphraseToUse = activeWallet.passphrase;
+      seedToUse = providedSeed.trim() || activeWallet.mnemonic || '';
+      passphraseToUse = activeWallet.passphrase;
 
       // Handle decryption if seed is encrypted at rest
       if (!seedToUse && activeWallet.encryptedMnemonic) {
@@ -223,10 +226,6 @@ export const CovenantModal: React.FC = () => {
         passphraseToUse
       );
 
-      // Wipe sensitive variables from memory
-      seedToUse = '';
-      passphraseToUse = '';
-
       setIsExecuting(false);
 
       if (res.success) {
@@ -255,8 +254,16 @@ export const CovenantModal: React.FC = () => {
         showToast(res.error || 'Failed to deploy covenant transaction', 'error');
       }
     } catch (err: any) {
-      setIsExecuting(false);
       showToast(err.message || 'Error generating covenant address', 'error');
+    } finally {
+      setIsExecuting(false);
+      // --------------------------------------------------------
+      // ALWAYS wipe application-managed sensitive references
+      // --------------------------------------------------------
+      seedToUse = null;
+      passphraseToUse = null;
+      setProvidedSeed('');
+      setPasswordInput('');
     }
   };
 

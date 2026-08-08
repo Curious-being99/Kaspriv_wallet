@@ -43,7 +43,6 @@ import {
   fetchKaspaCurrentDaaScore,
   broadcastKaspaTransaction,
   shortenAddress,
-  getPrivateKeyFromMnemonic,
   createSignedTransaction,
   ensureKaspaRuntime,
   scanKaspaWalletChain,
@@ -661,38 +660,38 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
 
       // 2. Derive private key (Instant RAM exposure)
-      let privateKeyHex: string | null = getPrivateKeyFromMnemonic(seedToUse, passphraseToUse);
+      const privKeyBytes = getPrivateKeyBytesFromMnemonic(seedToUse, passphraseToUse);
 
-      // 3. Create signed transaction spending P2SH
-      const signedTx = await createSignedTransaction(
-        utxosResponse.map((u: any) => ({ ...u, address: cov.scriptHash })),
-        activeWallet.receiveAddress, // send back to user's main wallet
-        amountSompi,
-        activeWallet.receiveAddress,
-        privateKeyHex,
-        feeSompi,
-        'P2SH',
-        cov.redeemScriptHex, // Pass the custom redeem script
-        undefined, // mnemonic
-        undefined, // passphrase
-        cov.daaLock // Pass the lockTime for OP_CHECKLOCKTIMEVERIFY compliance
-      );
+      try {
+        // 3. Create signed transaction spending P2SH
+        const signedTx = await createSignedTransaction(
+          utxosResponse.map((u: any) => ({ ...u, address: cov.scriptHash })),
+          activeWallet.receiveAddress, // send back to user's main wallet
+          amountSompi,
+          activeWallet.receiveAddress,
+          privKeyBytes,
+          feeSompi,
+          'P2SH',
+          cov.redeemScriptHex, // Pass the custom redeem script
+          cov.daaLock // Pass the lockTime for OP_CHECKLOCKTIMEVERIFY compliance
+        );
 
-      // Instant RAM Discard
-      privateKeyHex = null;
+        // 4. Broadcast
+        const broadcastResult = await broadcastKaspaTransaction(signedTx);
 
-      // 4. Broadcast
-      const broadcastResult = await broadcastKaspaTransaction(signedTx);
-
-      if (broadcastResult.success) {
-        showToast(`Covenant successfully unlocked! TXID: ${shortenAddress(broadcastResult.txId!)}`, 'success');
-        
-        // Remove covenant from local list or mark it as claimed
-        setDeployedCovenants((prev) => prev.filter((c) => c.id !== covenantId));
-        setTimeout(refreshBalance, 2000);
-        return { success: true, txid: broadcastResult.txId };
-      } else {
-        return { success: false, error: broadcastResult.error || 'Failed to broadcast spend transaction' };
+        if (broadcastResult.success) {
+          showToast(`Covenant successfully unlocked! TXID: ${shortenAddress(broadcastResult.txId!)}`, 'success');
+          
+          // Remove covenant from local list or mark it as claimed
+          setDeployedCovenants((prev) => prev.filter((c) => c.id !== covenantId));
+          setTimeout(refreshBalance, 2000);
+          return { success: true, txid: broadcastResult.txId };
+        } else {
+          return { success: false, error: broadcastResult.error || 'Failed to broadcast spend transaction' };
+        }
+      } finally {
+        // Instant RAM Discard
+        if (privKeyBytes) wipe(privKeyBytes);
       }
     } catch (err: any) {
       console.error('[Claim Covenant] Error:', err);
@@ -883,11 +882,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
 
       if (seedToUse) {
+        const privKeyBytes = getPrivateKeyBytesFromMnemonic(seedToUse, wallet.passphrase);
         try {
-          const privKeyHex = getPrivateKeyFromMnemonic(seedToUse, wallet.passphrase);
-          const privClean = privKeyHex.startsWith('0x') ? privKeyHex.slice(2) : privKeyHex;
-          const privBytes = new Uint8Array(privClean.match(/.{1,2}/g)!.map((b) => parseInt(b, 16)));
-          const pubBytes = secp.schnorr.getPublicKey(privBytes);
+          const pubBytes = secp.schnorr.getPublicKey(privKeyBytes);
           pubKeyHex = Buffer.from(pubBytes).toString('hex');
 
           const derivedCov = getCovenantAddressAndScript(seedToUse, wallet.passphrase, currentDaa, 'timelock');
@@ -900,6 +897,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         } catch (e) {
           // ignore
+        } finally {
+          wipe(privKeyBytes);
         }
       }
 
@@ -1080,7 +1079,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const createNewWallet = async (name: string, mnemonicWords?: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string): Promise<Wallet> => {
     const words = mnemonicWords && mnemonicWords.length === 24 ? mnemonicWords : generate24WordMnemonic();
     const prefix = network === 'mainnet' ? 'kaspa' : network === 'testnet-10' ? 'kaspatest' : 'kaspadev';
-    const mStr = cleanMnemonic(words.join(' '));
+    let mStr = cleanMnemonic(words.join(' '));
     
     setIndexingState({ isIndexing: true, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
     
@@ -1116,45 +1115,50 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
     addrPaths[scanRes.primaryAddress] = "m/44'/111111'/0'/0/0";
 
-    const activePassword = password || passwordRef.current;
-    let encryptedMnemonic;
-    let encryptedPassphrase;
-    
-    if (activePassword) {
-      encryptedMnemonic = await encryptWithPassword(mStr, activePassword);
-      if (passphrase) {
-        encryptedPassphrase = await encryptWithPassword(passphrase, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
-      }
-    }
-
-    const newW: Wallet = {
-      id: `w-${Date.now()}`,
-      name: name || 'Kaspa Wallet',
-      receiveAddress: scanRes.primaryAddress,
-      changeAddress: scanRes.primaryAddress,
-      mnemonic: activePassword ? undefined : mStr, // Do not store plaintext if password is active
-      passphrase: activePassword ? undefined : (passphrase || undefined),
-      encryptedMnemonic,
-      encryptedPassphrase,
-      balanceSompi: scanRes.totalBalanceSompi,
-      createdAt: Date.now(),
-      addressType,
-      discoveredAddresses: scanRes.discoveredAddresses?.map((da: any) => da.address) || [scanRes.primaryAddress],
-      addressPaths: addrPaths,
-    };
-
-    if (password) {
-      await setPassword(password);
-    }
-
-    setWallets((prev) => [...prev, newW]);
-    setActiveWalletIdState(newW.id);
-    setIsLoggedOut(false);
     try {
-      await saveSetting('kaspa_is_logged_out', false);
-    } catch (e) {}
-    showToast(`Created wallet '${newW.name}'`, 'success');
-    return newW;
+      const activePassword = password || passwordRef.current;
+      let encryptedMnemonic;
+      let encryptedPassphrase;
+      
+      if (activePassword) {
+        encryptedMnemonic = await encryptWithPassword(mStr, activePassword);
+        if (passphrase) {
+          encryptedPassphrase = await encryptWithPassword(passphrase, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+        }
+      }
+
+      const newW: Wallet = {
+        id: `w-${Date.now()}`,
+        name: name || 'Kaspa Wallet',
+        receiveAddress: scanRes.primaryAddress,
+        changeAddress: scanRes.primaryAddress,
+        mnemonic: activePassword ? undefined : mStr, // Do not store plaintext if password is active
+        passphrase: activePassword ? undefined : (passphrase || undefined),
+        encryptedMnemonic,
+        encryptedPassphrase,
+        balanceSompi: scanRes.totalBalanceSompi,
+        createdAt: Date.now(),
+        addressType,
+        discoveredAddresses: scanRes.discoveredAddresses?.map((da: any) => da.address) || [scanRes.primaryAddress],
+        addressPaths: addrPaths,
+      };
+
+      if (password) {
+        await setPassword(password);
+      }
+
+      setWallets((prev) => [...prev, newW]);
+      setActiveWalletIdState(newW.id);
+      setIsLoggedOut(false);
+      try {
+        await saveSetting('kaspa_is_logged_out', false);
+      } catch (e) {}
+      showToast(`Created wallet '${newW.name}'`, 'success');
+      return newW;
+    } finally {
+      // Wipe mnemonic string from memory
+      mStr = '';
+    }
   };
 
   const scanWalletChainIndex = async (): Promise<void> => {
@@ -1259,6 +1263,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       console.error('Chain index scan failed:', err);
       showToast(`Chain scan notice: ${err.message || err}`, 'error');
     } finally {
+      // Wipe decrypted seed if password was active
+      if (password && seedToUse !== activeWallet.mnemonic) {
+        seedToUse = '';
+        passToUse = '';
+      }
       setIsScanningChain(false);
       setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
     }
@@ -1266,7 +1275,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const importSeedWallet = async (name: string, words: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string): Promise<Wallet> => {
     const prefix = network === 'mainnet' ? 'kaspa' : network === 'testnet-10' ? 'kaspatest' : 'kaspadev';
-    const mStr = cleanMnemonic(words.join(' '));
+    let mStr = cleanMnemonic(words.join(' '));
     const cleanedWords = mStr.split(' ');
     
     setIndexingState({ isIndexing: true, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
@@ -1303,45 +1312,50 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
     addrPaths[scanRes.primaryAddress] = `m/44'/${addressType === 'P2SH' ? '111111' : '111111'}'/0'/0/0`; // default to standard bip44 path format
 
-    const activePassword = password || passwordRef.current;
-    let encryptedMnemonic;
-    let encryptedPassphrase;
-    if (activePassword) {
-      encryptedMnemonic = await encryptWithPassword(mStr, activePassword);
-      if (passphrase) {
-        encryptedPassphrase = await encryptWithPassword(passphrase, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
-      }
-    }
-
-    const newW: Wallet = {
-      id: `w-seed-${Date.now()}`,
-      name: name || 'Restored Kaspa Wallet',
-      receiveAddress: scanRes.primaryAddress,
-      changeAddress: scanRes.primaryAddress,
-      mnemonic: activePassword ? undefined : mStr,
-      passphrase: activePassword ? undefined : (passphrase || undefined),
-      encryptedMnemonic,
-      encryptedPassphrase,
-      balanceSompi: scanRes.totalBalanceSompi,
-      createdAt: Date.now(),
-      addressType,
-      discoveredAddresses: scanRes.discoveredAddresses?.map((da: any) => da.address) || [scanRes.primaryAddress],
-      addressPaths: addrPaths,
-    };
-
-    if (password) {
-      await setPassword(password);
-    }
-
-    setWallets((prev) => [...prev, newW]);
-    setActiveWalletIdState(newW.id);
-    setIsLoggedOut(false);
     try {
-      await saveSetting('kaspa_is_logged_out', false);
-    } catch (e) {}
-    
-    showToast(`Restored Kaspa Wallet '${newW.name}'! Found ${formatKas(scanRes.totalBalanceSompi)} KAS on chain index.`, 'success');
-    return newW;
+      const activePassword = password || passwordRef.current;
+      let encryptedMnemonic;
+      let encryptedPassphrase;
+      if (activePassword) {
+        encryptedMnemonic = await encryptWithPassword(mStr, activePassword);
+        if (passphrase) {
+          encryptedPassphrase = await encryptWithPassword(passphrase, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+        }
+      }
+
+      const newW: Wallet = {
+        id: `w-seed-${Date.now()}`,
+        name: name || 'Restored Kaspa Wallet',
+        receiveAddress: scanRes.primaryAddress,
+        changeAddress: scanRes.primaryAddress,
+        mnemonic: activePassword ? undefined : mStr,
+        passphrase: activePassword ? undefined : (passphrase || undefined),
+        encryptedMnemonic,
+        encryptedPassphrase,
+        balanceSompi: scanRes.totalBalanceSompi,
+        createdAt: Date.now(),
+        addressType,
+        discoveredAddresses: scanRes.discoveredAddresses?.map((da: any) => da.address) || [scanRes.primaryAddress],
+        addressPaths: addrPaths,
+      };
+
+      if (password) {
+        await setPassword(password);
+      }
+
+      setWallets((prev) => [...prev, newW]);
+      setActiveWalletIdState(newW.id);
+      setIsLoggedOut(false);
+      try {
+        await saveSetting('kaspa_is_logged_out', false);
+      } catch (e) {}
+      
+      showToast(`Restored Kaspa Wallet '${newW.name}'! Found ${formatKas(scanRes.totalBalanceSompi)} KAS on chain index.`, 'success');
+      return newW;
+    } finally {
+      // Wipe mnemonic string
+      mStr = '';
+    }
   };
 
   const importKpubWallet = (name: string, kpubOrAddress: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH'): Wallet => {
@@ -1394,8 +1408,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   ): Promise<{ success: boolean; txid?: string; error?: string; inputs?: any[] }> => {
     if (!activeWallet) return { success: false, error: 'No active wallet selected' };
     
-    let seedToUse = (providedSeedPhrase && providedSeedPhrase.trim()) || activeWallet.mnemonic;
-    let passphraseToUse = providedPassphrase !== undefined ? providedPassphrase : activeWallet.passphrase;
+    let seedToUse: string | null = (providedSeedPhrase && providedSeedPhrase.trim()) || activeWallet.mnemonic;
+    let passphraseToUse: string | null | undefined = providedPassphrase !== undefined ? providedPassphrase : activeWallet.passphrase;
 
     // Handle decryption if seed is encrypted at rest
     if (!seedToUse && (activeWallet.encryptedMnemonic)) {
@@ -1511,33 +1525,37 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         note
       };
 
-      const signerResult = await IsolatedSigner.signTransactionIsolated(
-        seedToUse,
-        passphraseToUse,
-        intent,
-        addrType
-      );
+      try {
+        const signerResult = await IsolatedSigner.signTransactionIsolated(
+          seedToUse,
+          passphraseToUse,
+          intent,
+          addrType
+        );
 
-      // Wipe seed immediately
-      seedToUse = '';
-      passphraseToUse = '';
+        if (!signerResult.success || !signerResult.transaction) {
+          return { success: false, error: signerResult.error || 'Failed to construct or sign transaction.' };
+        }
 
-      if (!signerResult.success || !signerResult.transaction) {
-        return { success: false, error: signerResult.error || 'Failed to construct or sign transaction.' };
-      }
+        // 3. Broadcast
+        const broadcastResult = await broadcastKaspaTransaction(signerResult.transaction);
 
-      // 3. Broadcast
-      const broadcastResult = await broadcastKaspaTransaction(signerResult.transaction);
-
-      if (broadcastResult.success) {
-        showToast(`Transaction sent! TXID: ${shortenAddress(broadcastResult.txId!)}`, 'success');
-        
-        // Refresh balance after a short delay
-        setTimeout(refreshBalance, 2000);
-        
-        return { success: true, txid: broadcastResult.txId, inputs: selectedUtxos };
-      } else {
-        return { success: false, error: broadcastResult.error };
+        if (broadcastResult.success) {
+          showToast(`Transaction sent! TXID: ${shortenAddress(broadcastResult.txId!)}`, 'success');
+          
+          // Refresh balance after a short delay
+          setTimeout(refreshBalance, 2000);
+          
+          return { success: true, txid: broadcastResult.txId, inputs: selectedUtxos };
+        } else {
+          return { success: false, error: broadcastResult.error || 'Failed to broadcast transaction' };
+        }
+      } finally {
+        // --------------------------------------------------------
+        // ALWAYS wipe application-managed sensitive references
+        // --------------------------------------------------------
+        seedToUse = null;
+        passphraseToUse = null;
       }
     } catch (err: any) {
       return { success: false, error: err.message || 'Transaction construction failed' };
@@ -1547,8 +1565,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const compoundUtxos = async (providedSeedPhrase?: string): Promise<{ success: boolean; txid?: string; countMerged?: number }> => {
     if (!activeWallet) return { success: false };
     
-    let seedToUse = (providedSeedPhrase && providedSeedPhrase.trim()) || activeWallet.mnemonic;
-    let passphraseToUse = activeWallet.passphrase;
+    let seedToUse: string | null = (providedSeedPhrase && providedSeedPhrase.trim()) || activeWallet.mnemonic;
+    let passphraseToUse: string | null | undefined = activeWallet.passphrase;
 
     // Handle decryption if seed is encrypted at rest
     if (!seedToUse && (activeWallet.encryptedMnemonic)) {
@@ -1630,34 +1648,38 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
 
       const addrType = activeWallet.addressType || (activeWallet.receiveAddress?.includes(':p') ? 'P2SH' : 'P2PKH');
-      const privateKeyHex: string | null = getPrivateKeyFromMnemonic(seedToUse, passphraseToUse);
+      const privKeyBytes = getPrivateKeyBytesFromMnemonic(seedToUse, passphraseToUse);
 
-      const signedTx = await createSignedTransaction(
-        utxosToCompound,
-        activeWallet.receiveAddress,
-        amountToSelf,
-        activeWallet.receiveAddress,
-        privateKeyHex,
-        feeSompi,
-        addrType,
-        undefined, // redeemScriptHex
-        seedToUse, // mnemonic
-        passphraseToUse // passphrase
-      );
+      try {
+        const signedTx = await createSignedTransaction(
+          utxosToCompound,
+          activeWallet.receiveAddress,
+          amountToSelf,
+          activeWallet.receiveAddress,
+          privKeyBytes,
+          feeSompi,
+          addrType,
+          undefined, // redeemScriptHex
+          undefined  // lockTime
+        );
 
-      const broadcastResult = await broadcastKaspaTransaction(signedTx);
-      
-      // Wipe sensitive data
-      seedToUse = '';
-      passphraseToUse = '';
-
-      if (broadcastResult.success) {
-        showToast(`Compounding initiated for ${utxosToCompound.length} UTXOs`, 'success');
-        setTimeout(refreshBalance, 2000);
-        return { success: true, txid: broadcastResult.txId, countMerged: utxosResponse.length };
-      } else {
-        showToast(`Compound failed: ${broadcastResult.error}`, 'error');
-        return { success: false };
+        const broadcastResult = await broadcastKaspaTransaction(signedTx);
+        
+        if (broadcastResult.success) {
+          showToast(`Compounding initiated for ${utxosToCompound.length} UTXOs`, 'success');
+          setTimeout(refreshBalance, 2000);
+          return { success: true, txid: broadcastResult.txId, countMerged: utxosResponse.length };
+        } else {
+          showToast(`Compound failed: ${broadcastResult.error}`, 'error');
+          return { success: false };
+        }
+      } finally {
+        // --------------------------------------------------------
+        // ALWAYS wipe application-managed sensitive references
+        // --------------------------------------------------------
+        if (privKeyBytes) wipe(privKeyBytes);
+        seedToUse = null;
+        passphraseToUse = null;
       }
     } catch (err: any) {
       console.error('Compound error:', err);

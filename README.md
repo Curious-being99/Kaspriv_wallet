@@ -29,7 +29,7 @@ The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side
 ### 4. Ephemeral Signing & Memory Sanitization
 * **Isolated Execution:** Key derivation, address re-generation, and Schnorr signing execute within isolated transient helper routines (`IsolatedSigner`).
 * **Transient Scope Guard:** Derived private-key material exists solely within transient execution scopes and is not intentionally retained in React state, global state, or persistent storage.
-* **Best-Effort Memory Sanitization:** Application-managed sensitive byte buffers are explicitly overwritten with zeroes (`wipe()`) in `finally` blocks immediately after signing or error handling.
+* **Best-Effort Memory Sanitization**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes (`wipe()`) and WASM-side objects (e.g. `PrivateKey`) are released via `.free()` in `finally` blocks. This returns native memory to the WASM allocator as a best-effort release of the native representation.
 
 ### 5. Transaction-Intent Verification & Cryptographic Binding
 Before password verification, seed decryption, or private key derivation occurs, transaction parameters pass through independent verification:
@@ -56,7 +56,7 @@ Before password verification, seed decryption, or private key derivation occurs,
        ↓
 [ Signature Only Returned ]
        ↓
-[ Zero Application Buffers ] (Application-managed sensitive byte buffers explicitly overwritten with zeroes in finally blocks)
+[ Zero Application Buffers & Release WASM Memory ] (Sensitive byte buffers overwritten with zeroes; WASM objects released via .free() in finally blocks)
        ↓
 [ Broadcast ] (Submit signed transaction to Kaspa P2P Network)
 ```

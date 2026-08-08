@@ -23,12 +23,14 @@ export const CompoundUtxoModal: React.FC = () => {
 
   const handleExecuteCompound = async () => {
     setIsCompounding(true);
-    const res = await compoundUtxos(providedSeed.trim() || undefined);
-    setIsCompounding(false);
-    setProvidedSeed('');
-
-    if (res.success) {
-      setIsCompoundOpen(false);
+    try {
+      const res = await compoundUtxos(providedSeed.trim() || undefined);
+      if (res.success) {
+        setIsCompoundOpen(false);
+      }
+    } finally {
+      setIsCompounding(false);
+      setProvidedSeed('');
     }
   };
 
