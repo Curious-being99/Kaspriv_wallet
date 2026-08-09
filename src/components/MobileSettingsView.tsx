@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { CurrencyType } from '../types';
-import { decryptWithPassword } from '../utils/crypto';
+import { decryptWithPassword, buildAadContext } from '../utils/crypto';
 import { checkPassphraseStrength } from '../utils/strength';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 import {
@@ -101,28 +101,23 @@ export const MobileSettingsView: React.FC = () => {
       setIsDecrypting(true);
       try {
         if (activeWallet?.encryptedMnemonic) {
-          const decryptedM = await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, seedPasswordInput);
-          
-          let decryptedP = null;
-          if (activeWallet?.encryptedPassphrase) {
-            decryptedP = await decryptWithPassword(activeWallet.encryptedPassphrase.ciphertext, activeWallet.encryptedPassphrase.salt, activeWallet.encryptedPassphrase.iv, seedPasswordInput, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
-          }
-          
-          if (isMounted) {
-            setDecryptedMnemonic(decryptedM);
-            setDecryptedPassphrase(decryptedP);
-          }
-        } else if (activeWallet?.encryptedMnemonic) {
           const decryptedM = await decryptWithPassword(
             activeWallet.encryptedMnemonic.ciphertext,
             activeWallet.encryptedMnemonic.salt,
             activeWallet.encryptedMnemonic.iv,
-            seedPasswordInput
+            seedPasswordInput,
+            buildAadContext('MNEMONIC', activeWallet.id)
           );
           
           let decryptedP = null;
           if (activeWallet?.encryptedPassphrase) {
-            decryptedP = await decryptWithPassword(activeWallet.encryptedPassphrase.ciphertext, activeWallet.encryptedPassphrase.salt, activeWallet.encryptedPassphrase.iv, seedPasswordInput, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+            decryptedP = await decryptWithPassword(
+              activeWallet.encryptedPassphrase.ciphertext,
+              activeWallet.encryptedPassphrase.salt,
+              activeWallet.encryptedPassphrase.iv,
+              seedPasswordInput,
+              buildAadContext('PASSPHRASE', activeWallet.id)
+            );
           }
           
           if (isMounted) {
@@ -201,7 +196,7 @@ export const MobileSettingsView: React.FC = () => {
             <Wifi className="w-5 h-5 text-[#70C7BA]" />
             <h3 className="text-sm font-extrabold text-slate-100">Connection Settings</h3>
           </div>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#70C7BA]/20 text-[#70C7BA] uppercase tracking-wider">
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#70C7BA]/20 text-white uppercase tracking-wider">
             Mainnet
           </span>
         </div>
@@ -345,7 +340,7 @@ export const MobileSettingsView: React.FC = () => {
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
               Wallet Password
             </label>
-            <p className="text-[10px] text-amber-400 bg-amber-500/10 p-2 rounded-lg border border-amber-500/30">
+            <p className="text-[10px] text-amber-400 p-2">
               ⚠️ Only reveal your seed in a private place.
             </p>
             <div className="relative">
@@ -385,7 +380,7 @@ export const MobileSettingsView: React.FC = () => {
           <div className="space-y-3 pt-1">
             {!showSeed ? (
               <div className="space-y-3">
-                <p className="text-[11px] text-amber-400 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/30 font-medium leading-relaxed">
+                <p className="text-[11px] text-amber-400 font-medium leading-relaxed">
                   ⚠️ <strong>Security Warning:</strong> Only reveal your seed phrase in a private place where no cameras or people can see your screen.
                 </p>
                 <button
@@ -564,13 +559,10 @@ export const MobileSettingsView: React.FC = () => {
 
         <button
           onClick={openLogoutConfirm}
-          className="w-full flex items-center justify-between p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-xs text-rose-400 transition-all font-semibold"
+          className="w-full flex items-center gap-3 p-3 text-xs text-rose-400 hover:text-rose-300 transition-all font-semibold"
         >
-          <div className="flex items-center gap-3">
-            <LogOut className="w-4 h-4" />
-            <span>Log Out Wallet Session</span>
-          </div>
-          <ChevronRight className="w-4 h-4" />
+          <LogOut className="w-4 h-4" />
+          <span>Log Out Wallet Session</span>
         </button>
       </div>
 
@@ -608,7 +600,7 @@ export const MobileSettingsView: React.FC = () => {
             animate={{ opacity: 1, height: 'auto' }}
             className="p-4 rounded-2xl bg-[#090D12] border border-[#212B38]/50 text-[10px] text-slate-400 space-y-3 leading-relaxed"
           >
-            <h4 className="text-xs font-bold text-slate-200 mb-2">Kaspriv Secure mobile web wallet Terms</h4>
+            <h4 className="text-xs font-bold text-slate-200 mb-2">Kaspriv Wallet Terms</h4>
             <p>
               By using this non-custodial wallet, you acknowledge and agree to the following terms:
             </p>

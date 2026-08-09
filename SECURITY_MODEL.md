@@ -25,7 +25,7 @@ The wallet uses **Argon2id** (via `hash-wasm`) to derive a secure cryptographic 
 
 **Argon2id Parameters (`v1.0.0-argon2id-aes256gcm`):**
 Argon2id parameters are selected based on measured derivation cost on supported devices and are versioned for future upgrades:
-* **Iterations (Time Cost):** 6 passes
+* **Iterations (Time Cost):** 10 passes
 * **Memory Size:** 128 MiB (131,072 KiB)
 * **Parallelism:** 1 lane/thread
 * **Hash Length:** 32 bytes (yielding a 256-bit key for AES-256)
@@ -77,14 +77,22 @@ To eliminate private key leaks across component render cycles or long-lived stat
 
 1. **Transient Execution**: Key derivation, address re-generation, and Schnorr signing execute inside isolated helper routines (`IsolatedSigner.signTransactionIsolated` & `IsolatedSigner.signMessageIsolated`).
 2. **Transient Scope Guard**: Derived private-key material is kept within transient application execution scopes and is not intentionally retained in React state, global state, or persistent storage.
-3. **Strict Memory Sanitization (`wipe()` and `.free()`)**:
+3. **Strict Memory Sanitization & Wiping (`wipe()` and `.free()`)**:
    ```typescript
    function wipe(buffer: Uint8Array) {
      if (buffer) buffer.fill(0);
    }
    ```
-   * **Byte Buffers**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes in `finally` blocks as a best-effort memory-sanitization measure.
+   * **Byte Buffers & Wiping**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes in `finally` blocks as a best-effort memory-sanitization measure. All components involved in transaction creation and signing actively scrub private buffers, leaving absolutely no plaintext hex residuals in storage or browser memory.
    * **WASM Objects**: For cryptographic operations using `kaspa-wasm`, explicit `PrivateKey` objects are created from byte buffers and released using `.free()` in `finally` blocks. This returns the native allocation to the WASM allocator; the application treats this as a best-effort release of the native representation.
+   * **Zero Hex-Back Storage**: Plaintext private keys, derived hex values, or seed words are never stored back, cached in state, or logged. The context only yields final signature outputs, securely purging the underlying cryptographic parameters immediately after signing.
+
+### Hardened Lock Wallet & Memory Purge Mechanism
+The wallet-lock routine goes far beyond a superficial React state flag (`isLocked(true)`). To ensure that active credentials cannot linger in memory or be extracted via client inspection:
+
+1. **Active Reference Nullification**: When the auto-lock triggers or the user manually locks the wallet, the active master password is fully purged (`setPasswordState(null)` and the underlying mutable reference `passwordRef.current` is cleared).
+2. **Plaintext Credential Eviction**: All decrypted wallet states, seed phrases, and passphrases are evicted from the active state, forcing the application back to an encrypted-at-rest state.
+3. **No React Memory Leaks**: Decrypted material is strictly localized to functional execution frames. The locking mechanism leaves zero persistent traces of raw keys, seeds, or active derivation passphrases in active variables, so the browser's garbage collector can reclaim the allocations immediately.
 
 ### Transaction Intent Verifier & Cryptographic Binding
 Before password verification, seed decryption, or private key derivation occurs, transaction parameters pass through independent verification:
@@ -99,6 +107,10 @@ Before password verification, seed decryption, or private key derivation occurs,
 
 * **WebAssembly Sandboxing**: High-performance cryptographic operations (Argon2id and Kaspa core transaction operations via `kaspa-wasm`) execute in WASM execution sandboxes.
 * **Native Web Crypto**: AES-256-GCM encryption/decryption is performed by browser-native C++ implementations via `window.crypto.subtle`.
+* **kaspa-wasm Postinstall Patch & Upstream Monitoring**:
+  * **Patch Mechanism**: `package.json` includes a `postinstall` script (`sed -i ...`) that rewrites Node-centric `util` destructuring (`TextDecoder`, `TextEncoder`) in `node_modules/kaspa-wasm/kaspa_wasm.js` to use `globalThis.TextDecoder` and `globalThis.TextEncoder`.
+  * **Fragility Note**: This string-substitution patch is inherently fragile—it depends on exact line patterns in `kaspa_wasm.js` and GNU `sed` CLI availability.
+  * **Upstream Strategy**: Monitor `kaspa-wasm` upstream releases for native Web/ESM environment support, and verify postinstall execution integrity whenever updating `kaspa-wasm` or toolchain packages.
 * **Elliptic / Supply-Chain Posture**:
   * Kaspriv does not use `elliptic` for transaction signing. Kaspa Schnorr signing is performed through the Kaspa WASM/Rust implementation. Therefore, the application's signing path does not depend on `elliptic`'s ECDSA implementation.
   * The transitive dependency should nevertheless be removed, upgraded, or isolated where practical to reduce supply-chain attack surface.
@@ -108,7 +120,7 @@ Before password verification, seed decryption, or private key derivation occurs,
 ## 5. Web Application Hardening & Supply-Chain Security
 
 For a mobile web wallet, JavaScript supply-chain integrity and runtime hardening are first-class security boundaries:
-* **Strict Content Security Policy (CSP)**: Disallows `eval()`, `new Function()`, and arbitrary untrusted remote script loading.
+* **Strict Content Security Policy (CSP)**: Enforces a strict runtime policy directly in `index.html` allowing WebAssembly compilation (`'wasm-unsafe-eval'`), local assets (`'self'`), and strictly explicitly permitted Kaspa RPC nodes/APIs. Prevents inline script injection (`object-src 'none'`) and strictly eliminates external tracking or Google domains.
 * **Minimal Third-Party JavaScript**: Keeps dependency footprint lean and audited.
 * **Lockfile Integrity**: Cryptographic package lockfiles (`package-lock.json`) enforced across builds.
 * **Automated Vulnerability Scanning**: Dependabot/Renovate-style dependency update monitoring.

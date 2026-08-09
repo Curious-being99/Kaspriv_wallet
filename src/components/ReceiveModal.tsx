@@ -81,7 +81,10 @@ export const ReceiveModal: React.FC = () => {
               <input
                 type="text"
                 value={requestedAmount}
-                onChange={(e) => setRequestedAmount(e.target.value)}
+                onFocus={() => openKeyboard({ value: requestedAmount, onChange: setRequestedAmount, layoutName: 'numeric', type: 'number' })}
+                onClick={() => openKeyboard({ value: requestedAmount, onChange: setRequestedAmount, layoutName: 'numeric', type: 'number' })}
+                readOnly
+                inputMode="none"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] font-mono text-xs text-slate-100 outline-none"
               />
             </div>
@@ -92,7 +95,10 @@ export const ReceiveModal: React.FC = () => {
               <input
                 type="text"
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
+                onFocus={() => openKeyboard({ value: note, onChange: setNote })}
+                onClick={() => openKeyboard({ value: note, onChange: setNote })}
+                readOnly
+                inputMode="none"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
               />
             </div>

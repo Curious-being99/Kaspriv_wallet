@@ -3,6 +3,7 @@ import { WalletProvider, useWallet } from './context/WalletContext';
 import { KeyboardProvider } from './context/KeyboardContext';
 import { Header } from './components/Header';
 import { MainCard } from './components/MainCard';
+import { ExplorerSearch } from './components/ExplorerSearch';
 import { TransactionList } from './components/TransactionList';
 import { MobileCovenantView } from './components/MobileCovenantView';
 import { MobileSettingsView } from './components/MobileSettingsView';
@@ -74,13 +75,15 @@ const WalletAppContent: React.FC = () => {
                 <span>Receive</span>
               </button>
             </div>
-
+            
             {/* Transactions List */}
-            <TransactionList hideHeader={true} />
+            <TransactionList hideHeader={true} hideList={true} />
           </>
         )}
 
-        {activeBottomTab === 'history' && <TransactionList hideAssetCard={true} />}
+        {activeBottomTab === 'history' && (
+          <TransactionList hideAssetCard={true} />
+        )}
         {activeBottomTab === 'covenant' && <MobileCovenantView />}
         {activeBottomTab === 'settings' && <MobileSettingsView />}
       </main>

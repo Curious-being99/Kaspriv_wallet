@@ -24,6 +24,7 @@ import * as secp from '@noble/secp256k1';
 import { 
   encryptWithPassword, 
   decryptWithPassword, 
+  buildAadContext,
 } from '../utils/crypto';
 import { IsolatedSigner } from '../utils/IsolatedSigner';
 import {
@@ -336,7 +337,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (timeoutId) clearTimeout(timeoutId);
       if (autoLockDuration > 0) {
         timeoutId = setTimeout(() => {
-          setIsLocked(true);
+          lockWallet();
         }, autoLockDuration * 60 * 1000);
       }
     };
@@ -345,7 +346,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (lockOnExit && document.visibilityState === 'hidden') {
         setTimeout(() => {
           if (document.visibilityState === 'hidden') {
-            setIsLocked(true);
+            lockWallet();
           }
         }, 2000); // 2 second delay
       }
@@ -427,6 +428,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     
     if (isPasswordEnabled) {
       setIsLocked(true);
+      setPasswordState(null);
     }
     showToast('Logged out. All wallet data cleared successfully.', 'info');
   };
@@ -876,7 +878,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             wallet.encryptedMnemonic.ciphertext,
             wallet.encryptedMnemonic.salt,
             wallet.encryptedMnemonic.iv,
-            activePassword
+            activePassword,
+            buildAadContext('MNEMONIC', wallet.id)
           );
         } catch (e) {
           // ignore
@@ -1122,15 +1125,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       let encryptedMnemonic;
       let encryptedPassphrase;
       
+      const walletId = `w-${Date.now()}`;
       if (activePassword) {
-        encryptedMnemonic = await encryptWithPassword(mStr, activePassword);
+        encryptedMnemonic = await encryptWithPassword(mStr, activePassword, buildAadContext('MNEMONIC', walletId));
         if (passphrase) {
-          encryptedPassphrase = await encryptWithPassword(passphrase, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+          encryptedPassphrase = await encryptWithPassword(passphrase, activePassword, buildAadContext('PASSPHRASE', walletId));
         }
       }
 
       const newW: Wallet = {
-        id: `w-${Date.now()}`,
+        id: walletId,
         name: name || 'Kaspa Wallet',
         receiveAddress: scanRes.primaryAddress,
         changeAddress: scanRes.primaryAddress,
@@ -1181,7 +1185,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               activeWallet.encryptedMnemonic.ciphertext,
               activeWallet.encryptedMnemonic.salt,
               activeWallet.encryptedMnemonic.iv,
-              password
+              password,
+              buildAadContext('MNEMONIC', activeWallet.id)
             );
           }
           
@@ -1191,7 +1196,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               activeWallet.encryptedPassphrase.salt,
               activeWallet.encryptedPassphrase.iv,
               password,
-              "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE"
+              buildAadContext('PASSPHRASE', activeWallet.id)
             );
           }
         } catch (err) {
@@ -1318,15 +1323,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const activePassword = password || passwordRef.current;
       let encryptedMnemonic;
       let encryptedPassphrase;
+      const walletId = `w-seed-${Date.now()}`;
       if (activePassword) {
-        encryptedMnemonic = await encryptWithPassword(mStr, activePassword);
+        encryptedMnemonic = await encryptWithPassword(mStr, activePassword, buildAadContext('MNEMONIC', walletId));
         if (passphrase) {
-          encryptedPassphrase = await encryptWithPassword(passphrase, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+          encryptedPassphrase = await encryptWithPassword(passphrase, activePassword, buildAadContext('PASSPHRASE', walletId));
         }
       }
 
       const newW: Wallet = {
-        id: `w-seed-${Date.now()}`,
+        id: walletId,
         name: name || 'Restored Kaspa Wallet',
         receiveAddress: scanRes.primaryAddress,
         changeAddress: scanRes.primaryAddress,
@@ -1423,7 +1429,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               activeWallet.encryptedMnemonic.ciphertext,
               activeWallet.encryptedMnemonic.salt,
               activeWallet.encryptedMnemonic.iv,
-              activePassword
+              activePassword,
+              buildAadContext('MNEMONIC', activeWallet.id)
             );
           }
           
@@ -1433,7 +1440,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               activeWallet.encryptedPassphrase.salt,
               activeWallet.encryptedPassphrase.iv,
               activePassword,
-              "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE"
+              buildAadContext('PASSPHRASE', activeWallet.id)
             );
           }
         } catch (err) {
@@ -1579,7 +1586,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               activeWallet.encryptedMnemonic.ciphertext,
               activeWallet.encryptedMnemonic.salt,
               activeWallet.encryptedMnemonic.iv,
-              password
+              password,
+              buildAadContext('MNEMONIC', activeWallet.id)
             );
           }
           
@@ -1589,7 +1597,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               activeWallet.encryptedPassphrase.salt,
               activeWallet.encryptedPassphrase.iv,
               password,
-              "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE"
+              buildAadContext('PASSPHRASE', activeWallet.id)
             );
           }
         } catch (err) {
@@ -1712,9 +1720,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           const passToUse = w.passphrase;
           
           if (seedToUse) {
-            encryptedMnemonic = await encryptWithPassword(seedToUse, password);
+            encryptedMnemonic = await encryptWithPassword(seedToUse, password, buildAadContext('MNEMONIC', w.id));
             if (passToUse) {
-              encryptedPassphrase = await encryptWithPassword(passToUse, password, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+              encryptedPassphrase = await encryptWithPassword(passToUse, password, buildAadContext('PASSPHRASE', w.id));
             }
           }
           
@@ -1746,7 +1754,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           
           if (!decryptedMnemonic && w.encryptedMnemonic) {
             try {
-              decryptedMnemonic = await decryptWithPassword(w.encryptedMnemonic.ciphertext, w.encryptedMnemonic.salt, w.encryptedMnemonic.iv, activePassword);
+              decryptedMnemonic = await decryptWithPassword(w.encryptedMnemonic.ciphertext, w.encryptedMnemonic.salt, w.encryptedMnemonic.iv, activePassword, buildAadContext('MNEMONIC', w.id));
             } catch (e) {
               // ignore
             }
@@ -1754,7 +1762,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           
           if (!decryptedPassphrase && w.encryptedPassphrase) {
             try {
-              decryptedPassphrase = await decryptWithPassword(w.encryptedPassphrase.ciphertext, w.encryptedPassphrase.salt, w.encryptedPassphrase.iv, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+              decryptedPassphrase = await decryptWithPassword(w.encryptedPassphrase.ciphertext, w.encryptedPassphrase.salt, w.encryptedPassphrase.iv, activePassword, buildAadContext('PASSPHRASE', w.id));
             } catch (e) {
               // ignore
             }
@@ -1799,7 +1807,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (firstW) {
         try {
           if (firstW.encryptedMnemonic) {
-            await decryptWithPassword(firstW.encryptedMnemonic.ciphertext, firstW.encryptedMnemonic.salt, firstW.encryptedMnemonic.iv, password);
+            await decryptWithPassword(firstW.encryptedMnemonic.ciphertext, firstW.encryptedMnemonic.salt, firstW.encryptedMnemonic.iv, password, buildAadContext('MNEMONIC', firstW.id));
           }
           passwordValid = true;
         } catch (err) {
@@ -1822,6 +1830,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const lockWallet = () => {
     if (isPasswordEnabled) {
+      setPasswordState(null); // clear password from memory
       setIsLocked(true);
       showToast('Wallet locked', 'info');
     }

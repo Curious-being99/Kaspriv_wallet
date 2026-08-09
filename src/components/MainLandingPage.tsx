@@ -20,6 +20,63 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { wipeStringArray } from '../utils/crypto';
 
+const TypewriterHeading: React.FC = () => {
+  const fullText = "Welcome to Kaspriv";
+  const [displayedText, setDisplayedText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [typingSpeed, setTypingSpeed] = useState(120);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+
+    const handleType = () => {
+      if (!isDeleting) {
+        const nextText = fullText.substring(0, displayedText.length + 1);
+        setDisplayedText(nextText);
+
+        if (nextText === fullText) {
+          setTypingSpeed(2500);
+          setIsDeleting(true);
+        } else {
+          setTypingSpeed(100 + Math.random() * 60);
+        }
+      } else {
+        const nextText = fullText.substring(0, displayedText.length - 1);
+        setDisplayedText(nextText);
+
+        if (nextText === "") {
+          setIsDeleting(false);
+          setTypingSpeed(600);
+        } else {
+          setTypingSpeed(50 + Math.random() * 30);
+        }
+      }
+    };
+
+    timer = setTimeout(handleType, typingSpeed);
+    return () => clearTimeout(timer);
+  }, [displayedText, isDeleting, typingSpeed]);
+
+  const welcomePrefix = "Welcome to ";
+  const hasPrefix = displayedText.startsWith(welcomePrefix);
+
+  return (
+    <h2 className="text-2xl font-serif font-bold text-slate-100 tracking-tight leading-tight min-h-[2rem] flex items-center">
+      <span>
+        {hasPrefix ? (
+          <>
+            Welcome to <span className="text-[#70C7BA]">{displayedText.substring(welcomePrefix.length)}</span>
+          </>
+        ) : (
+          displayedText
+        )}
+      </span>
+    </h2>
+  );
+};
+
+
+
 export const MainLandingPage: React.FC = () => {
   const {
     isLoggedOut,
@@ -286,12 +343,6 @@ export const MainLandingPage: React.FC = () => {
               <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0">
                 <img src="/assets/kas_icon.svg" alt="Kaspa" className="w-6 h-6" />
               </div>
-              <div>
-                <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none">
-                  Kaspriv
-                </h1>
-                <p className="text-[10px] text-slate-400 font-medium leading-tight mt-0.5">Secured Web & Mobile Wallet</p>
-              </div>
             </div>
           </motion.header>
         )}
@@ -313,13 +364,11 @@ export const MainLandingPage: React.FC = () => {
               <div className="space-y-2 w-full text-left">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#090D12]  text-[10px] text-[#70C7BA] font-bold">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#70C7BA]" />
-                  <span>On-Chain Cryptographic Keys</span>
+                  <span>On-Chain Cryptographic</span>
                 </div>
-                <h2 className="text-2xl font-black text-slate-100 tracking-tight leading-tight">
-                  Welcome to <span className="text-[#70C7BA]">Kaspriv</span>
-                </h2>
-                <p className="text-xs text-slate-400 font-medium leading-relaxed">
-                  The ultimate self-custodial wallet. Create a secure local Schnorr private key or monitor public addresses on the Kaspa DAG.
+                <TypewriterHeading />
+                <p className="text-xs font-serif font-bold text-slate-300 leading-relaxed tracking-wide">
+                  Zero-trust and trustless signing.
                 </p>
               </div>
 
@@ -850,14 +899,35 @@ export const MainLandingPage: React.FC = () => {
                         {showSetupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                    {setupPassword.length > 0 && (
-                      <div className="mt-1 flex items-center justify-end px-1 gap-1">
-                        <ShieldCheck className={`w-3.5 h-3.5 ${checkPassphraseStrength(setupPassword).color}`} />
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${checkPassphraseStrength(setupPassword).color}`}>
-                          {checkPassphraseStrength(setupPassword).label}
-                        </span>
-                      </div>
-                    )}
+                    {setupPassword.length > 0 && (() => {
+                      const strResult = checkPassphraseStrength(setupPassword);
+                      return (
+                        <div className="mt-2 space-y-1">
+                          <div className="flex items-center justify-between px-1">
+                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Strength</span>
+                            <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: strResult.color }}>
+                              {strResult.label}
+                            </span>
+                          </div>
+                          <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden flex gap-0.5">
+                            {[1, 2, 3, 4].map((step) => (
+                              <div 
+                                key={step}
+                                className={`h-full flex-1 transition-all duration-300 ${
+                                  step <= strResult.score ? '' : 'bg-transparent'
+                                }`}
+                                style={{ backgroundColor: step <= strResult.score ? strResult.color : undefined }}
+                              />
+                            ))}
+                          </div>
+                          {strResult.feedback?.warning && (
+                            <p className="text-[10px] text-amber-400/90 px-1 mt-1 font-medium">
+                              {strResult.feedback.warning}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div>

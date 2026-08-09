@@ -9,12 +9,25 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Kaspriv" />
     <meta name="theme-color" content="#090D12" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.kaspa.org https://*.kaspa.net https://*.kaspa.stream https://*.kaspagov.org https://*.aspectron.org https://*.kaspriv.io; connect-src 'self' https://*.kaspa.org https://*.kaspa.net https://*.kaspa.stream https://*.kaspagov.org https://*.aspectron.org https://*.kaspriv.io https://api.coingecko.com https://api.coinpaprika.com wss://*.kaspa.net wss://*.kaspa.org wss://*.kaspriv.io; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self';" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://kaspriv.io/" />
+    <meta property="og:title" content="Kaspriv Wallet — Mobile Native Experience" />
+    <meta property="og:description" content="Kaspriv Wallet is a high-security mobile-first Kaspa wallet application featuring client-side isolation, AES-256-GCM encryption, and a zero-trust memory sanitization model." />
+    <meta property="og:image" content="/assets/kas_icon_512.png" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://kaspriv.io/" />
+    <meta property="twitter:title" content="Kaspriv Wallet — Mobile Native Experience" />
+    <meta property="twitter:description" content="Kaspriv Wallet is a high-security mobile-first Kaspa wallet application featuring client-side isolation, AES-256-GCM encryption, and a zero-trust memory sanitization model." />
+    <meta property="twitter:image" content="/assets/kas_icon_512.png" />
+
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/assets/kas_icon_512.png" />
     <title>Kaspriv Wallet — Mobile Native Experience</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,300..900;1,6..12,300..900&family=Roboto+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
   </head>
   <body class="bg-[#0B151E] text-slate-100 font-sans antialiased selection:bg-[#70C7BA]/30 selection:text-[#70C7BA] min-h-screen">
     <div id="root"></div>

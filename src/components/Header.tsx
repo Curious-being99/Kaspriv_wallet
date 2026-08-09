@@ -41,7 +41,7 @@ export const Header: React.FC = () => {
             <div>
               <div className="flex items-center gap-1.5">
                 <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none">
-                  Kaspriv
+                  {activeWallet.name}
                 </h1>
                 {activeWallet.isImportedKpub && (
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
@@ -50,9 +50,6 @@ export const Header: React.FC = () => {
                 )}
                 <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isWalletMenuOpen ? 'rotate-180' : ''}`} />
               </div>
-              <p className="text-[10px] text-slate-400 font-medium leading-tight mt-0.5">
-                Secured Web & Mobile Wallet
-              </p>
             </div>
           </button>
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, X, Trash2, Copy, Search, AlertCircle, AlertTriangle, Info, CheckCircle2, Bug, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useVirtualKeyboard } from '../context/KeyboardContext';
 
 export interface LogEntry {
   id: string;
@@ -34,21 +35,63 @@ function safeFormatArg(a: any): string {
   return String(a);
 }
 
+function sanitizeText(str: string): string {
+  if (!str || typeof str !== 'string') return str;
+  let sanitized = str.replace(/\b(kprv|xprv|priv)[a-zA-Z0-9]{20,}\b/g, '[REDACTED_KEY]');
+  sanitized = sanitized.replace(/\b[0-9a-fA-F]{64}\b/g, '[REDACTED_HEX]');
+  return sanitized;
+}
+
+function sanitizeValue(val: any, keyName?: string): any {
+  if (val === null || val === undefined) return val;
+  const sensitiveKeys = ['privatekey', 'mnemonic', 'seed', 'password', 'secret', 'key', 'auth', 'credential', 'kprv', 'xprv'];
+  if (keyName && sensitiveKeys.some(sk => keyName.toLowerCase().includes(sk))) {
+    return '[REDACTED]';
+  }
+  if (typeof val === 'string') {
+    return sanitizeText(val);
+  }
+  if (typeof val === 'object') {
+    if (val instanceof Error) {
+      return {
+        message: sanitizeText(val.message),
+        stack: sanitizeText(val.stack || ''),
+      };
+    }
+    if (Array.isArray(val)) {
+      return val.map(item => sanitizeValue(item));
+    }
+    const sanitizedObj: Record<string, any> = {};
+    for (const k of Object.keys(val)) {
+      if (sensitiveKeys.some(sk => k.toLowerCase().includes(sk))) {
+        sanitizedObj[k] = '[REDACTED]';
+      } else {
+        sanitizedObj[k] = sanitizeValue(val[k], k);
+      }
+    }
+    return sanitizedObj;
+  }
+  return val;
+}
+
 export function addDevLog(level: 'error' | 'warn' | 'info' | 'log', message: string, details?: any) {
   const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + String(new Date().getMilliseconds()).padStart(3, '0');
   
+  const sanitizedMessage = sanitizeText(String(message));
+  const sanitizedDetails = details !== undefined && details !== null ? sanitizeValue(details) : undefined;
+
   let formattedDetails: string | undefined;
-  if (details !== undefined && details !== null) {
-    if (typeof details === 'object') {
+  if (sanitizedDetails !== undefined && sanitizedDetails !== null) {
+    if (typeof sanitizedDetails === 'object') {
       try {
-        formattedDetails = JSON.stringify(details, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2);
+        formattedDetails = JSON.stringify(sanitizedDetails, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2);
       } catch (e) {
-        formattedDetails = String(details);
+        formattedDetails = String(sanitizedDetails);
       }
-    } else if (typeof details === 'bigint') {
-      formattedDetails = details.toString();
+    } else if (typeof sanitizedDetails === 'bigint') {
+      formattedDetails = sanitizedDetails.toString();
     } else {
-      formattedDetails = String(details);
+      formattedDetails = String(sanitizedDetails);
     }
   }
 
@@ -56,7 +99,7 @@ export function addDevLog(level: 'error' | 'warn' | 'info' | 'log', message: str
     id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     timestamp: timeStr,
     level,
-    message: String(message),
+    message: sanitizedMessage,
     details: formattedDetails,
   };
 
@@ -79,7 +122,8 @@ if (typeof window !== 'undefined' && !patched) {
 
   console.log = (...args: any[]) => {
     try {
-      originalLog.apply(console, args);
+      const sanitizedArgs = args.map(arg => sanitizeValue(arg));
+      originalLog.apply(console, sanitizedArgs);
       // Skip capturing generic logs to keep console focused on high-priority events
     } catch (e) {
       // Ignore errors in logging patch
@@ -88,8 +132,9 @@ if (typeof window !== 'undefined' && !patched) {
 
   console.warn = (...args: any[]) => {
     try {
-      originalWarn.apply(console, args);
-      const msg = args.map(safeFormatArg).join(' ');
+      const sanitizedArgs = args.map(arg => sanitizeValue(arg));
+      originalWarn.apply(console, sanitizedArgs);
+      const msg = sanitizedArgs.map(safeFormatArg).join(' ');
       addDevLog('warn', msg);
     } catch (e) {
       // Ignore errors in logging patch
@@ -98,9 +143,10 @@ if (typeof window !== 'undefined' && !patched) {
 
   console.error = (...args: any[]) => {
     try {
-      originalError.apply(console, args);
-      const msg = args.map(safeFormatArg).join(' ');
-      addDevLog('error', msg, args.length > 1 ? args.slice(1) : undefined);
+      const sanitizedArgs = args.map(arg => sanitizeValue(arg));
+      originalError.apply(console, sanitizedArgs);
+      const msg = sanitizedArgs.map(safeFormatArg).join(' ');
+      addDevLog('error', msg, sanitizedArgs.length > 1 ? sanitizedArgs.slice(1) : undefined);
     } catch (e) {
       // Ignore errors in logging patch
     }
@@ -108,7 +154,8 @@ if (typeof window !== 'undefined' && !patched) {
 
   console.info = (...args: any[]) => {
     try {
-      originalInfo.apply(console, args);
+      const sanitizedArgs = args.map(arg => sanitizeValue(arg));
+      originalInfo.apply(console, sanitizedArgs);
       // Skip capturing generic info logs unless they are critical (we'll manually call addDevLog for important info)
     } catch (e) {
       // Ignore errors in logging patch
@@ -136,6 +183,7 @@ if (typeof window !== 'undefined' && !patched) {
 }
 
 export const DevConsoleDrawer: React.FC = () => {
+  const { openKeyboard } = useVirtualKeyboard();
   const [isOpen, setIsOpen] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([...logBuffer]);
   const [filterLevel, setFilterLevel] = useState<'all' | 'error' | 'warn' | 'info' | 'log'>('error');
@@ -283,9 +331,11 @@ export const DevConsoleDrawer: React.FC = () => {
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onClick={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
+                  readOnly
+                  inputMode="none"
                   placeholder="Filter logs..."
-                  className="w-full pl-7 pr-3 py-1 bg-[#090D12]  focus:border-[#70C7BA] rounded-lg text-[11px] text-slate-200 outline-none"
+                  className="w-full pl-7 pr-3 py-1 bg-[#090D12] border border-[#212B38] focus:border-[#70C7BA] rounded-lg text-[11px] text-slate-200 outline-none cursor-pointer"
                 />
               </div>
             </div>

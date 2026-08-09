@@ -29,6 +29,14 @@ export const KDF_SPEC_VERSION = 'v1.0.0-argon2id-aes256gcm';
 // AAD Context Binding
 export const AAD_CONTEXT = "KASPRIV-WALLET-v1|KASPA-MAINNET|MNEMONIC";
 
+export function buildAadContext(kind: 'MNEMONIC' | 'PASSPHRASE' | 'CANARY' | string = 'MNEMONIC', walletId?: string): string {
+  const baseKind = kind.toUpperCase();
+  if (walletId) {
+    return `KASPRIV-WALLET-v1|KASPA-MAINNET|${baseKind}|${walletId}`;
+  }
+  return `KASPRIV-WALLET-v1|KASPA-MAINNET|${baseKind}`;
+}
+
 // Argon2id Parameters (Strong security parameters for memory-hard key derivation)
 export const ARGON2_CONFIG = {
   version: 1,
@@ -123,6 +131,24 @@ export async function encryptWithPassword(plaintext: string, password: string, c
  * Throws an error if decryption fails (e.g. invalid password or wrong AAD context).
  */
 export async function decryptWithPassword(ciphertextHex: string, saltHex: string, ivHex: string, password: string, context: string = AAD_CONTEXT): Promise<string> {
+  try {
+    return await decryptWithPasswordInternal(ciphertextHex, saltHex, ivHex, password, context);
+  } catch (err) {
+    // If context contains walletId suffix (e.g. "KASPRIV-WALLET-v1|KASPA-MAINNET|MNEMONIC|w-123"), attempt fallback without walletId
+    const parts = context.split('|');
+    if (parts.length > 3) {
+      const legacyContext = parts.slice(0, 3).join('|');
+      try {
+        return await decryptWithPasswordInternal(ciphertextHex, saltHex, ivHex, password, legacyContext);
+      } catch {
+        // rethrow original error
+      }
+    }
+    throw err;
+  }
+}
+
+async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: string, ivHex: string, password: string, context: string): Promise<string> {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   const salt = hexToBytes(saltHex);

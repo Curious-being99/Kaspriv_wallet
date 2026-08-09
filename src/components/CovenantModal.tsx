@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { shortenAddress, sompiToKas, getKaspaExplorerUrl, getCovenantExplorerLinks, getCovenantAddressAndScript } from '../utils/kaspa';
-import { decryptWithPassword } from '../utils/crypto';
+import { decryptWithPassword, buildAadContext } from '../utils/crypto';
 import { Lock, X, Sparkles, Code2, FileCheck, Layers, ShieldAlert, ExternalLink, Trash2, RefreshCw, Activity, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
@@ -110,7 +110,7 @@ export const CovenantModal: React.FC = () => {
         genesisInputIndex: writeGenesisInputIndex ? parseInt(writeGenesisInputIndex) : undefined,
       });
 
-      showToast('Covenant registered successfully in local storage!', 'success');
+      showToast('Covenant registered successfully in local database!', 'success');
       setWriteAmount('');
       setWriteAddress('');
       setWriteTxid('');
@@ -193,11 +193,18 @@ export const CovenantModal: React.FC = () => {
               activeWallet.encryptedMnemonic.ciphertext,
               activeWallet.encryptedMnemonic.salt,
               activeWallet.encryptedMnemonic.iv,
-              activePassword
+              activePassword,
+              buildAadContext('MNEMONIC', activeWallet.id)
             );
             
             if (activeWallet.encryptedPassphrase) {
-              passphraseToUse = await decryptWithPassword(activeWallet.encryptedPassphrase.ciphertext, activeWallet.encryptedPassphrase.salt, activeWallet.encryptedPassphrase.iv, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+              passphraseToUse = await decryptWithPassword(
+                activeWallet.encryptedPassphrase.ciphertext,
+                activeWallet.encryptedPassphrase.salt,
+                activeWallet.encryptedPassphrase.iv,
+                activePassword,
+                buildAadContext('PASSPHRASE', activeWallet.id)
+              );
             }
           } catch (err) {
             showToast('Invalid password. Decryption failed.', 'error');
@@ -642,7 +649,7 @@ export const CovenantModal: React.FC = () => {
                     </label>
                     <input
                       type="text"
-                      placeholder="32-byte hex string"
+                      placeholder="32-byte hash string"
                       value={writeTxid}
                       onChange={(e) => setWriteTxid(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D12] border border-[#212B38] focus:border-[#70C7BA] text-xs text-slate-100 outline-none font-mono"
@@ -670,7 +677,7 @@ export const CovenantModal: React.FC = () => {
 
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 block mb-1">
-                        Redeem Script (Hex)
+                        Redeem Script
                       </label>
                       <input
                         type="text"

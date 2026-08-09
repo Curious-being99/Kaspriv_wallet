@@ -280,7 +280,7 @@ export const WalletSetupModal: React.FC = () => {
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="w-full  bg-[#090D12]   p-6 sm:p-5 space-y-4  text-left overflow-y-auto no-scrollbar relative pt-safe pb-safe transition-all duration-200 mx-4 sm:mx-0"
+        className="w-full flex-1 flex flex-col space-y-4 p-5 pt-safe pb-safe overflow-y-auto no-scrollbar relative transition-all duration-200"
         style={{ paddingBottom: isKeyboardOpen ? '280px' : '' }}
       >
         <AnimatePresence mode="wait">
@@ -875,30 +875,42 @@ export const WalletSetupModal: React.FC = () => {
                       </button>
                     </div>
 
-                    {setupPassword.length > 0 && (
-                      <div className="mt-2 space-y-1.5">
-                        <div className="flex items-center justify-between px-1">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Strength</span>
-                          <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: checkPassphraseStrength(setupPassword).color }}>
-                            {checkPassphraseStrength(setupPassword).label}
-                          </span>
-                        </div>
-                        <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden flex gap-0.5">
-                          {[1, 2, 3, 4].map((step) => {
-                            const result = checkPassphraseStrength(setupPassword);
-                            return (
+                    {setupPassword.length > 0 && (() => {
+                      const strResult = checkPassphraseStrength(setupPassword);
+                      return (
+                        <div className="mt-2 space-y-1.5">
+                          <div className="flex items-center justify-between px-1">
+                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Strength</span>
+                            <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: strResult.color }}>
+                              {strResult.label}
+                            </span>
+                          </div>
+                          <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden flex gap-0.5">
+                            {[1, 2, 3, 4].map((step) => (
                               <div 
                                 key={step}
                                 className={`h-full flex-1 transition-all duration-300 ${
-                                  step <= result.score ? '' : 'bg-transparent'
+                                  step <= strResult.score ? '' : 'bg-transparent'
                                 }`}
-                                style={{ backgroundColor: step <= result.score ? result.color : undefined }}
+                                style={{ backgroundColor: step <= strResult.score ? strResult.color : undefined }}
                               />
-                            );
-                          })}
+                            ))}
+                          </div>
+                          {strResult.feedback?.warning && (
+                            <p className="text-[10px] text-amber-400/90 px-1 mt-1 font-medium">
+                              {strResult.feedback.warning}
+                            </p>
+                          )}
+                          {strResult.feedback?.suggestions && strResult.feedback.suggestions.length > 0 && (
+                            <ul className="text-[9px] text-slate-400 px-1 list-disc list-inside space-y-0.5">
+                              {strResult.feedback.suggestions.map((sug, idx) => (
+                                <li key={idx}>{sug}</li>
+                              ))}
+                            </ul>
+                          )}
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
 
                   <div>

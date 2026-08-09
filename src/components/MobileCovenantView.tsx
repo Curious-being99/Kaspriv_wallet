@@ -150,7 +150,7 @@ export const MobileCovenantView: React.FC = () => {
         genesisInputIndex: writeGenesisInputIndex ? parseInt(writeGenesisInputIndex) : undefined,
       });
 
-      showToast('Covenant registered successfully in local storage!', 'success');
+      showToast('Covenant registered successfully in local database!', 'success');
       setWriteAmount('');
       setWriteAddress('');
       setWriteTxid('');
@@ -271,7 +271,7 @@ export const MobileCovenantView: React.FC = () => {
       {/* 1. Header & Status Overview */}
       <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-4">
         {/* Notice Banner */}
-        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium">
+        <div className="text-amber-300 text-xs font-medium">
           <p className="font-semibold text-center">Covenant page for future updates</p>
         </div>
 
@@ -281,16 +281,16 @@ export const MobileCovenantView: React.FC = () => {
               <Code2 className="w-6 h-6 stroke-[2.5]" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-slate-100">Kaspa On-Chain Covenant</h3>
-              <p className="text-[11px] text-slate-400 font-medium">Smart Script Output Restrictions</p>
+              <h3 className="text-base font-extrabold text-white">Kaspa On-Chain Covenant</h3>
+              <p className="text-[11px] text-white font-medium">Smart Script Output Restrictions</p>
             </div>
           </div>
-          <span className="text-[10px] font-bold px-2.5 py-1 rounded bg-[#70C7BA]/20 text-[#70C7BA] uppercase tracking-wider font-mono">
+          <span className="text-[10px] font-bold px-2.5 py-1 rounded bg-[#70C7BA]/20 text-white uppercase tracking-wider font-mono">
             DAA SCORE: {currentDaaScore.toLocaleString()}
           </span>
         </div>
 
-        <p className="text-xs text-slate-400 leading-relaxed">
+        <p className="text-xs text-white leading-relaxed">
           Covenants are smart contracts implemented natively on the Kaspa ledger using script output restrictions.
           Funds locked inside a covenant can only be spent or released if specific on-chain consensus rules (like temporal lock, multi-sig signatures, or inactivity thresholds) are successfully met.
         </p>
@@ -484,11 +484,11 @@ export const MobileCovenantView: React.FC = () => {
           {covenantType === 'vault-next-of-kin' && (
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1.5">Owner Public Key (Hex)</label>
+                <label className="text-xs font-bold text-slate-300 block mb-1.5">Owner Public Key</label>
                 <input type="text" inputMode="none" value={ownerPubKey} onFocus={() => openKeyboard({ value: ownerPubKey, onChange: setOwnerPubKey })} onChange={(e) => setOwnerPubKey(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D12] border border-[#212B38] focus:border-[#70C7BA] text-xs text-slate-100 outline-none font-mono" required />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1.5">Heir Public Key (Hex)</label>
+                <label className="text-xs font-bold text-slate-300 block mb-1.5">Heir Public Key</label>
                 <input type="text" inputMode="none" value={heirPubKey} onFocus={() => openKeyboard({ value: heirPubKey, onChange: setHeirPubKey })} onChange={(e) => setHeirPubKey(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl bg-[#090D12] border border-[#212B38] focus:border-[#70C7BA] text-xs text-slate-100 outline-none font-mono" required />
               </div>
               <div>
@@ -732,7 +732,7 @@ export const MobileCovenantView: React.FC = () => {
             <input
               type="text"
               inputMode="none"
-              placeholder="32-byte hex string"
+              placeholder="32-byte hash string"
               value={writeTxid}
               onFocus={() => openKeyboard({ value: writeTxid, onChange: setWriteTxid })}
               onChange={(e) => setWriteTxid(e.target.value)}
@@ -763,7 +763,7 @@ export const MobileCovenantView: React.FC = () => {
 
             <div>
               <label className="text-[10px] font-bold text-slate-400 block mb-1">
-                Redeem Script (Hex)
+                Redeem Script
               </label>
               <input
                 type="text"

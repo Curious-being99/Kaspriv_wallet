@@ -8,7 +8,7 @@ import {
   shortenAddress,
   generateDeterministicAddress,
 } from '../utils/kaspa';
-import { decryptWithPassword } from '../utils/crypto';
+import { decryptWithPassword, buildAadContext } from '../utils/crypto';
 import {
   X,
   ArrowUpRight,
@@ -119,7 +119,13 @@ export const SendModal: React.FC = () => {
       setIsPasswordDecrypting(true);
       try {
         if (activeWallet?.encryptedMnemonic) {
-          const result = await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, passwordInput);
+          const result = await decryptWithPassword(
+            activeWallet.encryptedMnemonic.ciphertext,
+            activeWallet.encryptedMnemonic.salt,
+            activeWallet.encryptedMnemonic.iv,
+            passwordInput,
+            buildAadContext('MNEMONIC', activeWallet.id)
+          );
           // Only update if this is still the latest task and we are mounted
           if (isMounted && taskId === decryptingTaskRef.current) {
             setIsPasswordCorrect(true);
@@ -159,7 +165,13 @@ export const SendModal: React.FC = () => {
 
     if (isPasswordEnabled && activeWallet?.encryptedMnemonic && passwordInput) {
       try {
-        const decrypted = await decryptWithPassword(activeWallet.encryptedMnemonic.ciphertext, activeWallet.encryptedMnemonic.salt, activeWallet.encryptedMnemonic.iv, passwordInput);
+        const decrypted = await decryptWithPassword(
+          activeWallet.encryptedMnemonic.ciphertext,
+          activeWallet.encryptedMnemonic.salt,
+          activeWallet.encryptedMnemonic.iv,
+          passwordInput,
+          buildAadContext('MNEMONIC', activeWallet.id)
+        );
         return decrypted;
       } catch (e) {
         return null;
@@ -176,7 +188,13 @@ export const SendModal: React.FC = () => {
 
     if (isPasswordEnabled && activeWallet?.encryptedPassphrase && passwordInput) {
       try {
-        const decrypted = await decryptWithPassword(activeWallet.encryptedPassphrase.ciphertext, activeWallet.encryptedPassphrase.salt, activeWallet.encryptedPassphrase.iv, passwordInput, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+        const decrypted = await decryptWithPassword(
+          activeWallet.encryptedPassphrase.ciphertext,
+          activeWallet.encryptedPassphrase.salt,
+          activeWallet.encryptedPassphrase.iv,
+          passwordInput,
+          buildAadContext('PASSPHRASE', activeWallet.id)
+        );
         return decrypted || undefined;
       } catch (e) {}
     }
@@ -381,7 +399,7 @@ export const SendModal: React.FC = () => {
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="w-full h-full flex flex-col p-6 overflow-y-auto no-scrollbar pt-safe pb-safe"
+        className="w-full max-w-3xl mx-auto h-full flex flex-col p-6 overflow-y-auto no-scrollbar pt-safe pb-safe"
         style={{ paddingBottom: isKeyboardOpen ? '280px' : '' }}
       >
         {/* Modal Header */}
@@ -436,7 +454,7 @@ export const SendModal: React.FC = () => {
             </div>
 
             {/* Amount Summary Box */}
-            <div className="p-2.5 rounded-xl bg-[#0B151E]  text-center shadow-inner">
+            <div className="p-2.5 rounded-xl bg-[#0B151E] text-center shadow-inner">
               <div className="text-[9px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">
                 Amount Transferred
               </div>
@@ -444,9 +462,6 @@ export const SendModal: React.FC = () => {
                 <span className="text-rose-400">-</span>
                 <span>{successTx.amountKas.toLocaleString('en-US', { maximumFractionDigits: 8 })}</span>
                 <span className="text-xs font-extrabold text-[#70C7BA]">KAS</span>
-              </div>
-              <div className="text-[9px] font-semibold text-slate-400">
-                ≈ ${successTx.fiatValue} {currency}
               </div>
             </div>
 

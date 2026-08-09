@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
-import { decryptWithPassword } from '../utils/crypto';
+import { decryptWithPassword, buildAadContext } from '../utils/crypto';
 import { IsolatedSigner } from '../utils/IsolatedSigner';
 import { X, FileCode, Check, Copy, Lock, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -37,11 +37,18 @@ export const SignMessageModal: React.FC = () => {
             activeWallet.encryptedMnemonic.ciphertext,
             activeWallet.encryptedMnemonic.salt,
             activeWallet.encryptedMnemonic.iv,
-            activePassword
+            activePassword,
+            buildAadContext('MNEMONIC', activeWallet.id)
           );
           
           if (activeWallet.encryptedPassphrase) {
-            passphraseToUse = await decryptWithPassword(activeWallet.encryptedPassphrase.ciphertext, activeWallet.encryptedPassphrase.salt, activeWallet.encryptedPassphrase.iv, activePassword, "KASPRIV-WALLET-v1|KASPA-MAINNET|PASSPHRASE");
+            passphraseToUse = await decryptWithPassword(
+              activeWallet.encryptedPassphrase.ciphertext,
+              activeWallet.encryptedPassphrase.salt,
+              activeWallet.encryptedPassphrase.iv,
+              activePassword,
+              buildAadContext('PASSPHRASE', activeWallet.id)
+            );
           }
         } catch (err) {
           showToast('Invalid password. Decryption failed.', 'error');
@@ -121,7 +128,10 @@ export const SignMessageModal: React.FC = () => {
               rows={3}
               placeholder="Enter custom message string to sign with Kaspa private key..."
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onFocus={() => openKeyboard({ value: message, onChange: setMessage })}
+              onClick={() => openKeyboard({ value: message, onChange: setMessage })}
+              readOnly
+              inputMode="none"
               className="w-full p-3 rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
             />
           </div>

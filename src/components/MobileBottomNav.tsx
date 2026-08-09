@@ -13,7 +13,7 @@ export const MobileBottomNav: React.FC = () => {
   ] as const;
 
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-[#090D12] border-t border-[#1E293B] px-3 py-2 flex justify-center z-50">
+    <nav className="fixed bottom-0 left-0 w-full bg-[#090D12] px-3 py-2 flex justify-center z-50">
       <div className="w-full max-w-3xl flex items-center justify-around">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -27,7 +27,7 @@ export const MobileBottomNav: React.FC = () => {
               }`}
             >
               {isActive && (
-                <span className="absolute -top-2 w-8 h-1 rounded-full bg-[#70C7BA]" />
+                <></>
               )}
               <Icon className={`w-5 h-5 mb-1 transition-transform ${isActive ? 'scale-110 stroke-[2.5]' : 'stroke-[1.75]'}`} />
               <span className={`text-[10px] font-semibold tracking-tight ${isActive ? 'text-[#70C7BA]' : 'text-slate-400'}`}>

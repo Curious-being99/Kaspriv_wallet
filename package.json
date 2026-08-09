@@ -28,8 +28,10 @@
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-onscreen-keyboard": "^1.0.0",
     "react-simple-keyboard": "^3.8.255",
-    "tailwind-merge": "^3.0.1"
+    "tailwind-merge": "^3.0.1",
+    "zxcvbn": "^4.4.2"
   },
   "overrides": {
     "bn.js": "^4.12.3"
@@ -39,6 +41,7 @@
     "@types/node": "^22.13.4",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@types/zxcvbn": "^4.4.5",
     "@typescript-eslint/eslint-plugin": "^8.66.0",
     "@typescript-eslint/parser": "^8.66.0",
     "@vitejs/plugin-react": "^4.3.4",

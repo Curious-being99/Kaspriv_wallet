@@ -91,6 +91,9 @@ Before password verification, seed decryption, or private key derivation occurs,
 * **Cryptography:** Web Crypto API (`window.crypto.subtle`), `hash-wasm` (Argon2id), `@noble/secp256k1`
 * **Kaspa Core:** `kaspa-wasm`, `@kaspa/core-lib`
 
+> **Note on `kaspa-wasm` Postinstall Patching:**
+> `package.json` executes a `postinstall` script using `sed` to replace Node-specific `util` destructuring in `node_modules/kaspa-wasm/kaspa_wasm.js` with browser-native `globalThis.TextDecoder`/`TextEncoder`. Because string-substitution patches are fragile across upstream package releases or operating systems, developers should monitor `kaspa-wasm` releases for native web support and verify postinstall build compatibility when upgrading dependencies.
+
 ---
 
 ## Getting Started

@@ -21,16 +21,16 @@ export default {
       },
       colors: {
         kaspa: {
-          50: '#f0fdfa',
-          100: '#ccfbf1',
-          200: '#99f6e4',
-          300: '#5eead4',
-          400: '#2dd4bf',
-          500: '#70C7BA',
-          600: '#49A296',
-          700: '#357C74',
-          800: '#275E59',
-          900: '#153634',
+          50: '#f8fafc',
+          100: '#f1f5f9',
+          200: '#e2e8f0',
+          300: '#cbd5e1',
+          400: '#94a3b8',
+          500: '#64748b',
+          600: '#475569',
+          700: '#334155',
+          800: '#1e293b',
+          900: '#0f172a',
         },
         darkBg: {
           base: '#0B151E',
@@ -40,7 +40,8 @@ export default {
         }
       },
       fontFamily: {
-        sans: ['Nunito Sans', 'system-ui', 'sans-serif'],
+        sans: ['"Times New Roman Bold"', '"TimesNewRoman-Bold"', '"Times-Bold"', '"Times New Roman"', 'Times', 'serif'],
+        serif: ['"Times New Roman Bold"', '"TimesNewRoman-Bold"', '"Times-Bold"', '"Times New Roman"', 'Times', 'serif'],
         mono: ['Roboto Mono', 'monospace'],
       }
     },

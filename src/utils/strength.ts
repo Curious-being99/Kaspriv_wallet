@@ -1,3 +1,5 @@
+import zxcvbn from 'zxcvbn';
+
 export type PassphraseStrength = 'empty' | 'weak' | 'fair' | 'good' | 'strong';
 
 export interface StrengthResult {
@@ -5,29 +7,87 @@ export interface StrengthResult {
   score: number; // 0 to 4
   color: string;
   label: string;
+  feedback?: {
+    warning?: string;
+    suggestions?: string[];
+  };
+  crackTimeDisplay?: string;
+  minimumLengthMet?: boolean;
 }
+
+export const MIN_PASSPHRASE_LENGTH = 8;
 
 export const checkPassphraseStrength = (passphrase: string): StrengthResult => {
   if (!passphrase) {
-    return { strength: 'empty', score: 0, color: 'transparent', label: '' };
+    return {
+      strength: 'empty',
+      score: 0,
+      color: 'transparent',
+      label: '',
+      feedback: { warning: '', suggestions: [] },
+      minimumLengthMet: false,
+    };
   }
 
-  let score = 0;
-  if (passphrase.length > 6) score++;
-  if (passphrase.length > 10) score++;
-  if (/[A-Z]/.test(passphrase) && /[a-z]/.test(passphrase)) score++;
-  if (/[0-9]/.test(passphrase) || /[^A-Za-z0-9]/.test(passphrase)) score++;
+  const result = zxcvbn(passphrase);
+  let score = result.score; // 0 to 4
+
+  const warnings: string[] = [];
+  const suggestions: string[] = [...(result.feedback.suggestions || [])];
+
+  if (result.feedback.warning) {
+    warnings.push(result.feedback.warning);
+  }
+
+  // Enforce minimum length constraint (8 characters)
+  const minimumLengthMet = passphrase.length >= MIN_PASSPHRASE_LENGTH;
+  if (!minimumLengthMet) {
+    score = Math.min(score, 1); // Cap at 'weak' (1) if shorter than 8 chars
+    if (!warnings.some(w => w.includes('at least'))) {
+      warnings.unshift(`Password must be at least ${MIN_PASSPHRASE_LENGTH} characters long`);
+    }
+  }
+
+  let strength: PassphraseStrength = 'weak';
+  let color = '#ef4444';
+  let label = 'Weak';
 
   switch (score) {
     case 0:
     case 1:
-      return { strength: 'weak', score: 1, color: '#ef4444', label: 'Weak' };
+      strength = 'weak';
+      color = '#ef4444';
+      label = 'Weak';
+      break;
     case 2:
-      return { strength: 'fair', score: 2, color: '#f59e0b', label: 'Fair' };
+      strength = 'fair';
+      color = '#f59e0b';
+      label = 'Fair';
+      break;
     case 3:
-      return { strength: 'good', score: 3, color: '#10b981', label: 'Good' };
+      strength = 'good';
+      color = '#10b981';
+      label = 'Good';
+      break;
     case 4:
     default:
-      return { strength: 'strong', score: 4, color: '#70C7BA', label: 'Strong' };
+      strength = 'strong';
+      color = '#70C7BA';
+      label = 'Strong';
+      break;
   }
+
+  return {
+    strength,
+    score,
+    color,
+    label,
+    feedback: {
+      warning: warnings.join('. '),
+      suggestions,
+    },
+    crackTimeDisplay: result.crack_times_display?.offline_slow_hashing_1e4_per_second as string || '',
+    minimumLengthMet,
+  };
 };
+

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
+import { useVirtualKeyboard } from '../context/KeyboardContext';
 import { KaspaTransaction } from '../types';
 import { formatKas, shortenAddress, sompiToKas } from '../utils/kaspa';
 import {
@@ -24,10 +25,12 @@ import { motion, AnimatePresence } from 'motion/react';
 interface TransactionListProps {
   hideHeader?: boolean;
   hideAssetCard?: boolean;
+  hideList?: boolean;
 }
 
-export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = false, hideAssetCard = false }) => {
+export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = false, hideAssetCard = false, hideList = false }) => {
   const { transactions, activeWallet, marketData, currency, fiatRate, showToast, currentDaaScore, isBalanceVisible, setIsBalanceVisible, setIsAssetDetailOpen } = useWallet();
+  const { openKeyboard } = useVirtualKeyboard();
 
   const [filter, setFilter] = useState<'all' | 'receive' | 'send' | 'compound'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,14 +73,16 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
           className="p-3.5 sm:p-4 kaspriv-card flex items-center justify-between gap-3 cursor-pointer hover:border-[#70C7BA]/60 transition-all active:scale-[0.99] group shadow-sm hover:shadow-md"
         >
           <div className="flex items-center gap-3">
-            {/* Official Kaspa logo from cryptologos.cc */}
-            <div className="w-10 h-10 rounded-full bg-[#70C7BA] flex items-center justify-center overflow-hidden shadow-sm shrink-0">
+            {/* Kaspa logo asset */}
+            <div className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shadow-sm shrink-0 bg-[#68C5B5]">
               <img
-                src="https://cryptologos.cc/logos/kaspa-kas-logo.svg"
+                src="/asset_logo.png"
                 alt="Kaspa Logo"
-                className="w-full h-full object-cover p-1"
+                className="w-full h-full object-cover"
                 onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = 'https://cryptologos.cc/logos/kaspa-kas-logo.png';
+                  const target = e.currentTarget as HTMLImageElement;
+                  target.onerror = null;
+                  target.src = '/assets/kas_icon.svg';
                 }}
               />
             </div>
@@ -120,7 +125,10 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
               type="text"
               placeholder="Search transactions by ID, address, or note..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
+              onClick={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
+              readOnly
+              inputMode="none"
               className="w-full bg-[#131924] border border-[#212B38] rounded-2xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#70C7BA] transition-colors"
             />
             {searchQuery && (
@@ -152,105 +160,107 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
       )}
 
       {/* 2. Transaction Item List (Flat Layout without Nested Cards to utilize full width) */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Transactions</h3>
-          {filteredTxs.length > 0 && (
-            <span className="text-[10px] font-mono text-slate-400 font-bold bg-[#131924] border border-[#212B38]/50 px-2 py-0.5 rounded-full">
-              Showing {filteredTxs.length}
-            </span>
+      {!hideList && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Transactions</h3>
+            {filteredTxs.length > 0 && (
+              <span className="text-[10px] font-mono text-slate-400 font-bold bg-[#131924] border border-[#212B38]/50 px-2 py-0.5 rounded-full">
+                Showing {filteredTxs.length}
+              </span>
+            )}
+          </div>
+          <div className="divide-y divide-[#212B38]/50">
+            {filteredTxs.length === 0 ? (
+              <div className="text-center py-8 px-4 text-slate-400">
+                <FileText className="w-10 h-10 text-slate-500 mx-auto mb-2" />
+                <div className="text-sm font-semibold text-slate-300">No transactions found</div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {searchQuery ? 'Try matching another search query' : 'Your Kaspa transaction history will appear here'}
+                </p>
+              </div>
+            ) : (
+              filteredTxs.map((tx) => {
+                const kasVal = sompiToKas(tx.amountSompi);
+                const fiatVal = (kasVal * marketData.priceUsd * fiatRate).toFixed(2);
+
+                return (
+                  <motion.div
+                    key={tx.txid}
+                    layout
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    onClick={() => isBalanceVisible && setSelectedTx(tx)}
+                    className={`flex items-center justify-between py-3.5 px-2 transition-all group ${
+                      isBalanceVisible ? 'hover:bg-[#131924]/50 cursor-pointer rounded-xl' : 'cursor-default opacity-80'
+                    }`}
+                  >
+                  {/* Type Icon & Info */}
+                  <div className="flex items-center gap-3.5">
+                    <div
+                      className={`w-11 h-11 rounded-2xl flex items-center justify-center ${
+                        tx.type === 'receive'
+                          ? 'bg-[#70C7BA]/15 text-[#70C7BA]'
+                          : tx.type === 'send'
+                          ? 'bg-rose-500/15 text-rose-400'
+                          : 'bg-amber-500/15 text-amber-400'
+                      }`}
+                    >
+                      {tx.type === 'receive' && <ArrowUpRight className="w-5 h-5" />}
+                      {tx.type === 'send' && <ArrowDownLeft className="w-5 h-5" />}
+                      {tx.type === 'compound' && <Layers className="w-5 h-5" />}
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                        <span className="capitalize">{tx.type}</span>
+                        {!tx.isAccepted && (
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-500 animate-pulse">
+                            Pending
+                          </span>
+                        )}
+                        {tx.addressLabel && (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1C2F42] text-slate-300">
+                            {tx.addressLabel}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-400 font-mono flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span>{isBalanceVisible ? shortenAddress(tx.address, 10, 6) : 'kaspa:••••••••••••'}</span>
+                        <span>•</span>
+                        <span>{new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Amount & Status */}
+                  <div className="text-right">
+                    <div
+                      className={`text-base font-black font-mono ${
+                        tx.type === 'receive'
+                          ? 'text-[#70C7BA]'
+                          : tx.type === 'send'
+                          ? 'text-rose-400'
+                          : 'text-amber-400'
+                      }`}
+                    >
+                      {tx.type === 'receive' ? '+' : tx.type === 'send' ? '-' : ''}
+                      {isBalanceVisible ? formatKas(tx.amountSompi, 2) : '••••'} KAS
+                    </div>
+                    <div className="text-xs text-slate-400 font-medium">
+                      {isBalanceVisible 
+                        ? (tx.type === 'compound' ? `Fee ${sompiToKas(tx.feeSompi)} KAS` : `≈ $${fiatVal} ${currency}`)
+                        : '≈ $••.••'
+                      }
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })
           )}
         </div>
-        <div className="divide-y divide-[#212B38]/50">
-          {filteredTxs.length === 0 ? (
-            <div className="text-center py-8 px-4 text-slate-400">
-              <FileText className="w-10 h-10 text-slate-500 mx-auto mb-2" />
-              <div className="text-sm font-semibold text-slate-300">No transactions found</div>
-              <p className="text-xs text-slate-500 mt-1">
-                {searchQuery ? 'Try matching another search query' : 'Your Kaspa transaction history will appear here'}
-              </p>
-            </div>
-          ) : (
-            filteredTxs.map((tx) => {
-              const kasVal = sompiToKas(tx.amountSompi);
-              const fiatVal = (kasVal * marketData.priceUsd * fiatRate).toFixed(2);
-
-              return (
-                <motion.div
-                  key={tx.txid}
-                  layout
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  onClick={() => isBalanceVisible && setSelectedTx(tx)}
-                  className={`flex items-center justify-between py-3.5 px-2 transition-all group ${
-                    isBalanceVisible ? 'hover:bg-[#131924]/50 cursor-pointer rounded-xl' : 'cursor-default opacity-80'
-                  }`}
-                >
-                {/* Type Icon & Info */}
-                <div className="flex items-center gap-3.5">
-                  <div
-                    className={`w-11 h-11 rounded-2xl flex items-center justify-center ${
-                      tx.type === 'receive'
-                        ? 'bg-[#70C7BA]/15 text-[#70C7BA]'
-                        : tx.type === 'send'
-                        ? 'bg-rose-500/15 text-rose-400'
-                        : 'bg-amber-500/15 text-amber-400'
-                    }`}
-                  >
-                    {tx.type === 'receive' && <ArrowUpRight className="w-5 h-5" />}
-                    {tx.type === 'send' && <ArrowDownLeft className="w-5 h-5" />}
-                    {tx.type === 'compound' && <Layers className="w-5 h-5" />}
-                  </div>
-
-                  <div>
-                    <div className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                      <span className="capitalize">{tx.type}</span>
-                      {!tx.isAccepted && (
-                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-500 animate-pulse">
-                          Pending
-                        </span>
-                      )}
-                      {tx.addressLabel && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1C2F42] text-slate-300">
-                          {tx.addressLabel}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-slate-400 font-mono flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span>{isBalanceVisible ? shortenAddress(tx.address, 10, 6) : 'kaspa:••••••••••••'}</span>
-                      <span>•</span>
-                      <span>{new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Amount & Status */}
-                <div className="text-right">
-                  <div
-                    className={`text-base font-black font-mono ${
-                      tx.type === 'receive'
-                        ? 'text-[#70C7BA]'
-                        : tx.type === 'send'
-                        ? 'text-rose-400'
-                        : 'text-amber-400'
-                    }`}
-                  >
-                    {tx.type === 'receive' ? '+' : tx.type === 'send' ? '-' : ''}
-                    {isBalanceVisible ? formatKas(tx.amountSompi, 2) : '••••'} KAS
-                  </div>
-                  <div className="text-xs text-slate-400 font-medium">
-                    {isBalanceVisible 
-                      ? (tx.type === 'compound' ? `Fee ${sompiToKas(tx.feeSompi)} KAS` : `≈ $${fiatVal} ${currency}`)
-                      : '≈ $••.••'
-                    }
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })
-        )}
       </div>
-    </div>
+      )}
 
       {/* Transaction Detail Drawer Modal */}
       <AnimatePresence>

@@ -7,8 +7,11 @@
     overflow-x: hidden;
     max-width: 100vw;
     background-color: #090D12;
-    color: #F1F5F9;
-    font-family: 'Nunito Sans', sans-serif;
+    color: #FFFFFF;
+    font-family: "Times New Roman Bold", "TimesNewRoman-Bold", "Times-Bold", "Times New Roman", Times, serif;
+    font-weight: bold;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
     -webkit-user-select: none;
@@ -17,6 +20,8 @@
   input, textarea {
     user-select: auto;
     -webkit-user-select: auto;
+    font-family: inherit;
+    font-weight: inherit;
   }
 }
 
@@ -61,7 +66,7 @@ body {
 }
 
 .kaspriv-card-interactive:hover {
-  border-color: #70C7BA;
+  border-color: #475569;
   transform: translateY(-1px);
 }
 
@@ -75,14 +80,11 @@ body {
 
 .kaspriv-input:focus {
   outline: none;
-  border-color: #70C7BA;
-  box-shadow: 0 0 0 2px rgba(112, 199, 186, 0.2);
+  border-color: #475569;
 }
 
 .kaspa-gradient-text {
-  background: linear-gradient(135deg, #70C7BA 0%, #2dd4bf 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #F8FAFC;
 }
 
 /* Safe Area Utilities */
@@ -106,15 +108,40 @@ body {
   transform: none !important;
   transition: none !important;
 }
-.hg-theme-default .hg-button:hover,
-.hg-theme-default .hg-button:active,
-.hg-theme-default .hg-button:focus,
-.hg-theme-default .hg-button.hg-activeButton {
-  background: #131924 !important;
-  color: #F1F5F9 !important;
-  border-color: #212B38 !important;
-  box-shadow: none !important;
-  transform: none !important;
-  transition: none !important;
+/* Gboard Dark Theme Styles */
+.gboard-dark-theme {
+    background-color: #0C1016 !important;
 }
+
+.gboard-dark-theme .hg-button {
+    background: #1F2937 !important;
+    color: #F3F4F6 !important;
+    border: none !important;
+    border-radius: 6px !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
+    margin: 2px !important;
+    padding: 0 !important;
+    height: 45px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    transition: none !important;
+}
+
+.gboard-dark-theme .hg-button:active {
+    background: #1F2937 !important;
+}
+
+.gboard-dark-theme .hg-button.hg-functionBtn {
+    background: #4B5563 !important;
+    color: #E5E7EB !important;
+}
+
+.gboard-dark-theme .hg-button.hg-activeButton {
+    background: #1F2937 !important;
+    color: #F3F4F6 !important;
+}
+
 
