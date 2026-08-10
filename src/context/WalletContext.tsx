@@ -209,6 +209,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const initApp = async () => {
       try {
+        // Pre-load and initialize Kaspa WASM runtime on application startup
+        await ensureKaspaRuntime();
+
         await runDatabaseMigrations();
         
         const savedWallets = await getWalletsFromDB();
@@ -1433,9 +1436,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let seedToUse: string | null = (providedSeedPhrase && providedSeedPhrase.trim()) || activeWallet.mnemonic;
     let passphraseToUse: string | null | undefined = providedPassphrase !== undefined ? providedPassphrase : activeWallet.passphrase;
 
+    const activePassword = password || passwordRef.current;
+
     // Handle decryption if seed is encrypted at rest
     if (!seedToUse && (activeWallet.encryptedMnemonic)) {
-      const activePassword = providedPassphrase || password; // Use provided Password if available
       if (activePassword) {
         try {
           if (activeWallet.encryptedMnemonic) {
@@ -1448,7 +1452,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             );
           }
           
-          if (activeWallet.encryptedPassphrase) {
+          if (providedPassphrase === undefined && activeWallet.encryptedPassphrase) {
             passphraseToUse = await decryptWithPassword(
               activeWallet.encryptedPassphrase.ciphertext,
               activeWallet.encryptedPassphrase.salt,
@@ -1460,6 +1464,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } catch (err) {
           return { success: false, error: 'Invalid Security Password. Could not decrypt wallet credentials.' };
         }
+      } else {
+        return { success: false, error: 'Wallet is locked. Please unlock the wallet first.' };
       }
     }
 

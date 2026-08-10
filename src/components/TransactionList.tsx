@@ -3,6 +3,7 @@ import { useWallet } from '../context/WalletContext';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 import { KaspaTransaction } from '../types';
 import { formatKas, shortenAddress, sompiToKas } from '../utils/kaspa';
+import { KaspaLogo } from './KaspaLogo';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -74,26 +75,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
         >
           <div className="flex items-center gap-3">
             {/* Kaspa logo asset with robust multi-tier fallback */}
-            <div className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shadow-sm shrink-0 bg-[#090D12] border border-[#212B38]">
-              <img
-                src="/asset_logo.png"
-                alt="Kaspa Logo"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  const target = e.currentTarget as HTMLImageElement;
-                  if (target.src.includes('asset_logo.png')) {
-                    target.src = '/assets/kaspa-transaction-icon.png';
-                  } else if (target.src.includes('kaspa-transaction-icon.png')) {
-                    target.src = '/assets/kaspa-logo.svg';
-                  } else {
-                    target.style.display = 'none';
-                    if (target.parentElement) {
-                      target.parentElement.innerHTML = '<span class="text-xs font-black text-[#70C7BA]">K</span>';
-                    }
-                  }
-                }}
-              />
-            </div>
+            <KaspaLogo sizeClassName="w-10 h-10" />
             <div>
               <div className="text-sm font-extrabold text-slate-100">
                 Kaspa

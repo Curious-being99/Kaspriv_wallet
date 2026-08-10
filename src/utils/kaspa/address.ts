@@ -117,6 +117,7 @@ export function validateKaspaAddress(address: string, network: NetworkType = 'ma
     return { isValid: false, error: 'Invalid Kaspa address length' };
   }
 
+  const hrpActual = parts[0].toLowerCase();
   const payload = parts[1];
   const firstChar = payload[0].toLowerCase();
   if (!['q', 'p', 'z'].includes(firstChar)) {
@@ -126,6 +127,46 @@ export function validateKaspaAddress(address: string, network: NetworkType = 'ma
   const validBech32Chars = /^[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/i;
   if (!validBech32Chars.test(payload)) {
     return { isValid: false, error: 'Address contains invalid characters' };
+  }
+
+  // Convert characters to 5-bit values
+  const words: number[] = [];
+  for (let i = 0; i < payload.length; i++) {
+    const idx = CHARSET.indexOf(payload[i].toLowerCase());
+    if (idx === -1) {
+      return { isValid: false, error: 'Address contains invalid characters' };
+    }
+    words.push(idx);
+  }
+
+  // Checksum is 8 characters
+  if (words.length < 8) {
+    return { isValid: false, error: 'Address is too short' };
+  }
+
+  // Verify polynomial checksum
+  const checksumWords = [...hrpExpand(hrpActual), ...words.map(w => BigInt(w))];
+  const remainder = polyMod(checksumWords);
+  if (remainder !== 0n) {
+    return { isValid: false, error: 'Address checksum verification failed' };
+  }
+
+  // Verify version byte and payload size
+  const dataWords = words.slice(0, words.length - 8);
+  const bytes = convertBits(dataWords, 5, 8, false);
+  if (bytes.length === 0) {
+    return { isValid: false, error: 'Invalid address data encoding' };
+  }
+
+  const version = bytes[0];
+  if (version !== 0x00 && version !== 0x08) {
+    return { isValid: false, error: `Unsupported address version 0x${version.toString(16)}` };
+  }
+
+  const pubkeyHashLength = bytes.length - 1;
+  // Standard Kaspa addresses have a 32-byte public key hash or script hash.
+  if (pubkeyHashLength !== 32) {
+    return { isValid: false, error: `Invalid payload length (${pubkeyHashLength} bytes, expected 32)` };
   }
 
   return { isValid: true };

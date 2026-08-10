@@ -37,40 +37,124 @@ function safeFormatArg(a: any): string {
 
 function sanitizeText(str: string): string {
   if (!str || typeof str !== 'string') return str;
-  let sanitized = str.replace(/\b(kprv|xprv|priv)[a-zA-Z0-9]{20,}\b/g, '[REDACTED_KEY]');
+  
+  let sanitized = str;
+
+  // 1. Redact 64-character hex strings (private keys, seed hexes, etc.)
   sanitized = sanitized.replace(/\b[0-9a-fA-F]{64}\b/g, '[REDACTED_HEX]');
+
+  // 2. Redact kprv / xprv / priv key sequences
+  sanitized = sanitized.replace(/\b(kprv|xprv|priv|kpub|xpub)[a-zA-Z0-9]{30,}\b/gi, '[REDACTED_KEY]');
+
+  // 3. Redact potential BIP39 mnemonics (12 or 24 lowercase words)
+  const mnemonicRegex12 = /\b[a-z]{3,12}(?:\s+[a-z]{3,12}){11}\b/gi;
+  const mnemonicRegex24 = /\b[a-z]{3,12}(?:\s+[a-z]{3,12}){23}\b/gi;
+  sanitized = sanitized.replace(mnemonicRegex24, '[REDACTED_MNEMONIC_24]');
+  sanitized = sanitized.replace(mnemonicRegex12, '[REDACTED_MNEMONIC_12]');
+
+  // 4. Redact email addresses just in case (as privacy best practice)
+  sanitized = sanitized.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[REDACTED_EMAIL]');
+
+  // 5. Redact standard password/secret patterns in text like passphrase=xyz or pass=xyz
+  sanitized = sanitized.replace(/(password|passphrase|passwd|pwd|pass|secret|seed|mnemonic)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]');
+
   return sanitized;
 }
 
-function sanitizeValue(val: any, keyName?: string): any {
+function sanitizeValue(val: any, keyName?: string, visited = new WeakSet<any>()): any {
   if (val === null || val === undefined) return val;
-  const sensitiveKeys = ['privatekey', 'mnemonic', 'seed', 'password', 'secret', 'key', 'auth', 'credential', 'kprv', 'xprv'];
+
+  const sensitiveKeys = [
+    'privatekey', 'private_key', 'privkey', 'mnemonic', 'seed', 'password', 
+    'secret', 'key', 'auth', 'credential', 'kprv', 'xprv', 'passphrase', 
+    'pin', 'canary', 'ciphertext', 'salt', 'iv', 'entropy'
+  ];
+
+  // If keyName is sensitive, redact immediately
   if (keyName && sensitiveKeys.some(sk => keyName.toLowerCase().includes(sk))) {
-    return '[REDACTED]';
+    return '[REDACTED_SECRET]';
   }
+
+  // Handle strings
   if (typeof val === 'string') {
     return sanitizeText(val);
   }
+
+  // Handle circular references and objects
   if (typeof val === 'object') {
+    if (visited.has(val)) {
+      return '[CIRCULAR_REFERENCE]';
+    }
+    visited.add(val);
+
+    // Handle Errors
     if (val instanceof Error) {
       return {
+        name: val.name,
         message: sanitizeText(val.message),
         stack: sanitizeText(val.stack || ''),
       };
     }
-    if (Array.isArray(val)) {
-      return val.map(item => sanitizeValue(item));
+
+    // Handle ArrayBuffer and TypedArrays (e.g. Uint8Array)
+    if (ArrayBuffer.isView(val) || val instanceof ArrayBuffer) {
+      const length = (val as any).length !== undefined ? (val as any).length : (val as any).byteLength;
+      
+      // If it looks like a private key (32 bytes) or a seed (32 or 64 bytes), redact it completely
+      if (length === 32 || length === 64) {
+        return `[REDACTED_BUFFER_${length}_BYTES]`;
+      }
+      
+      // Otherwise, convert small buffers to a clean representation but sanitize elements
+      if (length > 128) {
+        return `[TypedArray: length ${length}]`;
+      }
+      
+      try {
+        const arr = Array.from(val as any);
+        if (arr.length === 32 || arr.length === 64) {
+          return `[REDACTED_BUFFER_${arr.length}_BYTES]`;
+        }
+        return arr.map(item => sanitizeValue(item, undefined, visited));
+      } catch (e) {
+        return `[TypedArray: length ${length}]`;
+      }
     }
+
+    // Handle standard Arrays
+    if (Array.isArray(val)) {
+      // If it's an array of 12 or 24 strings that look like lowercase words (mnemonic)
+      if (val.length === 12 || val.length === 24) {
+        const isMnemonicArray = val.every(item => typeof item === 'string' && /^[a-z]{3,12}$/.test(item));
+        if (isMnemonicArray) {
+          return `[REDACTED_MNEMONIC_${val.length}_ARRAY]`;
+        }
+      }
+      return val.map(item => sanitizeValue(item, undefined, visited));
+    }
+
+    // Handle generic objects
     const sanitizedObj: Record<string, any> = {};
-    for (const k of Object.keys(val)) {
+    const keys = Object.keys(val);
+    for (const k of keys) {
       if (sensitiveKeys.some(sk => k.toLowerCase().includes(sk))) {
-        sanitizedObj[k] = '[REDACTED]';
+        sanitizedObj[k] = '[REDACTED_SECRET]';
       } else {
-        sanitizedObj[k] = sanitizeValue(val[k], k);
+        try {
+          sanitizedObj[k] = sanitizeValue(val[k], k, visited);
+        } catch (e) {
+          sanitizedObj[k] = '[UNSUPPORTED_OR_CORRUPT_PROPERTY]';
+        }
       }
     }
     return sanitizedObj;
   }
+
+  // Handle functions
+  if (typeof val === 'function') {
+    return `[Function: ${val.name || 'anonymous'}]`;
+  }
+
   return val;
 }
 
@@ -111,54 +195,67 @@ export function addDevLog(level: 'error' | 'warn' | 'info' | 'log', message: str
 }
 
 // Monkey-patch console to catch all application errors & logs automatically
-let patched = false;
-if (typeof window !== 'undefined' && !patched) {
-  patched = true;
+const globalObj = typeof window !== 'undefined' ? (window as any) : {};
+if (typeof window !== 'undefined' && !globalObj.__KASPRIV_CONSOLE_PATCHED__) {
+  globalObj.__KASPRIV_CONSOLE_PATCHED__ = true;
 
   const originalLog = console.log;
   const originalWarn = console.warn;
   const originalError = console.error;
   const originalInfo = console.info;
 
+  globalObj.__KASPRIV_ORIGINALS__ = {
+    log: originalLog,
+    warn: originalWarn,
+    error: originalError,
+    info: originalInfo
+  };
+
   console.log = (...args: any[]) => {
     try {
       const sanitizedArgs = args.map(arg => sanitizeValue(arg));
-      originalLog.apply(console, sanitizedArgs);
-      // Skip capturing generic logs to keep console focused on high-priority events
+      globalObj.__KASPRIV_ORIGINALS__.log.apply(console, sanitizedArgs);
     } catch (e) {
-      // Ignore errors in logging patch
+      try {
+        originalLog.apply(console, args);
+      } catch (_) {}
     }
   };
 
   console.warn = (...args: any[]) => {
     try {
       const sanitizedArgs = args.map(arg => sanitizeValue(arg));
-      originalWarn.apply(console, sanitizedArgs);
+      globalObj.__KASPRIV_ORIGINALS__.warn.apply(console, sanitizedArgs);
       const msg = sanitizedArgs.map(safeFormatArg).join(' ');
       addDevLog('warn', msg);
     } catch (e) {
-      // Ignore errors in logging patch
+      try {
+        originalWarn.apply(console, args);
+      } catch (_) {}
     }
   };
 
   console.error = (...args: any[]) => {
     try {
       const sanitizedArgs = args.map(arg => sanitizeValue(arg));
-      originalError.apply(console, sanitizedArgs);
+      globalObj.__KASPRIV_ORIGINALS__.error.apply(console, sanitizedArgs);
       const msg = sanitizedArgs.map(safeFormatArg).join(' ');
       addDevLog('error', msg, sanitizedArgs.length > 1 ? sanitizedArgs.slice(1) : undefined);
     } catch (e) {
-      // Ignore errors in logging patch
+      try {
+        originalError.apply(console, args);
+      } catch (_) {}
     }
   };
 
   console.info = (...args: any[]) => {
     try {
       const sanitizedArgs = args.map(arg => sanitizeValue(arg));
-      originalInfo.apply(console, sanitizedArgs);
-      // Skip capturing generic info logs unless they are critical (we'll manually call addDevLog for important info)
+      globalObj.__KASPRIV_ORIGINALS__.info.apply(console, sanitizedArgs);
     } catch (e) {
-      // Ignore errors in logging patch
+      try {
+        originalInfo.apply(console, args);
+      } catch (_) {}
     }
   };
 

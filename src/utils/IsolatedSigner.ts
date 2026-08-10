@@ -4,7 +4,9 @@ import {
   signTransactionWithPrivateKeyBytes, 
   signKaspaMessage, 
   addressToScriptPublicKey,
-  wipe 
+  wipe,
+  kaspaWasmModule,
+  ensureKaspaRuntime
 } from './kaspa';
 import { NetworkType } from '../types';
 
@@ -156,6 +158,145 @@ function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): voi
 }
 
 /**
+ * Compare the entire final signed transaction against the approved intent,
+ * and verify actual transaction mass/fee using the Kaspa implementation.
+ */
+async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxIntent): Promise<void> {
+  // Ensure the transaction structure exists
+  if (!signedTx || !Array.isArray(signedTx.inputs) || !Array.isArray(signedTx.outputs)) {
+    throw new Error('Security failure: Signed transaction is missing inputs or outputs array.');
+  }
+
+  // 1. Verify inputs match the intent UTXOs exactly
+  if (signedTx.inputs.length !== intent.utxos.length) {
+    throw new Error(`Security failure: Signed transaction input count (${signedTx.inputs.length}) does not match the approved intent UTXO count (${intent.utxos.length}).`);
+  }
+
+  for (const input of signedTx.inputs) {
+    const txId = input.previousOutpoint?.transactionId;
+    const index = input.previousOutpoint?.index;
+    if (!txId || index === undefined) {
+      throw new Error('Security failure: Signed transaction input is missing previousOutpoint fields.');
+    }
+
+    // Every input outpoint must match a UTXO in the intent
+    const utxoMatch = intent.utxos.some(u => {
+      const uTxId = u.outpoint?.transactionId || u.transactionId;
+      const uIndex = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
+      return String(uTxId) === String(txId) && Number(uIndex) === Number(index);
+    });
+
+    if (!utxoMatch) {
+      throw new Error(`Security failure: Signed transaction contains an unapproved input outpoint ${txId}:${index}.`);
+    }
+
+    // Ensure the signatureScript is present (meaning it has been signed)
+    if (!input.signatureScript) {
+      throw new Error('Security failure: Signed transaction has an unsigned input (signatureScript is empty).');
+    }
+  }
+
+  // 2. Verify outputs match the approved intent exactly
+  const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress);
+  
+  // Find the recipient output
+  const recipientOutput = signedTx.outputs.find((out: any) => {
+    const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
+    return spk === expectedScriptPubKey;
+  });
+
+  if (!recipientOutput) {
+    throw new Error('Security failure: Signed transaction is missing the recipient output.');
+  }
+
+  const actualRecipientAmount = BigInt(recipientOutput.amount);
+  if (actualRecipientAmount !== intent.amountSompi) {
+    throw new Error(`Security failure: Signed transaction recipient output amount (${actualRecipientAmount} sompi) does not match approved amount (${intent.amountSompi} sompi).`);
+  }
+
+  // Verify change output if present
+  const totalInputSompi = intent.utxos.reduce((acc, u) => {
+    const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
+    return acc + amt;
+  }, 0n);
+
+  const expectedChangeAmount = totalInputSompi - intent.amountSompi - intent.feeSompi;
+
+  if (expectedChangeAmount > 0n) {
+    const expectedChangeScriptPubKey = addressToScriptPublicKey(intent.changeAddress);
+    const changeOutput = signedTx.outputs.find((out: any) => {
+      const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
+      return spk === expectedChangeScriptPubKey;
+    });
+
+    if (!changeOutput) {
+      throw new Error('Security failure: Signed transaction is missing the change output.');
+    }
+
+    const actualChangeAmount = BigInt(changeOutput.amount);
+    if (actualChangeAmount !== expectedChangeAmount) {
+      throw new Error(`Security failure: Signed transaction change output amount (${actualChangeAmount} sompi) does not match expected change (${expectedChangeAmount} sompi).`);
+    }
+
+    // Ensure there are exactly 2 outputs (recipient + change)
+    if (signedTx.outputs.length !== 2) {
+      throw new Error(`Security failure: Signed transaction has extra unauthorized outputs (${signedTx.outputs.length} outputs, expected 2).`);
+    }
+  } else {
+    // If no change, there should be exactly 1 output (just the recipient)
+    if (signedTx.outputs.length !== 1) {
+      throw new Error(`Security failure: Signed transaction has extra unauthorized outputs (${signedTx.outputs.length} outputs, expected 1).`);
+    }
+  }
+
+  // 3. Verify other fields
+  if (BigInt(signedTx.lockTime || 0) !== BigInt(intent.lockTime || 0)) {
+    throw new Error(`Security failure: Signed transaction lockTime mismatch.`);
+  }
+
+  // 4. Verify actual mass/fee using Kaspa WASM implementation
+  await ensureKaspaRuntime();
+  if (kaspaWasmModule && typeof kaspaWasmModule.MassCalculator === 'function') {
+    try {
+      let wasmNetworkType = kaspaWasmModule.NetworkType.Mainnet;
+      if (intent.network === 'testnet-10') {
+        wasmNetworkType = kaspaWasmModule.NetworkType.Testnet;
+      } else if (intent.network === 'devnet') {
+        wasmNetworkType = kaspaWasmModule.NetworkType.Devnet;
+      }
+
+      const cp = kaspaWasmModule.getConsensusParametersByNetwork(wasmNetworkType);
+      const mc = new kaspaWasmModule.MassCalculator(cp);
+      const wasmTx = new kaspaWasmModule.Transaction(signedTx);
+
+      try {
+        const actualMass = mc.calcMassForTransaction(wasmTx);
+        const minRequiredFee = mc.calcMinimumTransactionRelayFeeFromMass(BigInt(actualMass));
+
+        // Enforce standard maximum mass limit (100,000 grams)
+        if (actualMass > 100000) {
+          throw new Error(`Security failure: Transaction mass (${actualMass}) exceeds standard mempool limit of 100,000 grams.`);
+        }
+
+        // Ensure transaction fee paid is sufficient
+        if (intent.feeSompi < BigInt(minRequiredFee)) {
+          throw new Error(`Security failure: Paid fee (${intent.feeSompi} sompi) is below minimum relay fee (${minRequiredFee} sompi) required for mass (${actualMass} grams).`);
+        }
+      } finally {
+        wasmTx.free();
+        mc.free();
+        cp.free();
+      }
+    } catch (e: any) {
+      console.warn('WASM mass/fee verification notice:', e);
+      if (e.message && e.message.startsWith('Security failure:')) {
+        throw e;
+      }
+    }
+  }
+}
+
+/**
  * Isolated Signer
  *
  * Security properties:
@@ -224,6 +365,9 @@ export class IsolatedSigner {
         transaction,
         privKeyBytes
       );
+
+      // Verify the FINAL signed transaction structure, parameters, mass and fees against the intent before returning
+      await verifyFinalSignedTransaction(signedTx, intent);
 
       return {
         success: true,
