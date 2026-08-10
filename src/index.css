@@ -8,8 +8,8 @@
     max-width: 100vw;
     background-color: #090D12;
     color: #FFFFFF;
-    font-family: "Times New Roman Bold", "TimesNewRoman-Bold", "Times-Bold", "Times New Roman", Times, serif;
-    font-weight: bold;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-weight: normal;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
