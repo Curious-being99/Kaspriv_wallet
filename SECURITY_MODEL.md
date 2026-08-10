@@ -25,7 +25,7 @@ The wallet uses **Argon2id** (via `hash-wasm`) to derive a secure cryptographic 
 
 **Argon2id Parameters (`v1.0.0-argon2id-aes256gcm`):**
 Argon2id parameters are selected based on measured derivation cost on supported devices and are versioned for future upgrades:
-* **Iterations (Time Cost):** 10 passes
+* **Iterations (Time Cost):** 6 passes
 * **Memory Size:** 128 MiB (131,072 KiB)
 * **Parallelism:** 1 lane/thread
 * **Hash Length:** 32 bytes (yielding a 256-bit key for AES-256)
