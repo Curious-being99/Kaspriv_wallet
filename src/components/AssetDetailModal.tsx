@@ -36,11 +36,33 @@ export const AssetDetailModal: React.FC = () => {
               <span className="text-xs font-bold">Back</span>
             </button>
 
-            <div className="text-center">
-              <h2 className="text-sm font-extrabold text-slate-100">
-                Kaspa (KAS)
-              </h2>
-              <p className="text-[10px] text-slate-400 font-medium">Protocol Overview & Documentation</p>
+            <div className="flex items-center gap-2.5 text-center">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center overflow-hidden shadow-sm shrink-0 bg-[#090D12] border border-[#212B38]">
+                <img
+                  src="/asset_logo.png"
+                  alt="Kaspa Logo"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.currentTarget as HTMLImageElement;
+                    if (target.src.includes('asset_logo.png')) {
+                      target.src = '/assets/kaspa-transaction-icon.png';
+                    } else if (target.src.includes('kaspa-transaction-icon.png')) {
+                      target.src = '/assets/kaspa-logo.svg';
+                    } else {
+                      target.style.display = 'none';
+                      if (target.parentElement) {
+                        target.parentElement.innerHTML = '<span class="text-[10px] font-black text-[#70C7BA]">K</span>';
+                      }
+                    }
+                  }}
+                />
+              </div>
+              <div>
+                <h2 className="text-sm font-extrabold text-slate-100">
+                  Kaspa (KAS)
+                </h2>
+                <p className="text-[10px] text-slate-400 font-medium">Protocol Overview & Documentation</p>
+              </div>
             </div>
 
             <div className="w-16" />

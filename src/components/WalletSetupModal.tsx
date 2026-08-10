@@ -296,7 +296,7 @@ export const WalletSetupModal: React.FC = () => {
               <div className="flex items-center justify-between border-b border-[#212B38] pb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 rounded-lg bg-[#70C7BA]/15 text-[#70C7BA] flex items-center justify-center">
-                    <img src="/assets/kas_icon.svg" alt="Kaspa" className="w-4 h-4" />
+                    <img src="/assets/kas_icon.svg" alt="Kaspriv Logo" className="w-4 h-4" />
                   </div>
                   <span className="text-xs font-bold text-slate-100">Add Kaspa Wallet</span>
                 </div>

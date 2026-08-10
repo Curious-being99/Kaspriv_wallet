@@ -337,7 +337,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (timeoutId) clearTimeout(timeoutId);
       if (autoLockDuration > 0) {
         timeoutId = setTimeout(() => {
-          lockWallet();
+          lockWalletRef.current();
         }, autoLockDuration * 60 * 1000);
       }
     };
@@ -346,7 +346,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (lockOnExit && document.visibilityState === 'hidden') {
         setTimeout(() => {
           if (document.visibilityState === 'hidden') {
-            lockWallet();
+            lockWalletRef.current();
           }
         }, 2000); // 2 second delay
       }
@@ -465,6 +465,25 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setToast(null);
   };
 
+  const passwordRef = React.useRef(password);
+  useEffect(() => {
+    passwordRef.current = password;
+  }, [password]);
+
+  const lockWallet = React.useCallback(() => {
+    if (isPasswordEnabled) {
+      setPasswordState(null);  // clear password from memory
+      passwordRef.current = null;
+      setIsLocked(true);
+      showToast('Wallet locked', 'info');
+    }
+  }, [isPasswordEnabled]);
+
+  const lockWalletRef = React.useRef(lockWallet);
+  useEffect(() => {
+    lockWalletRef.current = lockWallet;
+  }, [lockWallet]);
+
   // Covenants State
   const [currentDaaScore, setCurrentDaaScore] = useState<number>(89500000);
   const [deployedCovenants, setDeployedCovenants] = useState<Covenant[]>([]);
@@ -479,11 +498,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   useEffect(() => {
     currentDaaScoreRef.current = currentDaaScore;
   }, [currentDaaScore]);
-
-  const passwordRef = React.useRef(password);
-  useEffect(() => {
-    passwordRef.current = password;
-  }, [password]);
 
   const refreshDaaScore = React.useCallback(async () => {
     try {
@@ -1826,14 +1840,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return true;
     }
     return false;
-  };
-
-  const lockWallet = () => {
-    if (isPasswordEnabled) {
-      setPasswordState(null); // clear password from memory
-      setIsLocked(true);
-      showToast('Wallet locked', 'info');
-    }
   };
 
   return (

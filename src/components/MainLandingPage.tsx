@@ -341,7 +341,7 @@ export const MainLandingPage: React.FC = () => {
           >
             <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab('home')}>
               <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0">
-                <img src="/assets/kas_icon.svg" alt="Kaspa" className="w-6 h-6" />
+                <img src="/assets/kas_icon.svg" alt="Kaspriv Logo" className="w-6 h-6" />
               </div>
             </div>
           </motion.header>

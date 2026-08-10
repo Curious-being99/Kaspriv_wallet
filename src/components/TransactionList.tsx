@@ -73,16 +73,24 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
           className="p-3.5 sm:p-4 kaspriv-card flex items-center justify-between gap-3 cursor-pointer hover:border-[#70C7BA]/60 transition-all active:scale-[0.99] group shadow-sm hover:shadow-md"
         >
           <div className="flex items-center gap-3">
-            {/* Kaspa logo asset */}
-            <div className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shadow-sm shrink-0 bg-[#68C5B5]">
+            {/* Kaspa logo asset with robust multi-tier fallback */}
+            <div className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shadow-sm shrink-0 bg-[#090D12] border border-[#212B38]">
               <img
                 src="/asset_logo.png"
                 alt="Kaspa Logo"
                 className="w-full h-full object-cover"
                 onError={(e) => {
                   const target = e.currentTarget as HTMLImageElement;
-                  target.onerror = null;
-                  target.src = '/assets/kas_icon.svg';
+                  if (target.src.includes('asset_logo.png')) {
+                    target.src = '/assets/kaspa-transaction-icon.png';
+                  } else if (target.src.includes('kaspa-transaction-icon.png')) {
+                    target.src = '/assets/kaspa-logo.svg';
+                  } else {
+                    target.style.display = 'none';
+                    if (target.parentElement) {
+                      target.parentElement.innerHTML = '<span class="text-xs font-black text-[#70C7BA]">K</span>';
+                    }
+                  }
                 }}
               />
             </div>

@@ -36,7 +36,7 @@ export const Header: React.FC = () => {
             className="flex items-center gap-2.5 py-1 text-left transition-all group"
           >
             <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0">
-              <img src="/assets/kas_icon.svg" alt="Wallet Logo" className="w-6 h-6" />
+              <img src="/assets/kas_icon.svg" alt="Kaspriv Logo" className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
