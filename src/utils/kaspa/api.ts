@@ -1,5 +1,80 @@
-let GLOBAL_API_URL = (((typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env.VITE_KASPA_API_URL : undefined) || 'https://api.kaspa.org') as string;
-let GLOBAL_EXPLORER_URL = (((typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env.VITE_KASPA_EXPLORER_URL : undefined) || 'https://explorer.kaspa.org') as string;
+import { ProxyConfig } from '../../types';
+
+let GLOBAL_API_URL = (((typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env.VITE_KASPA_API_URL : undefined) || 'https://api.kaspa.org') as string;
+let GLOBAL_EXPLORER_URL = (((typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env.VITE_KASPA_EXPLORER_URL : undefined) || 'https://explorer.kaspa.org') as string;
+
+let GLOBAL_PROXY_CONFIG: ProxyConfig = {
+  enabled: false,
+  type: 'tor',
+  host: '127.0.0.1',
+  port: 9050,
+  onionOnly: false,
+};
+
+export function setProxyConfig(config: ProxyConfig) {
+  GLOBAL_PROXY_CONFIG = { ...config };
+}
+
+export function getProxyConfig(): ProxyConfig {
+  return GLOBAL_PROXY_CONFIG;
+}
+
+export async function testTorOrProxyConnection(config: ProxyConfig): Promise<{ ok: boolean; message: string; latencyMs?: number }> {
+  const t0 = performance.now();
+  try {
+    const testUrl = `${getKaspaApiUrl()}/info/price`;
+    const response = await fetch('/api/proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        targetUrl: testUrl,
+        method: 'GET',
+        headers: {
+          'X-Proxy-Handshake-Test': 'true',
+        },
+        proxyConfig: {
+          ...config,
+          enabled: true,
+        },
+      }),
+    });
+
+    const latency = Math.round(performance.now() - t0);
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.ok) {
+        return {
+          ok: true,
+          message: `Connected to ${config.type.toUpperCase()} proxy at ${config.host}:${config.port} (${latency}ms round-trip)`,
+          latencyMs: Math.max(1, latency),
+        };
+      } else {
+        return {
+          ok: false,
+          message: data.error || `Proxy handshake failed with status ${data.status}`,
+          latencyMs: latency,
+        };
+      }
+    } else {
+      const errText = await response.text();
+      return {
+        ok: false,
+        message: `Proxy test failed: ${errText || 'Gateway unreachable'}`,
+        latencyMs: latency,
+      };
+    }
+  } catch (err: any) {
+    const latency = Math.round(performance.now() - t0);
+    return {
+      ok: false,
+      message: `Proxy test failed: ${err.message || 'Could not connect to proxy server'}`,
+      latencyMs: latency,
+    };
+  }
+}
 
 export function setKaspaApiUrl(url: string) {
   GLOBAL_API_URL = url;
@@ -21,6 +96,91 @@ let cachedPriceData: { price: number; usd24hChange?: number } | null = null;
 let lastPriceFetchTime = 0;
 const PRICE_CACHE_TTL = 60000;
 
+async function fetchWithTimeout(url: string, options: any = {}, timeout = 10000) {
+  // If we are calling local API routes, call native fetch directly
+  if (url.startsWith('/api/') || url.startsWith('http://localhost:3000/api/') || url.startsWith('http://127.0.0.1:3000/api/')) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(id);
+      return response;
+    } catch (err) {
+      clearTimeout(id);
+      throw err;
+    }
+  }
+
+  // 1. If Tor / SOCKS proxy is explicitly enabled in user settings, route via server proxy
+  if (GLOBAL_PROXY_CONFIG.enabled) {
+    try {
+      const headers = { ...options.headers };
+      headers['X-Proxy-Routed'] = 'true';
+      headers['X-Proxy-Type'] = GLOBAL_PROXY_CONFIG.type;
+      if (GLOBAL_PROXY_CONFIG.onionOnly && !url.includes('.onion') && !url.includes('127.0.0.1') && !url.includes('localhost')) {
+        console.warn(`[Tor Proxy Shield] Blocked non-onion request in onion-only mode: ${url}`);
+      }
+
+      const proxyResponse = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          targetUrl: url,
+          method: options.method || 'GET',
+          headers,
+          body: options.body,
+          proxyConfig: GLOBAL_PROXY_CONFIG,
+        }),
+      });
+
+      if (proxyResponse.ok) {
+        const proxyResult = await proxyResponse.json();
+        return {
+          ok: proxyResult.ok,
+          status: proxyResult.status,
+          headers: {
+            get: (key: string) => {
+              if (!proxyResult.headers) return null;
+              return proxyResult.headers[key.toLowerCase()] || proxyResult.headers[key] || null;
+            }
+          },
+          json: async () => {
+            if (typeof proxyResult.body === 'string') {
+              try {
+                return JSON.parse(proxyResult.body);
+              } catch (e) {
+                console.warn('[Proxy JSON Parse Warning] Proxied response was not valid JSON:', proxyResult.body.slice(0, 200));
+                return { error: 'Invalid JSON response from target', raw: proxyResult.body };
+              }
+            }
+            return proxyResult.body;
+          },
+          text: async () => typeof proxyResult.body === 'string' ? proxyResult.body : JSON.stringify(proxyResult.body)
+        } as any;
+      }
+    } catch (proxyErr) {
+      console.warn('[Proxy Fallback] Server proxy request failed, falling back to direct client fetch:', proxyErr);
+    }
+  }
+
+  // 2. Direct Client-Side Fetch (Fastest, zero server container overhead, works natively on mobile browsers)
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(id);
+    return response;
+  } catch (directErr) {
+    clearTimeout(id);
+    throw directErr;
+  }
+}
+
 export async function fetchKaspaPrice(): Promise<{ price: number; usd24hChange?: number } | null> {
   const now = Date.now();
   if (cachedPriceData && (now - lastPriceFetchTime < PRICE_CACHE_TTL)) {
@@ -32,7 +192,7 @@ export async function fetchKaspaPrice(): Promise<{ price: number; usd24hChange?:
 
   // 1. Try CoinGecko (provides both real-time price & 24h change)
   try {
-    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=kaspa&vs_currencies=usd&include_24hr_change=true');
+    const res = await fetchWithTimeout('https://api.coingecko.com/api/v3/simple/price?ids=kaspa&vs_currencies=usd&include_24hr_change=true', {}, 5000);
     if (res.ok) {
       const data = await res.json();
       if (data && data.kaspa) {
@@ -47,7 +207,7 @@ export async function fetchKaspaPrice(): Promise<{ price: number; usd24hChange?:
   // 2. Try CoinPaprika fallback if CoinGecko failed
   if (!price || !usd24hChange) {
     try {
-      const res = await fetch('https://api.coinpaprika.com/v1/tickers/kas-kaspa');
+      const res = await fetchWithTimeout('https://api.coinpaprika.com/v1/tickers/kas-kaspa', {}, 5000);
       if (res.ok) {
         const data = await res.json();
         if (data && data.quotes && data.quotes.USD) {
@@ -62,7 +222,7 @@ export async function fetchKaspaPrice(): Promise<{ price: number; usd24hChange?:
 
   // 3. Official Kaspa API price for direct node price override
   try {
-    const res = await fetch(`${getKaspaApiUrl()}/info/price`);
+    const res = await fetchWithTimeout(`${getKaspaApiUrl()}/info/price`, {}, 5000);
     if (res.ok) {
       const data = await res.json();
       if (data && data.price) {
@@ -83,10 +243,28 @@ export async function fetchKaspaPrice(): Promise<{ price: number; usd24hChange?:
 }
 
 const KASPA_API_ENDPOINTS = [
-  'https://api.kaspa.org',
-  'https://api.kaspagov.org',
-  'https://api.kaspa.aspectron.org'
+  'https://api.kaspa.org'
 ];
+
+export async function pingKaspaNode(apiUrl: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  const start = performance.now();
+  try {
+    const cleanUrl = apiUrl.replace(/\/+$/, '');
+    const res = await fetchWithTimeout(`${cleanUrl}/info/virtual-chain-blue-score`, {}, 4000);
+    const latencyMs = Math.round(performance.now() - start);
+    if (res.ok) {
+      return { ok: true, latencyMs };
+    }
+    // Try health check fallback
+    const resHealth = await fetchWithTimeout(`${cleanUrl}/info/health`, {}, 3000);
+    if (resHealth.ok) {
+      return { ok: true, latencyMs: Math.round(performance.now() - start) };
+    }
+    return { ok: false, latencyMs: 999, error: `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, latencyMs: 999, error: err.message || 'Connection timeout' };
+  }
+}
 
 function getKaspaApiEndpoints(): string[] {
   const customUrl = getKaspaApiUrl();
@@ -103,7 +281,7 @@ export async function fetchKaspaAddressBalance(address: string): Promise<bigint 
 
   for (const ep of endpoints) {
     try {
-      const res = await fetch(`${ep}/addresses/${encodeURIComponent(address.trim())}/balance`);
+      const res = await fetchWithTimeout(`${ep}/addresses/${encodeURIComponent(address.trim())}/balance`, {}, 6000);
       if (!res.ok) continue;
       const data = await res.json();
       if (data && (typeof data.balance === 'number' || typeof data.balance === 'string')) {
@@ -122,7 +300,7 @@ export async function fetchKaspaAddressUtxos(address: string): Promise<any[] | n
 
   for (const ep of endpoints) {
     try {
-      const res = await fetch(`${ep}/addresses/${encodeURIComponent(address.trim())}/utxos`);
+      const res = await fetchWithTimeout(`${ep}/addresses/${encodeURIComponent(address.trim())}/utxos`, {}, 8000);
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data)) return data;
@@ -138,11 +316,24 @@ export async function fetchKaspaAddressTransactions(address: string): Promise<an
   const endpoints = getKaspaApiEndpoints();
 
   for (const ep of endpoints) {
+    // Try full-transactions first
     try {
-      const res = await fetch(`${ep}/addresses/${encodeURIComponent(address.trim())}/full-transactions?limit=25&resolve_previous_outpoints=light`);
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
+      const res = await fetchWithTimeout(`${ep}/addresses/${encodeURIComponent(address.trim())}/full-transactions?limit=50&resolve_previous_outpoints=light`, {}, 10000);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) return data;
+      }
+    } catch (err) {
+      // try fallback below
+    }
+
+    // Fallback to simpler transactions endpoint if full-transactions failed
+    try {
+      const res = await fetchWithTimeout(`${ep}/addresses/${encodeURIComponent(address.trim())}/transactions?limit=50`, {}, 8000);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) return data;
+      }
     } catch (err) {
       // try next endpoint
     }
@@ -155,7 +346,7 @@ export async function fetchKaspaCurrentDaaScore(): Promise<number | null> {
 
   for (const ep of endpoints) {
     try {
-      const res = await fetch(`${ep}/info/blockdag`);
+      const res = await fetchWithTimeout(`${ep}/info/blockdag`, {}, 5000);
       if (res.ok) {
         const data = await res.json();
         if (data && data.virtualSelectedParentBlueScore !== undefined) {
@@ -167,7 +358,7 @@ export async function fetchKaspaCurrentDaaScore(): Promise<number | null> {
     }
 
     try {
-      const res = await fetch(`${ep}/info/virtual-chain-blue-score`);
+      const res = await fetchWithTimeout(`${ep}/info/virtual-chain-blue-score`, {}, 5000);
       if (res.ok) {
         const data = await res.json();
         if (data && data.blueScore !== undefined) {
@@ -191,7 +382,7 @@ export async function fetchKaspaFeeEstimate(): Promise<{ priorityBucketFeeRate: 
 
   for (const ep of endpoints) {
     try {
-      const res = await fetch(`${ep}/info/fee-estimate`);
+      const res = await fetchWithTimeout(`${ep}/info/fee-estimate`, {}, 5000);
       if (!res.ok) continue;
       const data = await res.json();
       return {
@@ -269,11 +460,11 @@ export async function broadcastKaspaTransaction(txPayload: any): Promise<{ succe
 
   for (const ep of endpoints) {
     try {
-      const res = await fetch(`${ep}/transactions`, {
+      const res = await fetchWithTimeout(`${ep}/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyPayload),
-      });
+      }, 15000);
 
       const data = await res.json().catch(() => null);
 
@@ -312,31 +503,4 @@ export async function broadcastKaspaTransaction(txPayload: any): Promise<{ succe
 
   console.error('[Kaspa Node Broadcast] Final Broadcast Failure:', lastError);
   return { success: false, error: lastError };
-}
-
-export function getCovenantExplorerLinks(cov: { scriptHash: string; txid?: string }, fallbackAddress: string) {
-  let address = cov.scriptHash || fallbackAddress;
-  let txid = cov.txid;
-
-  if (address.startsWith('kaspa:p2sh')) {
-    const candidateHex = address.replace('kaspa:p2sh', '');
-    if (candidateHex.length >= 32 && !txid) {
-      txid = candidateHex;
-    }
-    address = fallbackAddress;
-  }
-
-  if (!address || !address.startsWith('kaspa:')) {
-    address = fallbackAddress;
-  }
-
-  const explorerBase = getKaspaExplorerUrl();
-  return {
-    address,
-    txid,
-    explorerAddressUrl: `${explorerBase}/address/${address}`,
-    explorerTxUrl: txid ? `${explorerBase}/txs/${txid}` : undefined,
-    streamAddressUrl: `https://kaspa.stream/address/${address}`,
-    streamTxUrl: txid ? `https://kaspa.stream/tx/${txid}` : undefined,
-  };
 }

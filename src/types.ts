@@ -19,6 +19,8 @@ export interface Wallet {
   addressType?: 'P2PKH' | 'P2SH';
   discoveredAddresses?: string[];
   addressPaths?: { [address: string]: string };
+  addressBalances?: { [address: string]: string };
+  lockedUtxoOutpoints?: string[];
 }
 
 export interface KaspaTransaction {
@@ -48,6 +50,28 @@ export interface UTXO {
   derivationPath?: string;
 }
 
+export interface CustomNodeConfig {
+  id: string;
+  name: string;
+  rpcUrl: string;
+  apiUrl: string;
+  explorerUrl: string;
+  isCustom: boolean;
+  network: NetworkType;
+  isTorOrOnion?: boolean;
+  proxyEnabled?: boolean;
+}
+
+export interface ProxyConfig {
+  enabled: boolean;
+  type: 'tor' | 'socks5' | 'http';
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  onionOnly?: boolean;
+}
+
 export interface KaspaNode {
   id: string;
   url: string;
@@ -56,6 +80,13 @@ export interface KaspaNode {
   isOnline: boolean;
   isCustom?: boolean;
   selected?: boolean;
+  name?: string;
+  apiUrl?: string;
+  explorerUrl?: string;
+  isTorOrOnion?: boolean;
+  isOnion?: boolean;
+  isPrivateSelfHosted?: boolean;
+  proxyRequired?: boolean;
 }
 
 export interface MarketData {
@@ -67,24 +98,18 @@ export interface MarketData {
   lastUpdated: number;
 }
 
+export interface Contact {
+  id: string;
+  name: string;
+  address: string;
+  notes?: string;
+  createdAt: number;
+}
+
 export interface FeeRates {
   prioritySompiPerGram: number; // Fast
   normalSompiPerGram: number;   // Normal
   lowSompiPerGram: number;      // Low priority
-}
-
-export interface Covenant {
-  id: string;
-  type: string;
-  amount: string;
-  scriptHash: string;
-  txid?: string;
-  daaLock: number;
-  timestamp: number;
-  signatureHex?: string;
-  publicKeyHex?: string;
-  hashHex?: string;
-  redeemScriptHex?: string;
 }
 
 

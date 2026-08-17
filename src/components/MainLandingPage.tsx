@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
-import { generate24WordMnemonic, validateKaspaAddress, generateDeterministicAddress, getAddressFromPublicKey, cleanMnemonic } from '../utils/kaspa';
+import { generate24WordMnemonic, validateKaspaAddress, generateDeterministicAddress, getAddressFromPublicKey, cleanMnemonic, sanitizeWalletName } from '../utils/kaspa';
 import { checkPassphraseStrength } from '../utils/strength';
 import {
   Plus,
@@ -16,6 +16,9 @@ import {
   ChevronLeft,
   Sparkles,
   Lock,
+  Flame,
+  ShieldAlert,
+  AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { wipeStringArray } from '../utils/crypto';
@@ -95,7 +98,7 @@ export const MainLandingPage: React.FC = () => {
     indexingState,
   } = useWallet();
 
-  const [activeTab, setActiveTab] = useState<'home' | 'create' | 'import-seed' | 'import-address' | 'setup-password'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'create' | 'import-seed' | 'import-address' | 'setup-password' | 'setup-duress'>('home');
 
   // Create Wallet State - pre-filled real values instead of placeholders
   const [walletName, setWalletName] = useState('Primary Wallet');
@@ -105,7 +108,7 @@ export const MainLandingPage: React.FC = () => {
   const [showSeed, setShowSeed] = useState(false);
   const [copiedSeed, setCopiedSeed] = useState(false);
 
-  const { openKeyboard, closeKeyboard } = useVirtualKeyboard();
+  const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
 
   // Import Seed State - starts empty
   const [importWordsText, setImportWordsText] = useState('');
@@ -124,7 +127,14 @@ export const MainLandingPage: React.FC = () => {
   const [setupPassword, setSetupPassword] = useState('');
   const [confirmSetupPassword, setConfirmSetupPassword] = useState('');
   const [showSetupPassword, setShowSetupPassword] = useState(false);
-  const [pendingFlow, setPendingFlow] = useState<'create' | 'import-seed' | 'none'>('none');
+
+  // Duress Password Setup State
+  const [setupDuressPassword, setSetupDuressPassword] = useState('');
+  const [confirmSetupDuressPassword, setConfirmSetupDuressPassword] = useState('');
+  const [showSetupDuressPassword, setShowSetupDuressPassword] = useState(false);
+  const [activeDuressField, setActiveDuressField] = useState<'primary' | 'confirm'>('primary');
+
+  const [pendingFlow, setPendingFlow] = useState<'create' | 'import-seed' | 'import-address' | 'none'>('none');
 
   // Handlers
   const resetState = () => {
@@ -142,6 +152,8 @@ export const MainLandingPage: React.FC = () => {
     setAddressInput('');
     setSetupPassword('');
     setConfirmSetupPassword('');
+    setSetupDuressPassword('');
+    setConfirmSetupDuressPassword('');
     setPendingFlow('none');
   };
 
@@ -164,61 +176,20 @@ export const MainLandingPage: React.FC = () => {
       return;
     }
     
-    if (!isPasswordEnabled) {
-      setPendingFlow('create');
-      setActiveTab('setup-password');
-      return;
-    }
-
-    const name = walletName.trim() || 'Primary Wallet';
-    const words = [...createdWords]; // copy to avoid mutation
-    const passInput = passphraseInput.trim() || undefined;
-    const addrType = addressType;
-
-    try {
-      resetState();
-      setIsLoggedOut(false);
-      setIsLocked(false);
-
-      await createNewWallet(name, words, passInput, addrType);
-    } finally {
-      // Clear local sensitive variables
-      wipeStringArray(words);
-      setCreatedWords([]);
-      setPassphraseInput('');
-    }
+    setPendingFlow('create');
+    setActiveTab('setup-password');
   };
 
   const handleFinishImportSeed = async () => {
     const cleaned = cleanMnemonic(importWordsText);
     const words = cleaned ? cleaned.split(' ') : [];
     if (words.length !== 12 && words.length !== 24) {
-      showToast('Please enter valid seed words separated by spaces', 'error');
+      showToast('Please enter valid 12 or 24 seed words separated by spaces', 'error');
       return;
     }
 
-    if (!isPasswordEnabled) {
-      setPendingFlow('import-seed');
-      setActiveTab('setup-password');
-      return;
-    }
-
-    const name = walletName.trim() || 'Restored Wallet';
-    const passInput = passphraseInput.trim() || undefined;
-    const addrType = addressType;
-
-    try {
-      resetState();
-      setIsLoggedOut(false);
-      setIsLocked(false);
-
-      await importSeedWallet(name, words, passInput, addrType);
-    } finally {
-      // Clear sensitive local variables
-      wipeStringArray(words);
-      setImportWordsText('');
-      setPassphraseInput('');
-    }
+    setPendingFlow('import-seed');
+    setActiveTab('setup-password');
   };
 
   const handleFinishImportAddress = () => {
@@ -230,19 +201,8 @@ export const MainLandingPage: React.FC = () => {
       return;
     }
 
-    if (!isPasswordEnabled) {
-      setPendingFlow('import-address' as any);
-      setActiveTab('setup-password');
-      return;
-    }
-
-    const name = walletName.trim() || 'Address Tracker';
-    const addrType = addressType;
-
-    resetState();
-    setIsLoggedOut(false);
-
-    importKpubWallet(name, addr, addrType);
+    setPendingFlow('import-address');
+    setActiveTab('setup-password');
   };
 
   const updatePreview = React.useCallback(async (type: 'P2PKH' | 'P2SH') => {
@@ -279,6 +239,25 @@ export const MainLandingPage: React.FC = () => {
   React.useEffect(() => {
     updatePreview(addressType);
   }, [activeTab, createdWords, importWordsText, passphraseInput, addressInput, addressType, updatePreview]);
+
+  // Auto-activate Virtual Keyboard when entering setup tabs
+  React.useEffect(() => {
+    if (activeTab === 'setup-duress') {
+      setActiveDuressField('primary');
+      openKeyboard({
+        value: setupDuressPassword,
+        onChange: (val) => setSetupDuressPassword(val),
+      });
+    } else if (activeTab === 'setup-password') {
+      openKeyboard({
+        value: setupPassword,
+        onChange: (val) => setSetupPassword(val),
+      });
+    } else if (activeTab === 'home') {
+      closeKeyboard();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   if (!isLoggedOut && (wallets.length > 0 || indexingState?.isIndexing)) return null;
 
@@ -349,7 +328,10 @@ export const MainLandingPage: React.FC = () => {
       </AnimatePresence>
 
       {/* Main Container */}
-      <main className={`flex-1 w-full flex flex-col overflow-y-auto no-scrollbar ${activeTab === 'home' ? 'px-5 py-6' : 'sm:px-5 sm:py-6'}`}>
+      <main 
+        className={`flex-1 w-full flex flex-col overflow-y-auto no-scrollbar transition-all duration-200 ${activeTab === 'home' ? 'px-5 py-6' : 'sm:px-5 sm:py-6'}`}
+        style={{ paddingBottom: isKeyboardOpen ? '220px' : undefined }}
+      >
         <AnimatePresence mode="wait">
           {/* TAB: HOME */}
           {activeTab === 'home' && (
@@ -368,7 +350,7 @@ export const MainLandingPage: React.FC = () => {
                 </div>
                 <TypewriterHeading />
                 <p className="text-xs font-serif font-bold text-slate-300 leading-relaxed tracking-wide">
-                  Zero-trust and trustless signing.
+                  Zero-trust and verified signing.
                 </p>
               </div>
 
@@ -464,8 +446,7 @@ export const MainLandingPage: React.FC = () => {
                       value={walletName}
                       onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                       onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
-                      readOnly
-                      inputMode="none"
+                      inputMode="none" onChange={() => {}}
                       className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
                     />
                   </div>
@@ -481,8 +462,7 @@ export const MainLandingPage: React.FC = () => {
                         value={passphraseInput}
                         onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                         onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
-                        readOnly
-                        inputMode="none"
+                        inputMode="none" onChange={() => {}}
                         className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
                       />
                       <button
@@ -662,8 +642,7 @@ export const MainLandingPage: React.FC = () => {
                   value={walletName}
                   onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
-                  readOnly
-                  inputMode="none"
+                  inputMode="none" onChange={() => {}}
                   className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
                 />
               </div>
@@ -688,8 +667,7 @@ export const MainLandingPage: React.FC = () => {
                     value={importWordsText}
                     onFocus={() => openKeyboard({ value: importWordsText, onChange: setImportWordsText })}
                     onClick={() => openKeyboard({ value: importWordsText, onChange: setImportWordsText })}
-                    readOnly
-                    inputMode="none"
+                    inputMode="none" onChange={() => {}}
                     placeholder="abandon ability able about above absent..."
                     className={`w-full p-3 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs font-mono text-slate-100 outline-none transition-all resize-none ${
                       !showImportSeed && importWordsText ? 'filter blur-[6px] select-none text-transparent' : ''
@@ -719,8 +697,7 @@ export const MainLandingPage: React.FC = () => {
                     value={passphraseInput}
                     onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                     onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
-                    readOnly
-                    inputMode="none"
+                    inputMode="none" onChange={() => {}}
                     className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
                   />
                   <button
@@ -814,8 +791,7 @@ export const MainLandingPage: React.FC = () => {
                   value={walletName}
                   onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
-                  readOnly
-                  inputMode="none"
+                  inputMode="none" onChange={() => {}}
                   className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-emerald-400 text-xs text-slate-100 outline-none"
                 />
               </div>
@@ -829,8 +805,7 @@ export const MainLandingPage: React.FC = () => {
                   value={addressInput}
                   onFocus={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
                   onClick={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
-                  readOnly
-                  inputMode="none"
+                  inputMode="none" onChange={() => {}}
                   className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-emerald-400 font-mono text-[10px] text-slate-100 outline-none"
                 />
               </div>
@@ -855,7 +830,7 @@ export const MainLandingPage: React.FC = () => {
             >
               <div className="flex items-center justify-between border-b border-[#212B38] pb-3">
                 <button
-                  onClick={() => setActiveTab(pendingFlow === 'create' ? 'create' : 'import-seed')}
+                  onClick={() => setActiveTab(pendingFlow === 'create' ? 'create' : pendingFlow === 'import-seed' ? 'import-seed' : 'import-address')}
                   className="p-1.5 rounded-xl bg-[#090D12] text-slate-400 hover:text-slate-100 flex items-center gap-1 text-[10px] font-bold"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -887,8 +862,7 @@ export const MainLandingPage: React.FC = () => {
                         value={setupPassword}
                         onFocus={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
                         onClick={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
-                        readOnly
-                        inputMode="none"
+                        inputMode="none" onChange={() => {}}
                         className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-sm text-slate-100 outline-none"
                       />
                       <button
@@ -941,8 +915,7 @@ export const MainLandingPage: React.FC = () => {
                         value={confirmSetupPassword}
                         onFocus={() => openKeyboard({ value: confirmSetupPassword, onChange: setConfirmSetupPassword })}
                         onClick={() => openKeyboard({ value: confirmSetupPassword, onChange: setConfirmSetupPassword })}
-                        readOnly
-                        inputMode="none"
+                        inputMode="none" onChange={() => {}}
                         className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-sm text-slate-100 outline-none"
                       />
                       <button
@@ -957,7 +930,7 @@ export const MainLandingPage: React.FC = () => {
                 </div>
 
                 <button
-                  onClick={async () => {
+                  onClick={() => {
                     if (checkPassphraseStrength(setupPassword).score < 3) {
                       showToast('Password must be at least 8 characters', 'error');
                       return;
@@ -966,17 +939,257 @@ export const MainLandingPage: React.FC = () => {
                       showToast('Passwords do not match', 'error');
                       return;
                     }
+                    setActiveTab('setup-duress');
+                  }}
+                  disabled={checkPassphraseStrength(setupPassword).score < 3 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}
+                  className={`w-full py-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                    checkPassphraseStrength(setupPassword).score >= 3 && confirmSetupPassword.length >= 8 && setupPassword === confirmSetupPassword
+                      ? 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] shadow-lg shadow-[#70C7BA]/20 cursor-pointer'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  <span>Continue to Emergency Duress Setup</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </motion.div>
+          )}
 
+          {/* TAB: SETUP DURESS PASSWORD (FULL VIEW) */}
+          {activeTab === 'setup-duress' && (
+            <motion.div
+              key="setup-duress"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="w-full flex-1 space-y-4 text-left overflow-y-auto no-scrollbar pt-safe pb-safe"
+            >
+              <div className="flex items-center justify-between border-b border-[#212B38] pb-3">
+                <button
+                  onClick={() => {
+                    closeKeyboard();
+                    setActiveTab('setup-password');
+                  }}
+                  className="p-1.5 rounded-xl bg-[#090D12] text-slate-400 hover:text-slate-100 flex items-center gap-1 text-[10px] font-bold cursor-pointer"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Back</span>
+                </button>
+                <div className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                  <Flame className="w-3.5 h-3.5 text-rose-500" />
+                  <span>Emergency Duress Password</span>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="px-3.5 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-2.5">
+                  <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                  <p className="text-[11px] text-rose-300/90 leading-tight">
+                    <strong className="text-rose-300">Panic Wipe Defense:</strong> Entering this password on the lock screen instantly wipes the wallet with zero trace.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        Secondary Duress Password
+                      </label>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showSetupDuressPassword ? "text" : "password"}
+                        placeholder="Choose a distinct panic password (min 8 chars)"
+                        value={setupDuressPassword}
+                        onFocus={() => {
+                          setActiveDuressField('primary');
+                          openKeyboard({ value: setupDuressPassword, onChange: (val) => setSetupDuressPassword(val) });
+                        }}
+                        onClick={() => {
+                          setActiveDuressField('primary');
+                          openKeyboard({ value: setupDuressPassword, onChange: (val) => setSetupDuressPassword(val) });
+                        }}
+                        onChange={(e) => {
+                          setSetupDuressPassword(e.target.value);
+                          openKeyboard({ value: e.target.value, onChange: (val) => setSetupDuressPassword(val) });
+                        }}
+                        inputMode="none"
+                        className={`w-full px-3.5 pr-10 py-2.5 rounded-xl bg-[#090D12] border-2 transition-all ${
+                          activeDuressField === 'primary' && isKeyboardOpen
+                            ? 'border-rose-500 ring-2 ring-rose-500/20'
+                            : setupDuressPassword && setupDuressPassword === setupPassword
+                              ? 'border-rose-500/60'
+                              : 'border-[#212B38] focus:border-rose-400'
+                        } text-sm text-slate-100 outline-none`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSetupDuressPassword(!showSetupDuressPassword)}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                      >
+                        {showSetupDuressPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+
+                    {setupDuressPassword.length > 0 && (() => {
+                      const strResult = checkPassphraseStrength(setupDuressPassword);
+                      return (
+                        <div className="mt-1.5 space-y-1">
+                          <div className="flex items-center justify-between px-1">
+                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Strength</span>
+                            <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: strResult.color }}>
+                              {strResult.label}
+                            </span>
+                          </div>
+                          <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden flex gap-0.5">
+                            {[1, 2, 3, 4].map((step) => (
+                              <div 
+                                key={step}
+                                className={`h-full flex-1 transition-all duration-300 ${
+                                  step <= strResult.score ? '' : 'bg-transparent'
+                                }`}
+                                style={{ backgroundColor: step <= strResult.score ? strResult.color : undefined }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {setupDuressPassword && setupDuressPassword === setupPassword && (
+                      <p className="text-[10px] text-rose-400 px-1 mt-1 font-medium flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        <span>Duress password must be different from your primary password!</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between px-1 mb-1">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Confirm Duress Password
+                      </label>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showSetupDuressPassword ? "text" : "password"}
+                        placeholder="Repeat duress password"
+                        value={confirmSetupDuressPassword}
+                        onFocus={() => {
+                          setActiveDuressField('confirm');
+                          openKeyboard({ value: confirmSetupDuressPassword, onChange: (val) => setConfirmSetupDuressPassword(val) });
+                        }}
+                        onClick={() => {
+                          setActiveDuressField('confirm');
+                          openKeyboard({ value: confirmSetupDuressPassword, onChange: (val) => setConfirmSetupDuressPassword(val) });
+                        }}
+                        onChange={(e) => {
+                          setConfirmSetupDuressPassword(e.target.value);
+                          openKeyboard({ value: e.target.value, onChange: (val) => setConfirmSetupDuressPassword(val) });
+                        }}
+                        inputMode="none"
+                        className={`w-full px-3.5 pr-10 py-2.5 rounded-xl bg-[#090D12] border-2 transition-all ${
+                          activeDuressField === 'confirm' && isKeyboardOpen
+                            ? 'border-rose-500 ring-2 ring-rose-500/20'
+                            : confirmSetupDuressPassword && confirmSetupDuressPassword !== setupDuressPassword
+                              ? 'border-rose-500/60'
+                              : confirmSetupDuressPassword && confirmSetupDuressPassword === setupDuressPassword
+                                ? 'border-emerald-500/60'
+                                : 'border-[#212B38] focus:border-rose-400'
+                        } text-sm text-slate-100 outline-none`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSetupDuressPassword(!showSetupDuressPassword)}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                      >
+                        {showSetupDuressPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Primary Action: Enable Duress Password */}
+                <button
+                  onClick={async () => {
+                    if (setupDuressPassword.length < 8) {
+                      showToast('Duress password must be at least 8 characters', 'error');
+                      return;
+                    }
+                    if (setupDuressPassword === setupPassword) {
+                      showToast('Duress password must be different from primary password', 'error');
+                      return;
+                    }
+                    if (setupDuressPassword !== confirmSetupDuressPassword) {
+                      showToast('Duress passwords do not match', 'error');
+                      return;
+                    }
+
+                    closeKeyboard();
                     const flow = pendingFlow;
                     const pass = setupPassword;
-                    const name = walletName.trim() || (flow === 'create' ? 'Primary Wallet' : flow === 'import-seed' ? 'Restored Wallet' : 'Address Tracker');
+                    const duressPass = setupDuressPassword.trim();
+                    const name = sanitizeWalletName(walletName.trim(), flow === 'create' ? 'Primary Wallet' : flow === 'import-seed' ? 'Restored Wallet' : 'Address Tracker');
                     const words = flow === 'create' ? [...createdWords] : cleanMnemonic(importWordsText).split(' ');
                     const passInput = passphraseInput.trim() || undefined;
                     const addrType = addressType;
                     const addr = addressInput.trim();
 
                     try {
-                      // Hide landing page and reset form immediately so password page is never shown twice or kept during indexing
+                      resetState();
+                      setIsLoggedOut(false);
+
+                      if (flow === 'create') {
+                        await createNewWallet(name, words, passInput, addrType, pass, duressPass);
+                      } else if (flow === 'import-seed') {
+                        await importSeedWallet(name, words, passInput, addrType, pass, duressPass);
+                      } else if (flow === 'import-address') {
+                        await importKpubWallet(name, addr, addrType, pass, duressPass);
+                      }
+                      
+                      setIsLocked(true);
+                      setIsLoggedOut(false);
+                    } finally {
+                      wipeStringArray(words);
+                      setCreatedWords([]);
+                      setImportWordsText('');
+                      setPassphraseInput('');
+                      setSetupPassword('');
+                      setConfirmSetupPassword('');
+                      setSetupDuressPassword('');
+                      setConfirmSetupDuressPassword('');
+                    }
+                  }}
+                  disabled={
+                    setupDuressPassword.length < 8 ||
+                    setupDuressPassword === setupPassword ||
+                    setupDuressPassword !== confirmSetupDuressPassword
+                  }
+                  className={`w-full py-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                    setupDuressPassword.length >= 8 &&
+                    setupDuressPassword !== setupPassword &&
+                    setupDuressPassword === confirmSetupDuressPassword
+                      ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-lg shadow-rose-500/20 cursor-pointer'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  <Flame className="w-3.5 h-3.5" />
+                  <span>Configure Duress & Complete Setup</span>
+                </button>
+
+                {/* Secondary Action: Skip Duress Setup */}
+                <button
+                  onClick={async () => {
+                    closeKeyboard();
+                    const flow = pendingFlow;
+                    const pass = setupPassword;
+                    const name = sanitizeWalletName(walletName.trim(), flow === 'create' ? 'Primary Wallet' : flow === 'import-seed' ? 'Restored Wallet' : 'Address Tracker');
+                    const words = flow === 'create' ? [...createdWords] : cleanMnemonic(importWordsText).split(' ');
+                    const passInput = passphraseInput.trim() || undefined;
+                    const addrType = addressType;
+                    const addr = addressInput.trim();
+
+                    try {
                       resetState();
                       setIsLoggedOut(false);
 
@@ -985,31 +1198,25 @@ export const MainLandingPage: React.FC = () => {
                       } else if (flow === 'import-seed') {
                         await importSeedWallet(name, words, passInput, addrType, pass);
                       } else if (flow === 'import-address') {
-                        importKpubWallet(name, addr, addrType);
-                        await setPassword(pass);
+                        await importKpubWallet(name, addr, addrType, pass);
                       }
                       
                       setIsLocked(true);
                       setIsLoggedOut(false);
                     } finally {
-                      // Clear sensitive local variables
                       wipeStringArray(words);
                       setCreatedWords([]);
                       setImportWordsText('');
                       setPassphraseInput('');
                       setSetupPassword('');
                       setConfirmSetupPassword('');
+                      setSetupDuressPassword('');
+                      setConfirmSetupDuressPassword('');
                     }
                   }}
-                  disabled={checkPassphraseStrength(setupPassword).score < 3 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}
-                  className={`w-full py-3 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 ${
-                    checkPassphraseStrength(setupPassword).score >= 3 && confirmSetupPassword.length >= 8 && setupPassword === confirmSetupPassword
-                      ? 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] shadow-lg shadow-[#70C7BA]/20'
-                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  }`}
+                  className="w-full py-2.5 rounded-xl border border-[#212B38] text-slate-400 hover:text-slate-200 text-xs font-semibold hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Encrypt & Unlock Wallet</span>
+                  <span>Skip / Finish Without Duress Password</span>
                 </button>
               </div>
             </motion.div>
@@ -1024,7 +1231,7 @@ export const MainLandingPage: React.FC = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="w-full bg-[#090D12] py-4 px-5"
+            className="w-full bg-[#090D12] pt-3 pb-[max(1.75rem,calc(1.25rem+env(safe-area-inset-bottom,0px)))] px-5"
           >
             <div className="w-full flex items-center justify-between gap-2 text-[10px] text-slate-500 font-semibold">
               <div className="flex items-center gap-1.5">

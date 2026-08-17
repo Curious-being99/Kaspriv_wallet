@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
-import { generate24WordMnemonic, generateDeterministicAddress, getAddressFromPublicKey, cleanMnemonic } from '../utils/kaspa';
+import { generate24WordMnemonic, generateDeterministicAddress, getAddressFromPublicKey, cleanMnemonic, sanitizeWalletName } from '../utils/kaspa';
 import { checkPassphraseStrength } from '../utils/strength';
-import { X, Plus, Key, Eye, EyeOff, Copy, Check, ShieldCheck, Lock, ChevronLeft, ArrowRight } from 'lucide-react';
+import { X, Plus, Key, Eye, EyeOff, Copy, Check, ShieldCheck, Lock, ChevronLeft, ArrowRight, ChevronDown, Flame, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { wipeStringArray } from '../utils/crypto';
 
@@ -18,9 +18,10 @@ export const WalletSetupModal: React.FC = () => {
     isPasswordEnabled,
     setIsLocked,
     setPassword,
+    setDuressPassword,
   } = useWallet();
 
-  const [mode, setMode] = useState<'choose' | 'create' | 'import-seed' | 'import-kpub' | 'import-address' | 'setup-password'>('choose');
+  const [mode, setMode] = useState<'choose' | 'create' | 'import-seed' | 'import-kpub' | 'import-address' | 'setup-password' | 'setup-duress'>('choose');
   const [step, setStep] = useState<1 | 2>(1);
 
   // New wallet state
@@ -33,6 +34,7 @@ export const WalletSetupModal: React.FC = () => {
   // Import seed state
   const [importWordsText, setImportWordsText] = useState('');
   const [showImportSeed, setShowImportSeed] = useState(false);
+  const [isMnemonicDropdownOpen, setIsMnemonicDropdownOpen] = useState(false);
 
   // Passphrase state
   const [passphraseInput, setPassphraseInput] = useState('');
@@ -51,7 +53,11 @@ export const WalletSetupModal: React.FC = () => {
   const [setupPassword, setSetupPassword] = useState('');
   const [confirmSetupPassword, setConfirmSetupPassword] = useState('');
   const [showSetupPassword, setShowSetupPassword] = useState(false);
-  const [pendingFlow, setPendingFlow] = useState<'create' | 'import-seed' | 'none'>('none');
+  const [setupDuressPassword, setSetupDuressPassword] = useState('');
+  const [confirmSetupDuressPassword, setConfirmSetupDuressPassword] = useState('');
+  const [showSetupDuressPassword, setShowSetupDuressPassword] = useState(false);
+  const [activeDuressField, setActiveDuressField] = useState<'primary' | 'confirm'>('primary');
+  const [pendingFlow, setPendingFlow] = useState<'create' | 'import-seed' | 'import-address' | 'import-kpub' | 'none'>('none');
 
   // Preview Address
   const [previewAddress, setPreviewAddress] = useState('');
@@ -79,28 +85,8 @@ export const WalletSetupModal: React.FC = () => {
       return;
     }
     
-    if (!isPasswordEnabled) {
-      setPendingFlow('create');
-      setMode('setup-password');
-      return;
-    }
-
-    const name = walletName.trim() || 'New Kaspa Wallet';
-    const words = [...generatedWords];
-    const passInput = passphraseInput.trim() || undefined;
-    const addrType = addressType;
-
-    try {
-      setIsWalletSetupOpen(false);
-      resetState();
-      setIsLocked(false);
-
-      await createNewWallet(name, words, passInput, addrType);
-    } finally {
-      wipeStringArray(words);
-      setGeneratedWords([]);
-      setPassphraseInput('');
-    }
+    setPendingFlow('create');
+    setMode('setup-password');
   };
 
   const handleFinishImportSeed = async () => {
@@ -108,31 +94,12 @@ export const WalletSetupModal: React.FC = () => {
     const words = cleaned ? cleaned.split(' ') : [];
 
     if (words.length !== 12 && words.length !== 24) {
-      showToast('Kaspa seed phrase must be 24 words', 'error');
+      showToast('Kaspa seed phrase must be 12 or 24 words', 'error');
       return;
     }
 
-    if (!isPasswordEnabled) {
-      setPendingFlow('import-seed');
-      setMode('setup-password');
-      return;
-    }
-
-    const name = walletName.trim() || 'Imported Wallet';
-    const passInput = passphraseInput.trim() || undefined;
-    const addrType = addressType;
-
-    try {
-      setIsWalletSetupOpen(false);
-      resetState();
-      setIsLocked(false);
-
-      await importSeedWallet(name, words, passInput, addrType);
-    } finally {
-      wipeStringArray(words);
-      setImportWordsText('');
-      setPassphraseInput('');
-    }
+    setPendingFlow('import-seed');
+    setMode('setup-password');
   };
 
   const handleFinishImportKpub = async () => {
@@ -141,20 +108,8 @@ export const WalletSetupModal: React.FC = () => {
       return;
     }
 
-    if (!isPasswordEnabled) {
-      setPendingFlow('import-kpub' as any);
-      setMode('setup-password');
-      return;
-    }
-
-    const name = walletName.trim() || 'Watch-Only Kpub';
-    const kpub = kpubInput.trim();
-    const addrType = addressType;
-
-    setIsWalletSetupOpen(false);
-    resetState();
-
-    importKpubWallet(name, kpub, addrType);
+    setPendingFlow('import-kpub');
+    setMode('setup-password');
   };
 
   const handleFinishImportAddress = async () => {
@@ -164,19 +119,8 @@ export const WalletSetupModal: React.FC = () => {
       return;
     }
 
-    if (!isPasswordEnabled) {
-      setPendingFlow('import-address' as any);
-      setMode('setup-password');
-      return;
-    }
-
-    const name = walletName.trim() || 'Live Address Tracker';
-    const addrType = addressType;
-
-    setIsWalletSetupOpen(false);
-    resetState();
-
-    importKpubWallet(name, addr, addrType);
+    setPendingFlow('import-address');
+    setMode('setup-password');
   };
 
   const resetState = () => {
@@ -197,6 +141,9 @@ export const WalletSetupModal: React.FC = () => {
     setSetupPassword('');
     setConfirmSetupPassword('');
     setShowSetupPassword(false);
+    setSetupDuressPassword('');
+    setConfirmSetupDuressPassword('');
+    setShowSetupDuressPassword(false);
     setPendingFlow('none');
   };
 
@@ -281,7 +228,7 @@ export const WalletSetupModal: React.FC = () => {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
         className="w-full flex-1 flex flex-col space-y-4 p-5 pt-safe pb-safe overflow-y-auto no-scrollbar relative transition-all duration-200"
-        style={{ paddingBottom: isKeyboardOpen ? '280px' : '' }}
+        style={{ paddingBottom: isKeyboardOpen ? '220px' : '' }}
       >
         <AnimatePresence mode="wait">
           {/* MODE: CHOOSE */}
@@ -411,8 +358,7 @@ export const WalletSetupModal: React.FC = () => {
                       value={walletName}
                       onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                       onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
-                      readOnly
-                      inputMode="none"
+                      inputMode="none" onChange={() => {}}
                       className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
                     />
                   </div>
@@ -428,8 +374,7 @@ export const WalletSetupModal: React.FC = () => {
                         value={passphraseInput}
                         onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                         onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
-                        readOnly
-                        inputMode="none"
+                        inputMode="none" onChange={() => {}}
                         className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
                       />
                       <button
@@ -625,50 +570,97 @@ export const WalletSetupModal: React.FC = () => {
                   value={walletName}
                   onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
-                  readOnly
-                  inputMode="none"
+                  inputMode="none" onChange={() => {}}
                   className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
                 />
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Mnemonic Recovery Words
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowImportSeed(!showImportSeed)}
-                    className="text-[10px] text-[#70C7BA] hover:underline flex items-center gap-1 font-bold cursor-pointer"
-                  >
-                    {showImportSeed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3.5 h-3.5" />}
-                    <span>{showImportSeed ? 'Hide' : 'Reveal'}</span>
-                  </button>
-                </div>
-                <div className="relative">
-                  <textarea
-                    rows={3}
-                    value={importWordsText}
-                    onFocus={() => openKeyboard({ value: importWordsText, onChange: setImportWordsText })}
-                    onClick={() => openKeyboard({ value: importWordsText, onChange: setImportWordsText })}
-                    readOnly
-                    inputMode="none"
-                    placeholder="abandon ability able about above absent..."
-                    className={`w-full p-3 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs font-mono text-slate-100 outline-none transition-all resize-none no-scrollbar ${
-                      !showImportSeed && importWordsText ? 'filter blur-[6px] select-none text-transparent' : ''
-                    }`}
-                  />
-                  {!showImportSeed && importWordsText && (
-                    <div
-                      onClick={() => setShowImportSeed(true)}
-                      className="absolute inset-0 flex items-center justify-center cursor-pointer bg-[#090D12]/50 rounded-xl"
-                    >
-                      <span className="text-[10px] bg-[#090D12]  px-2.5 py-1 rounded-lg text-slate-300 shadow flex items-center gap-1.5">
-                        <Eye className="w-3 h-3 text-[#70C7BA]" /> Click to reveal seed phrase
+              {/* Collapsible Drop Box for Mnemonic Seed Phrase */}
+              <div className="border border-[#212B38] rounded-2xl bg-[#090D12] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsMnemonicDropdownOpen(!isMnemonicDropdownOpen)}
+                  className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[#0c1421] transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-[#70C7BA]" />
+                    <div>
+                      <span className="block text-[11px] font-bold text-slate-200">
+                        Mnemonic Seed Phrase
+                      </span>
+                      <span className="text-[9px] text-slate-400">
+                        {importWordsText.trim() ? `${importWordsText.trim().split(/\s+/).length} words loaded` : 'Click to expand and enter recovery words'}
                       </span>
                     </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {importWordsText.trim() ? (
+                      <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-[#70C7BA]/10 text-[#70C7BA]">
+                        Ready
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-amber-500/10 text-amber-400">
+                        Required
+                      </span>
+                    )}
+                    <motion.div
+                      animate={{ rotate: isMnemonicDropdownOpen ? 180 : 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    </motion.div>
+                  </div>
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {isMnemonicDropdownOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.25, ease: 'easeInOut' }}
+                      className="border-t border-[#212B38]/50 px-4 py-3.5 space-y-3 bg-black/10"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          Paste your 24-word Kaspa seed phrase below:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowImportSeed(!showImportSeed)}
+                          className="text-[10px] text-[#70C7BA] hover:underline flex items-center gap-1 font-bold cursor-pointer"
+                        >
+                          {showImportSeed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          <span>{showImportSeed ? 'Hide' : 'Reveal'}</span>
+                        </button>
+                      </div>
+
+                      <div className="relative">
+                        <textarea
+                          rows={3}
+                          value={importWordsText}
+                          onFocus={() => openKeyboard({ value: importWordsText, onChange: setImportWordsText })}
+                          onClick={() => openKeyboard({ value: importWordsText, onChange: setImportWordsText })}
+                          inputMode="none" onChange={() => {}}
+                          placeholder="abandon ability able about above absent..."
+                          className={`w-full p-3 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs font-mono text-slate-100 outline-none transition-all resize-none no-scrollbar ${
+                            !showImportSeed && importWordsText ? 'filter blur-[6px] select-none text-transparent' : ''
+                          }`}
+                        />
+                        {!showImportSeed && importWordsText && (
+                          <div
+                            onClick={() => setShowImportSeed(true)}
+                            className="absolute inset-0 flex items-center justify-center cursor-pointer bg-[#090D12]/50 rounded-xl"
+                          >
+                            <span className="text-[10px] bg-[#090D12] px-2.5 py-1 rounded-lg text-slate-300 shadow flex items-center gap-1.5">
+                              <Eye className="w-3 h-3 text-[#70C7BA]" /> Click to reveal seed phrase
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
                   )}
-                </div>
+                </AnimatePresence>
               </div>
 
               <div>
@@ -682,8 +674,7 @@ export const WalletSetupModal: React.FC = () => {
                     value={passphraseInput}
                     onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                     onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
-                    readOnly
-                    inputMode="none"
+                    inputMode="none" onChange={() => {}}
                     className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
                   />
                   <button
@@ -786,8 +777,7 @@ export const WalletSetupModal: React.FC = () => {
                   value={walletName}
                   onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
-                  readOnly
-                  inputMode="none"
+                  inputMode="none" onChange={() => {}}
                   className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
                 />
               </div>
@@ -802,8 +792,7 @@ export const WalletSetupModal: React.FC = () => {
                   value={addressInput}
                   onFocus={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
                   onClick={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
-                  readOnly
-                  inputMode="none"
+                  inputMode="none" onChange={() => {}}
                   className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] font-mono text-xs text-slate-100 outline-none"
                 />
               </div>
@@ -862,7 +851,6 @@ export const WalletSetupModal: React.FC = () => {
                         onChange={(e) => setSetupPassword(e.target.value)}
                         onFocus={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
                         onClick={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
-                        readOnly
                         inputMode="none"
                         className="w-full px-4 py-3 rounded-xl bg-[#090D12] border-2 border-[#1C2F42] focus:border-[#70C7BA] text-slate-100 outline-none text-sm transition-all pr-12"
                       />
@@ -925,7 +913,6 @@ export const WalletSetupModal: React.FC = () => {
                         onChange={(e) => setConfirmSetupPassword(e.target.value)}
                         onFocus={() => openKeyboard({ value: confirmSetupPassword, onChange: setConfirmSetupPassword })}
                         onClick={() => openKeyboard({ value: confirmSetupPassword, onChange: setConfirmSetupPassword })}
-                        readOnly
                         inputMode="none"
                         className={`w-full px-4 py-3 rounded-xl bg-[#090D12] border-2 transition-all pr-12 ${
                           confirmSetupPassword && setupPassword !== confirmSetupPassword 
@@ -948,7 +935,7 @@ export const WalletSetupModal: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={async () => {
+                  onClick={() => {
                     if (checkPassphraseStrength(setupPassword).score < 3) {
                       showToast('Password is too weak. Please use a stronger password!', 'error');
                       return;
@@ -957,42 +944,7 @@ export const WalletSetupModal: React.FC = () => {
                       showToast('Passwords do not match!', 'error');
                       return;
                     }
-
-                    const flow = pendingFlow;
-                    const pass = setupPassword;
-                    const name = walletName.trim() || (flow === 'create' ? 'New Kaspa Wallet' : flow === 'import-seed' ? 'Imported Wallet' : 'Watch-Only');
-                    const words = flow === 'create' ? [...generatedWords] : cleanMnemonic(importWordsText).split(' ');
-                    const passInput = passphraseInput.trim() || undefined;
-                    const addrType = addressType;
-                    const kpub = kpubInput.trim();
-                    const addr = addressInput.trim();
-
-                    try {
-                      // Close setup modal and reset state immediately so password page is never shown twice or kept open during indexing
-                      setIsWalletSetupOpen(false);
-                      resetState();
-
-                      if (flow === 'create') {
-                        await createNewWallet(name, words, passInput, addrType, pass);
-                      } else if (flow === 'import-seed') {
-                        await importSeedWallet(name, words, passInput, addrType, pass);
-                      } else if (flow === 'import-address' || (flow as string) === 'import-kpub') {
-                        if ((flow as string) === 'import-kpub') {
-                          importKpubWallet(name || 'Watch-Only Kpub', kpub, addrType);
-                        } else {
-                          importKpubWallet(name || 'Live Address Tracker', addr, addrType);
-                        }
-                        await setPassword(pass);
-                      }
-                      setIsLocked(true);
-                    } finally {
-                      wipeStringArray(words);
-                      setGeneratedWords([]);
-                      setImportWordsText('');
-                      setPassphraseInput('');
-                      setSetupPassword('');
-                      setConfirmSetupPassword('');
-                    }
+                    setMode('setup-duress');
                   }}
                   disabled={checkPassphraseStrength(setupPassword).score < 3 || confirmSetupPassword.length < 8 || setupPassword !== confirmSetupPassword}
                   className={`w-full py-4 rounded-2xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
@@ -1001,9 +953,210 @@ export const WalletSetupModal: React.FC = () => {
                       : 'bg-[#1C2F42] text-slate-500 cursor-not-allowed opacity-60'
                   }`}
                 >
-                  <Lock className="w-4 h-4" />
-                  <span>Encrypt & Finish Setup</span>
+                  <span>Continue to Emergency Duress Setup</span>
+                  <ArrowRight className="w-4 h-4" />
                 </button>
+              </div>
+            </motion.div>
+          )}
+
+          {mode === 'setup-duress' && (
+            <motion.div
+              key="setup-duress"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-6"
+            >
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setMode('setup-password')}
+                  className="p-2 -ml-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-[#1C2F42]/50 transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                    <Flame className="w-5 h-5 text-rose-400" />
+                    <span>Emergency Duress Password</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">Optional panic wipe trigger</p>
+                </div>
+              </div>
+
+              <div className="px-3.5 py-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                <div className="text-xs text-rose-300/90 leading-tight">
+                  <span className="font-bold">Panic Wipe Defense:</span> Entering this password on the lock screen immediately purges all keys and data.
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-1">
+                    Duress Password (Optional)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showSetupDuressPassword ? "text" : "password"}
+                      placeholder="Enter emergency duress password"
+                      value={setupDuressPassword}
+                      onChange={(e) => setSetupDuressPassword(e.target.value)}
+                      onFocus={() => {
+                        setActiveDuressField('primary');
+                        openKeyboard({
+                          value: setupDuressPassword,
+                          onChange: (val) => setSetupDuressPassword(val),
+                        });
+                      }}
+                      onClick={() => {
+                        setActiveDuressField('primary');
+                        openKeyboard({
+                          value: setupDuressPassword,
+                          onChange: (val) => setSetupDuressPassword(val),
+                        });
+                      }}
+                      inputMode="none"
+                      className={`w-full px-4 py-3 rounded-xl bg-[#090D12] border-2 transition-all pr-12 ${
+                        setupDuressPassword && setupPassword && setupDuressPassword === setupPassword
+                          ? 'border-rose-500'
+                          : 'border-[#1C2F42] focus:border-rose-500'
+                      } text-slate-100 outline-none text-sm`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSetupDuressPassword(!showSetupDuressPassword)}
+                      className="absolute right-4 top-3 text-slate-400 hover:text-slate-200"
+                    >
+                      {showSetupDuressPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                  {setupDuressPassword && setupPassword && setupDuressPassword === setupPassword && (
+                    <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      Duress password must be completely different from your primary password!
+                    </p>
+                  )}
+                </div>
+
+                {setupDuressPassword && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-1">
+                      Confirm Duress Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showSetupDuressPassword ? "text" : "password"}
+                        placeholder="Repeat emergency duress password"
+                        value={confirmSetupDuressPassword}
+                        onChange={(e) => setConfirmSetupDuressPassword(e.target.value)}
+                        onFocus={() => {
+                          setActiveDuressField('confirm');
+                          openKeyboard({
+                            value: confirmSetupDuressPassword,
+                            onChange: (val) => setConfirmSetupDuressPassword(val),
+                          });
+                        }}
+                        onClick={() => {
+                          setActiveDuressField('confirm');
+                          openKeyboard({
+                            value: confirmSetupDuressPassword,
+                            onChange: (val) => setConfirmSetupDuressPassword(val),
+                          });
+                        }}
+                        inputMode="none"
+                        className={`w-full px-4 py-3 rounded-xl bg-[#090D12] border-2 transition-all pr-12 ${
+                          confirmSetupDuressPassword && setupDuressPassword !== confirmSetupDuressPassword
+                            ? 'border-rose-500/50'
+                            : confirmSetupDuressPassword && setupDuressPassword === confirmSetupDuressPassword
+                              ? 'border-emerald-500/50'
+                              : 'border-[#1C2F42] focus:border-rose-500'
+                        } text-slate-100 outline-none text-sm`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSetupDuressPassword(!showSetupDuressPassword)}
+                        className="absolute right-4 top-3 text-slate-400 hover:text-slate-200"
+                      >
+                        {showSetupDuressPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 flex flex-col gap-2.5">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (setupDuressPassword) {
+                        if (setupDuressPassword === setupPassword) {
+                          showToast('Duress password cannot be identical to primary password', 'error');
+                          return;
+                        }
+                        if (setupDuressPassword !== confirmSetupDuressPassword) {
+                          showToast('Duress passwords do not match!', 'error');
+                          return;
+                        }
+                      }
+
+                      const flow = pendingFlow;
+                      const pass = setupPassword;
+                      const duressPass = setupDuressPassword.trim() || undefined;
+                      const name = sanitizeWalletName(walletName.trim(), flow === 'create' ? 'New Kaspa Wallet' : flow === 'import-seed' ? 'Imported Wallet' : 'Watch-Only');
+                      const words = flow === 'create' ? [...generatedWords] : cleanMnemonic(importWordsText).split(' ');
+                      const passInput = passphraseInput.trim() || undefined;
+                      const addrType = addressType;
+                      const kpub = kpubInput.trim();
+                      const addr = addressInput.trim();
+
+                      try {
+                        setIsWalletSetupOpen(false);
+                        resetState();
+
+                        if (flow === 'create') {
+                          await createNewWallet(name, words, passInput, addrType, pass, duressPass);
+                        } else if (flow === 'import-seed') {
+                          await importSeedWallet(name, words, passInput, addrType, pass, duressPass);
+                        } else if (flow === 'import-address' || (flow as string) === 'import-kpub') {
+                          if ((flow as string) === 'import-kpub') {
+                            await importKpubWallet(name || 'Watch-Only Kpub', kpub, addrType, pass, duressPass);
+                          } else {
+                            await importKpubWallet(name || 'Live Address Tracker', addr, addrType, pass, duressPass);
+                          }
+                          await setPassword(pass);
+                          if (duressPass) {
+                            await setDuressPassword(duressPass);
+                          }
+                        }
+                        setIsLocked(true);
+                      } finally {
+                        wipeStringArray(words);
+                        setGeneratedWords([]);
+                        setImportWordsText('');
+                        setPassphraseInput('');
+                        setSetupPassword('');
+                        setConfirmSetupPassword('');
+                        setSetupDuressPassword('');
+                        setConfirmSetupDuressPassword('');
+                      }
+                    }}
+                    disabled={
+                      Boolean(setupDuressPassword && (
+                        setupDuressPassword === setupPassword ||
+                        setupDuressPassword.length < 8 ||
+                        setupDuressPassword !== confirmSetupDuressPassword
+                      ))
+                    }
+                    className={`w-full py-4 rounded-2xl font-extrabold text-sm transition-all flex items-center justify-center gap-2 ${
+                      !setupDuressPassword || (setupDuressPassword !== setupPassword && setupDuressPassword.length >= 8 && setupDuressPassword === confirmSetupDuressPassword)
+                        ? 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] shadow-[0_0_20px_rgba(112,199,186,0.3)]'
+                        : 'bg-[#1C2F42] text-slate-500 cursor-not-allowed opacity-60'
+                    }`}
+                  >
+                    <Lock className="w-4 h-4" />
+                    <span>{setupDuressPassword ? 'Encrypt & Finish with Duress Defense' : 'Finish Wallet Setup (Skip Duress)'}</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}

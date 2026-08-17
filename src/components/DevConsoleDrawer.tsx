@@ -16,8 +16,16 @@ export interface LogEntry {
 const logBuffer: LogEntry[] = [];
 const logSubscribers = new Set<() => void>();
 
+let notifyScheduled = false;
+
 function notifySubscribers() {
-  logSubscribers.forEach((cb) => cb());
+  if (!notifyScheduled) {
+    notifyScheduled = true;
+    queueMicrotask(() => {
+      notifyScheduled = false;
+      logSubscribers.forEach((cb) => cb());
+    });
+  }
 }
 
 function safeFormatArg(a: any): string {
@@ -429,8 +437,7 @@ export const DevConsoleDrawer: React.FC = () => {
                   type="text"
                   value={searchQuery}
                   onClick={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
-                  readOnly
-                  inputMode="none"
+                  inputMode="none" onChange={() => {}}
                   placeholder="Filter logs..."
                   className="w-full pl-7 pr-3 py-1 bg-[#090D12] border border-[#212B38] focus:border-[#70C7BA] rounded-lg text-[11px] text-slate-200 outline-none cursor-pointer"
                 />

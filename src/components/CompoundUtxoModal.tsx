@@ -6,31 +6,18 @@ import { motion } from 'motion/react';
 export const CompoundUtxoModal: React.FC = () => {
   const { utxos, activeWallet, isCompoundOpen, setIsCompoundOpen, compoundUtxos, showToast } = useWallet();
   const [isCompounding, setIsCompounding] = useState(false);
-  const [providedSeed, setProvidedSeed] = useState('');
-  const [showProvidedSeed, setShowProvidedSeed] = useState(false);
-
-  useEffect(() => {
-    if (isCompoundOpen && activeWallet) {
-      if (activeWallet.mnemonic) {
-        setProvidedSeed(activeWallet.mnemonic);
-      }
-    } else {
-      setProvidedSeed('');
-    }
-  }, [isCompoundOpen, activeWallet]);
 
   if (!isCompoundOpen) return null;
 
   const handleExecuteCompound = async () => {
     setIsCompounding(true);
     try {
-      const res = await compoundUtxos(providedSeed.trim() || undefined);
+      const res = await compoundUtxos();
       if (res.success) {
         setIsCompoundOpen(false);
       }
     } finally {
       setIsCompounding(false);
-      setProvidedSeed('');
     }
   };
 
@@ -76,24 +63,6 @@ export const CompoundUtxoModal: React.FC = () => {
           <p className="text-xs text-slate-400 leading-relaxed">
             Kaspa's high block rate can generate many unspent transaction outputs (UTXOs). Compounding merges smaller outputs into a single UTXO, keeping your future transactions fast and low-fee.
           </p>
-
-          {!activeWallet?.mnemonic && (
-            <div>
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">
-                Wallet Seed Phrase
-              </label>
-              <input
-                type="text"
-                placeholder="Enter 24-word seed phrase to sign..."
-                value={providedSeed}
-                onFocus={() => openKeyboard({ value: providedSeed, onChange: setProvidedSeed })}
-                onClick={() => openKeyboard({ value: providedSeed, onChange: setProvidedSeed })}
-                readOnly
-                inputMode="none"
-                className="w-full px-3.5 py-2.5 font-mono text-xs rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] text-slate-100 outline-none"
-              />
-            </div>
-          )}
 
           <button
             onClick={handleExecuteCompound}

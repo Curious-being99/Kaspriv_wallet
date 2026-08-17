@@ -4,6 +4,7 @@ import { CurrencyType } from '../types';
 import { decryptWithPassword, buildAadContext } from '../utils/crypto';
 import { checkPassphraseStrength } from '../utils/strength';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
+import { SecurityVerifier } from './SecurityVerifier';
 import {
   Coins,
   Lock,
@@ -12,7 +13,6 @@ import {
   ChevronRight,
   Wifi,
   Compass,
-  Database,
   Globe,
   ShieldCheck,
   Timer,
@@ -21,14 +21,15 @@ import {
   EyeOff,
   Copy,
   Check,
-  Trash2,
-  Search,
   FileText,
   ChevronDown,
   ChevronUp,
-  Github
+  Github,
+  Flame,
+  ShieldAlert,
+  AlertTriangle
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 
 export const MobileSettingsView: React.FC = () => {
   const {
@@ -36,9 +37,12 @@ export const MobileSettingsView: React.FC = () => {
     currency,
     setCurrency,
     isPasswordEnabled,
+    isDuressEnabled,
     password,
     setPassword,
+    setDuressPassword,
     setIsSignMessageOpen,
+    setIsNodeManagerOpen,
     openLogoutConfirm,
     showToast,
     autoLockDuration,
@@ -47,8 +51,9 @@ export const MobileSettingsView: React.FC = () => {
     setLockOnExit,
     apiUrl,
     explorerUrl,
-    scanWalletChainIndex,
-    isScanningChain,
+    activeNode,
+    proxyConfig,
+    toggleProxy,
   } = useWallet();
 
   const [passwordForm, setPasswordForm] = useState('');
@@ -61,6 +66,15 @@ export const MobileSettingsView: React.FC = () => {
   const [showSeed, setShowSeed] = useState(false);
   const [copiedSeed, setCopiedSeed] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
+  const [showSecurityVerifier, setShowSecurityVerifier] = useState(false);
+  const [isSetPasswordDropdownOpen, setIsSetPasswordDropdownOpen] = useState(false);
+  const [isVerifyPasswordDropdownOpen, setIsVerifyPasswordDropdownOpen] = useState(false);
+  const [isDuressDropdownOpen, setIsDuressDropdownOpen] = useState(false);
+
+  // Duress Password in Settings
+  const [newDuressInput, setNewDuressInput] = useState('');
+  const [confirmDuressInput, setConfirmDuressInput] = useState('');
+  const [showDuressInput, setShowDuressInput] = useState(false);
 
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
 
@@ -71,13 +85,6 @@ export const MobileSettingsView: React.FC = () => {
     setDecryptedPassphrase(null);
     setShowSeed(false);
   }, [activeWallet?.id]);
-
-  // Handle automatic on-the-fly decryption for Settings reveal
-  useEffect(() => {
-    if (isPasswordEnabled && !lockOnExit) {
-      setLockOnExit(true);
-    }
-  }, [isPasswordEnabled, lockOnExit, setLockOnExit]);
 
   useEffect(() => {
     let isMounted = true;
@@ -160,7 +167,7 @@ export const MobileSettingsView: React.FC = () => {
 
   const currencies: CurrencyType[] = ['USD', 'EUR', 'GBP', 'BTC'];
   const autoLockOptions = [
-    { label: 'ON', value: 0 },
+    { label: 'In', value: 0 },
     { label: '1m', value: 1 },
     { label: '5m', value: 5 },
     { label: '10m', value: 10 },
@@ -187,50 +194,27 @@ export const MobileSettingsView: React.FC = () => {
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full space-y-2 py-2"
+      className="w-full space-y-4"
     >
-      {/* 1. Connection Settings */}
-      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-4">
+      {/* 1. Connection Settings & Privacy Nodes */}
+      <div className="py-3.5 px-4 border-b border-[#212B38]/40 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Wifi className="w-5 h-5 text-[#70C7BA]" />
-            <h3 className="text-sm font-extrabold text-slate-100">Connection Settings</h3>
+            <h3 className="text-sm font-extrabold text-slate-100">Network & Private Nodes</h3>
           </div>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#70C7BA]/20 text-white uppercase tracking-wider">
-            Mainnet
-          </span>
-        </div>
-        
-        <div className="space-y-3">
-          <div className="flex items-start gap-3 py-2 px-1">
-            <Database className="w-4 h-4 text-slate-400 mt-0.5" />
-            <div>
-              <div className="text-xs font-bold text-slate-200">Kaspa Node</div>
-              <div className="text-[10px] text-slate-400 font-mono mt-0.5">grpcs://toccata.kaspriv.io</div>
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-3 py-2 px-1">
-            <Globe className="w-4 h-4 text-slate-400 mt-0.5" />
-            <div>
-              <div className="text-xs font-bold text-slate-200">REST API</div>
-              <div className="text-[10px] text-slate-400 font-mono mt-0.5">{apiUrl}</div>
-              <div className="text-[9px] text-slate-500 mt-1">For transaction history and balance look up</div>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3 py-2 px-1">
-            <Compass className="w-4 h-4 text-slate-400 mt-0.5" />
-            <div>
-              <div className="text-xs font-bold text-slate-200">Kaspa Explorer</div>
-              <div className="text-[10px] text-slate-400 font-mono mt-0.5">{explorerUrl.replace('https://', '')}</div>
-            </div>
-          </div>
+          <button
+            onClick={() => setIsNodeManagerOpen(true)}
+            className="text-[10px] font-extrabold px-2.5 py-1 rounded-lg bg-[#70C7BA]/20 hover:bg-[#70C7BA]/30 text-[#70C7BA] border border-[#70C7BA]/40 uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <span>Manage Nodes</span>
+            <ChevronRight className="w-3 h-3" />
+          </button>
         </div>
       </div>
 
       {/* 2. Display Currency */}
-      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-3">
+      <div className="py-3.5 px-4 border-b border-[#212B38]/40 space-y-3">
         <div className="flex items-center gap-2">
           <Coins className="w-5 h-5 text-[#70C7BA]" />
           <h3 className="text-sm font-extrabold text-slate-100">Display Currency</h3>
@@ -252,127 +236,92 @@ export const MobileSettingsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Password Lock Security */}
-      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Lock className="w-5 h-5 text-[#70C7BA]" />
-            <h3 className="text-sm font-extrabold text-slate-100">Password Security</h3>
-          </div>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isPasswordEnabled ? 'bg-[#70C7BA]/20 text-[#70C7BA]' : 'bg-slate-800 text-slate-400'}`}>
-            {isPasswordEnabled ? 'ON' : 'OFF'}
-          </span>
-        </div>
 
-        {!isPasswordEnabled ? (
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <input
-                  type={showPasswordForm ? "text" : "password"}
-                  placeholder="Enter password (min 8 chars)"
-                  value={passwordForm}
-                  onFocus={() => openKeyboard({ value: passwordForm, onChange: setPasswordForm })}
-                  onClick={() => openKeyboard({ value: passwordForm, onChange: setPasswordForm })}
-                  readOnly
-                  inputMode="none"
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPasswordForm(!showPasswordForm)}
-                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
-                >
-                  {showPasswordForm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              <button
-                onClick={handlePasswordToggle}
-                className="px-4 py-2.5 rounded-xl bg-[#70C7BA] text-[#090D12] font-bold text-xs shadow-lg shadow-[#70C7BA]/20"
-              >
-                Set Password
-              </button>
-            </div>
-            
-            {passwordForm.length > 0 && (
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck className={`w-3 h-3 ${checkPassphraseStrength(passwordForm).color}`} />
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Security Level</span>
-                </div>
-                <span className={`text-[9px] font-extrabold ${checkPassphraseStrength(passwordForm).color}`}>
-                  {checkPassphraseStrength(passwordForm).label}
-                </span>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="w-full py-2.5 px-3 rounded-xl bg-[#70C7BA]/5 border border-[#70C7BA]/20 text-[#70C7BA]/60 font-bold text-xs text-center cursor-default">
-            Password Protection Active
-          </div>
-        )}
-      </div>
 
       {/* 3. Encrypted Seed Phrase Backup Card */}
-      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-3">
+      <div className="py-3.5 px-4 border-b border-[#212B38]/40 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Cpu className="w-5 h-5 text-[#70C7BA]" />
             <h3 className="text-sm font-extrabold text-slate-100">Seed Phrase Backup</h3>
           </div>
-          <span
-            className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-              isPasswordEnabled
-                ? 'bg-[#70C7BA]/20 text-[#70C7BA] border border-[#70C7BA]/40'
-                : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-            }`}
-          >
-            {isPasswordEnabled ? 'Encrypted (AES-GCM)' : 'Unprotected Mode'}
-          </span>
         </div>
 
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Your wallet seed phrase is encrypted with Argon2id + AES-256-GCM, derived from your master password, and is never stored in plaintext. It can only be decrypted locally on your device.
-        </p>
+
 
         {isPasswordEnabled && !decryptedMnemonic && (
-          <div className="space-y-2 pt-1">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
-              Wallet Password
-            </label>
-            <p className="text-[10px] text-amber-400 p-2">
-              ⚠️ Only reveal your seed in a private place.
-            </p>
-            <div className="relative">
-              <input
-                type={showSeedPassword ? "text" : "password"}
-                placeholder="Enter wallet password"
-                value={seedPasswordInput}
-                onFocus={() => openKeyboard({ value: seedPasswordInput, onChange: setSeedPasswordInput })}
-                onClick={() => openKeyboard({ value: seedPasswordInput, onChange: setSeedPasswordInput })}
-                readOnly
-                inputMode="none"
-                className="w-full px-3 py-2.5 text-center text-sm rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-slate-100 outline-none transition-colors pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowSeedPassword(!showSeedPassword)}
-                className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
-              >
-                {showSeedPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            {seedPasswordInput.length >= 8 && !decryptedMnemonic && !isDecrypting && (
-              <p className="text-[10px] text-rose-400 text-center font-semibold">
-                Incorrect Password. Decryption failed.
-              </p>
-            )}
-            {isDecrypting && (
-              <div className="flex items-center justify-center gap-1.5 py-1 text-[10px] text-blue-400">
-                <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                <span>Decrypting seed phrase...</span>
+          <div className="border border-[#212B38] rounded-2xl bg-[#090D12] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsVerifyPasswordDropdownOpen(!isVerifyPasswordDropdownOpen)}
+              className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[#0c1421] transition-all"
+            >
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-[#70C7BA]" />
+                <div>
+                  <span className="block text-[11px] font-bold text-slate-200">
+                    Verify Password to Unlock
+                  </span>
+                  <span className="text-[9px] text-slate-400">
+                  </span>
+                </div>
               </div>
-            )}
+              <div className="flex items-center gap-2">
+                <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-amber-500/10 text-amber-400">
+                </span>
+                <motion.div
+                  animate={{ rotate: isVerifyPasswordDropdownOpen ? 180 : 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                </motion.div>
+              </div>
+            </button>
+
+            <AnimatePresence initial={false}>
+              {isVerifyPasswordDropdownOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="border-t border-[#212B38]/50 px-4 py-3.5 space-y-3 bg-black/10"
+                >
+                  <p className="text-[10px] text-amber-400">
+                    ⚠️ Only reveal your seed in a private place where no cameras or screens can record it.
+                  </p>
+                  <div className="relative">
+                    <input
+                      type={showSeedPassword ? "text" : "password"}
+                      placeholder="Enter wallet password"
+                      value={seedPasswordInput}
+                      onFocus={() => openKeyboard({ value: seedPasswordInput, onChange: setSeedPasswordInput })}
+                      onClick={() => openKeyboard({ value: seedPasswordInput, onChange: setSeedPasswordInput })}
+                      inputMode="none" onChange={() => {}}
+                      className="w-full px-3 py-2.5 text-center text-xs rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-slate-100 outline-none transition-colors pr-10 border border-[#212B38]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSeedPassword(!showSeedPassword)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                    >
+                      {showSeedPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {seedPasswordInput.length >= 8 && !decryptedMnemonic && !isDecrypting && (
+                    <p className="text-[10px] text-rose-400 text-center font-semibold">
+                      Incorrect Password. Decryption failed.
+                    </p>
+                  )}
+                  {isDecrypting && (
+                    <div className="flex items-center justify-center gap-1.5 py-1 text-[10px] text-[#70C7BA]">
+                      <div className="w-3.5 h-3.5 border-2 border-[#70C7BA] border-t-transparent rounded-full animate-spin" />
+                      <span>Decrypting seed phrase...</span>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
 
@@ -451,7 +400,7 @@ export const MobileSettingsView: React.FC = () => {
       </div>
 
       {/* 4. Auto Lock Security */}
-      <div className={`py-3.5 px-1 border-b border-[#212B38]/40 space-y-4 transition-all duration-300 ${!isPasswordEnabled ? 'opacity-60 grayscale-[0.5]' : ''}`}>
+      <div className="py-3.5 px-4 border-b border-[#212B38]/40 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-[#70C7BA]/10 text-[#70C7BA]">
@@ -459,7 +408,6 @@ export const MobileSettingsView: React.FC = () => {
             </div>
             <div>
               <h3 className="text-sm font-extrabold text-slate-100">Auto Lock Security</h3>
-              <p className="text-[10px] text-slate-400 font-medium">Protect session when inactive</p>
             </div>
           </div>
         </div>
@@ -467,18 +415,21 @@ export const MobileSettingsView: React.FC = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between p-3 rounded-2xl bg-[#090D12] border border-[#212B38]/50">
             <div>
-              <div className="text-xs font-bold text-slate-200">Lock on Exit</div>
-              <div className="text-[9px] text-slate-500">Lock immediately when app is closed/minimized</div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-200">Lock on Exit</span>
+                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+                  lockOnExit ? 'bg-[#70C7BA]/20 text-[#70C7BA]' : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {lockOnExit ? 'On' : 'Off'}
+                </span>
+              </div>
+              <div className="text-[9px] text-slate-500">
+                {lockOnExit ? 'Lock immediately when app is closed/minimized' : 'Lock on exit is disabled'}
+              </div>
             </div>
             <button
-              onClick={() => {
-                if (!isPasswordEnabled) {
-                  showToast('Enable Password first to use Auto Lock', 'info');
-                  return;
-                }
-                setLockOnExit(!lockOnExit);
-              }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${
+              onClick={() => setLockOnExit(!lockOnExit)}
+              className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer ${
                 lockOnExit ? 'bg-[#70C7BA]' : 'bg-slate-700'
               }`}
             >
@@ -499,15 +450,9 @@ export const MobileSettingsView: React.FC = () => {
               {autoLockOptions.map((opt) => (
                 <button
                   key={opt.value}
-                  onClick={() => {
-                    if (!isPasswordEnabled) {
-                      showToast('Enable Password first to use Auto Lock', 'info');
-                      return;
-                    }
-                    setAutoLockDuration(opt.value);
-                  }}
-                  className={`py-2.5 rounded-xl border text-[10px] font-black transition-all ${
-                    autoLockDuration === opt.value && isPasswordEnabled
+                  onClick={() => setAutoLockDuration(opt.value)}
+                  className={`py-2.5 rounded-xl border text-[10px] font-black transition-all cursor-pointer ${
+                    autoLockDuration === opt.value
                       ? 'bg-[#70C7BA] text-[#090D12] border-[#70C7BA] shadow-lg shadow-[#70C7BA]/10'
                       : 'bg-[#090D12] border-[#212B38] text-slate-400 hover:text-slate-200'
                   }`}
@@ -519,33 +464,193 @@ export const MobileSettingsView: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-3 rounded-2xl bg-[#70C7BA]/5 border border-[#70C7BA]/10 flex items-start gap-2.5">
-          <ShieldCheck className="w-4 h-4 text-[#70C7BA] mt-0.5 flex-shrink-0" />
-          <p className="text-[10px] text-[#70C7BA]/80 leading-relaxed font-medium">
-            {isPasswordEnabled 
-              ? "Your wallet will automatically lock and require your password after the selected duration of inactivity or when you leave the app."
-              : "Enable Password Protection above to configure these security timers."}
-          </p>
+      </div>
+
+      {/* 4. Emergency Duress Password / Panic Wipe */}
+      <div className="py-3.5 px-4 border-b border-[#212B38]/40 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-rose-500/10 text-rose-400">
+              <Flame className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-100">Emergency Duress Password</h3>
+            </div>
+          </div>
+          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+            isDuressEnabled ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-slate-800 text-slate-500'
+          }`}>
+            {isDuressEnabled ? 'Armed' : 'Disabled'}
+          </span>
+        </div>
+
+        <div className="border border-[#212B38] rounded-2xl bg-[#090D12] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => {
+              const nextState = !isDuressDropdownOpen;
+              setIsDuressDropdownOpen(nextState);
+              if (nextState) {
+                openKeyboard({ value: newDuressInput, onChange: (val) => setNewDuressInput(val) });
+              } else {
+                closeKeyboard();
+              }
+            }}
+            className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[#0c1421] transition-all cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-400" />
+              <div>
+                <span className="block text-[11px] font-bold text-slate-200">
+                  {isDuressEnabled ? 'Manage Duress Password' : 'Set Emergency Duress Password'}
+                </span>
+                <span className="text-[9px] text-slate-500">
+                  {isDuressEnabled ? 'Wipe trigger active on lock screen' : 'Configure panic wipe password'}
+                </span>
+              </div>
+            </div>
+            <motion.div
+              animate={{ rotate: isDuressDropdownOpen ? 180 : 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            </motion.div>
+          </button>
+
+          <AnimatePresence initial={false}>
+            {isDuressDropdownOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: 'easeInOut' }}
+                className="border-t border-[#212B38]/50 px-4 py-3.5 space-y-3 bg-black/10"
+              >
+                <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-[10px] text-slate-300 leading-relaxed space-y-1">
+                  <p className="text-rose-400 font-bold">Panic Wipe Trigger:</p>
+                  <p>
+                    Entering this password on the lock screen will immediately overwrite and wipe all wallets, keys, and local databases, and return to the landing page with zero residual trace.
+                  </p>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div className="relative">
+                    <input
+                      type={showDuressInput ? "text" : "password"}
+                      placeholder="New Duress Password (min 8 chars)"
+                      value={newDuressInput}
+                      onFocus={() => openKeyboard({ value: newDuressInput, onChange: (val) => setNewDuressInput(val) })}
+                      onClick={() => openKeyboard({ value: newDuressInput, onChange: (val) => setNewDuressInput(val) })}
+                      onChange={(e) => {
+                        setNewDuressInput(e.target.value);
+                        openKeyboard({ value: e.target.value, onChange: (val) => setNewDuressInput(val) });
+                      }}
+                      inputMode="none"
+                      className="w-full px-3 py-2.5 text-xs rounded-xl bg-[#090D12] focus:border-rose-400 text-slate-100 outline-none pr-10 border border-[#212B38]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowDuressInput(!showDuressInput)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                    >
+                      {showDuressInput ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  {newDuressInput.length > 0 && (() => {
+                    const strResult = checkPassphraseStrength(newDuressInput);
+                    return (
+                      <div className="px-1 space-y-1">
+                        <div className="flex items-center justify-between text-[9px] font-bold">
+                          <span className="text-slate-500 uppercase tracking-widest">Strength</span>
+                          <span style={{ color: strResult.color }}>{strResult.label}</span>
+                        </div>
+                        <div className="h-1 w-full bg-slate-800 rounded-full overflow-hidden flex gap-0.5">
+                          {[1, 2, 3, 4].map((step) => (
+                            <div 
+                              key={step}
+                              className={`h-full flex-1 transition-all duration-300 ${
+                                step <= strResult.score ? '' : 'bg-transparent'
+                              }`}
+                              style={{ backgroundColor: step <= strResult.score ? strResult.color : undefined }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="relative">
+                    <input
+                      type={showDuressInput ? "text" : "password"}
+                      placeholder="Confirm Duress Password"
+                      value={confirmDuressInput}
+                      onFocus={() => openKeyboard({ value: confirmDuressInput, onChange: (val) => setConfirmDuressInput(val) })}
+                      onClick={() => openKeyboard({ value: confirmDuressInput, onChange: (val) => setConfirmDuressInput(val) })}
+                      onChange={(e) => {
+                        setConfirmDuressInput(e.target.value);
+                        openKeyboard({ value: e.target.value, onChange: (val) => setConfirmDuressInput(val) });
+                      }}
+                      inputMode="none"
+                      className="w-full px-3 py-2.5 text-xs rounded-xl bg-[#090D12] focus:border-rose-400 text-slate-100 outline-none pr-10 border border-[#212B38]"
+                    />
+                  </div>
+
+                  {newDuressInput && password && newDuressInput === password && (
+                    <p className="text-[10px] text-rose-400 font-medium flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      <span>Duress password must not match your primary password!</span>
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (newDuressInput.length < 8) {
+                          showToast('Duress password must be at least 8 characters', 'error');
+                          return;
+                        }
+                        if (password && newDuressInput === password) {
+                          showToast('Duress password must differ from primary password', 'error');
+                          return;
+                        }
+                        if (newDuressInput !== confirmDuressInput) {
+                          showToast('Duress passwords do not match', 'error');
+                          return;
+                        }
+                        closeKeyboard();
+                        await setDuressPassword(newDuressInput);
+                        setNewDuressInput('');
+                        setConfirmDuressInput('');
+                        setIsDuressDropdownOpen(false);
+                      }}
+                      disabled={
+                        newDuressInput.length < 8 ||
+                        (Boolean(password) && newDuressInput === password) ||
+                        newDuressInput !== confirmDuressInput
+                      }
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        newDuressInput.length >= 8 &&
+                        (!password || newDuressInput !== password) &&
+                        newDuressInput === confirmDuressInput
+                          ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-lg shadow-rose-500/20 cursor-pointer'
+                          : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      <Flame className="w-3.5 h-3.5" />
+                      <span>{isDuressEnabled ? 'Update Duress Password' : 'Save Duress Password'}</span>
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
-      {/* 4. Tools & Actions */}
-      <div className="py-3.5 px-1 border-b border-[#212B38]/40 space-y-2">
-        <button
-          onClick={scanWalletChainIndex}
-          disabled={isScanningChain}
-          className="w-full flex items-center justify-between p-3 rounded-2xl bg-[#090D12]  hover:border-[#70C7BA] text-xs text-slate-200 transition-all group disabled:opacity-50"
-        >
-          <div className="flex items-center gap-3">
-            <Search className={`w-4 h-4 text-cyan-400 ${isScanningChain ? 'animate-spin' : ''}`} />
-            <div className="text-left">
-              <span className="font-semibold block text-cyan-300">Scan DAG Chain Index</span>
-              <span className="text-[10px] text-slate-400">Discover all HD receive/change addresses & funds</span>
-            </div>
-          </div>
-          <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-200" />
-        </button>
-
+      {/* 5. Tools & Actions */}
+      <div className="py-3.5 px-4 border-b border-[#212B38]/40 space-y-2">
         <button
           onClick={() => setIsSignMessageOpen(true)}
           className="w-full flex items-center justify-between p-3 rounded-2xl bg-[#090D12]  hover:border-[#70C7BA] text-xs text-slate-200 transition-all group"
@@ -558,16 +663,39 @@ export const MobileSettingsView: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setShowSecurityVerifier(!showSecurityVerifier)}
+          className="w-full flex items-center justify-between p-3 rounded-2xl bg-[#090D12] hover:border-[#70C7BA] text-xs text-slate-200 transition-all group"
+        >
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 group-hover:animate-pulse" />
+            <div className="text-left">
+              <span className="font-semibold block text-emerald-300">Zero-Trust & Wipe Verifier</span>
+            </div>
+          </div>
+          {showSecurityVerifier ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        </button>
+
+        {showSecurityVerifier && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="pt-1.5 pb-2 overflow-hidden"
+          >
+            <SecurityVerifier />
+          </motion.div>
+        )}
+
+        <button
           onClick={openLogoutConfirm}
           className="w-full flex items-center gap-3 p-3 text-xs text-rose-400 hover:text-rose-300 transition-all font-semibold"
         >
           <LogOut className="w-4 h-4" />
-          <span>Log Out Wallet Session</span>
+          <span>Log Out</span>
         </button>
       </div>
 
       {/* 5. GitHub & Terms */}
-      <div className="py-3.5 px-1 space-y-2 mb-8">
+      <div className="py-3.5 px-4 space-y-2 mb-8">
         <a
           href="https://github.com/Curious-being99/Kaspriv_wallet"
           target="_blank"
@@ -604,12 +732,6 @@ export const MobileSettingsView: React.FC = () => {
             <p>
               By using this non-custodial wallet, you acknowledge and agree to the following terms:
             </p>
-            <ul className="list-disc pl-4 space-y-1.5">
-              <li><strong className="text-slate-300">Self-Custody:</strong> You are solely responsible for securing your 24-word seed phrase and any password or passphrase. The wallet operates entirely locally on your device; no servers store your sensitive data.</li>
-              <li><strong className="text-slate-300">No Recovery:</strong> If you lose your seed phrase, password, or passphrase, your funds will be permanently lost. There is no mechanism to recover them.</li>
-              <li><strong className="text-slate-300">Risk Acknowledgment:</strong> Cryptocurrency transactions are irreversible. You assume all risks associated with sending, receiving, and storing digital assets.</li>
-              <li><strong className="text-slate-300">Software Usage:</strong> The wallet is provided "as is" without warranties of any kind. You are responsible for ensuring your device environment (browser, OS) is free of malware.</li>
-            </ul>
             <p className="mt-2 text-rose-400/80">
               Never share your seed phrase, password, or passphrase with anyone.
             </p>

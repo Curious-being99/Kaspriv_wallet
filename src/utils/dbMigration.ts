@@ -2,7 +2,7 @@
  * Database Migration Manager for Kaspriv Wallet
  * Uses abstract migration framework logic to migrate wallet storage schemas.
  */
-import { Wallet, Covenant } from '../types';
+import { Wallet } from '../types';
 import { safeStringify } from './json';
 
 export interface MigrationState {

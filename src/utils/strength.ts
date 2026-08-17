@@ -42,7 +42,7 @@ export const checkPassphraseStrength = (passphrase: string): StrengthResult => {
   // Enforce minimum length constraint (8 characters)
   const minimumLengthMet = passphrase.length >= MIN_PASSPHRASE_LENGTH;
   if (!minimumLengthMet) {
-    score = Math.min(score, 1); // Cap at 'weak' (1) if shorter than 8 chars
+    score = Math.min(score, 1) as zxcvbn.ZXCVBNScore; // Cap at 'weak' (1) if shorter than 8 chars
     if (!warnings.some(w => w.includes('at least'))) {
       warnings.unshift(`Password must be at least ${MIN_PASSPHRASE_LENGTH} characters long`);
     }

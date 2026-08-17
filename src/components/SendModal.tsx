@@ -1,12 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 import {
   validateKaspaAddress,
   sompiToKas,
+  kasToSompi,
   formatKas,
   shortenAddress,
   generateDeterministicAddress,
+  calculateDynamicFeeForTransaction,
+  calculateMinFeeForInputs,
+  getRecommendedFees,
 } from '../utils/kaspa';
 import { decryptWithPassword, buildAadContext } from '../utils/crypto';
 import {
@@ -24,6 +28,10 @@ import {
   Clipboard,
   Trash2,
   Key,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  Unlock,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -53,12 +61,17 @@ export const SendModal: React.FC = () => {
     showToast,
     transactions,
     refreshBalance,
+    contacts,
+    utxos,
+    toggleLockUtxo,
   } = useWallet();
 
   const [toAddress, setToAddress] = useState('');
   const [amountInput, setAmountInput] = useState('');
   const [feeSpeed, setFeeSpeed] = useState<'low' | 'normal' | 'fast'>('normal');
   const [note, setNote] = useState('');
+  const [showCoinControl, setShowCoinControl] = useState(false);
+  const [selectedUtxoOutpoints, setSelectedUtxoOutpoints] = useState<string[]>([]);
 
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -78,14 +91,33 @@ export const SendModal: React.FC = () => {
   const [isPasswordDecrypting, setIsPasswordDecrypting] = useState(false);
   const [isPasswordCorrect, setIsPasswordCorrect] = useState(false);
 
+  const handleAddressChange = React.useCallback((val: string) => {
+    setToAddress(val);
+    if (val.trim()) {
+      const res = validateKaspaAddress(val, network);
+      if (!res.isValid) {
+        setAddressError(res.error || 'Invalid address');
+      } else {
+        setAddressError(null);
+      }
+    } else {
+      setAddressError(null);
+    }
+  }, [network]);
+
   // No auto-fill needed from worker; seed is decrypted on-the-fly with password
   useEffect(() => {
     if (isSendOpen && activeWallet) {
       if (!isPasswordEnabled && activeWallet.passphrase) {
         setPassphraseInput(activeWallet.passphrase);
       }
+      const prefill = localStorage.getItem('kaspriv_prefill_address');
+      if (prefill) {
+        handleAddressChange(prefill);
+        localStorage.removeItem('kaspriv_prefill_address');
+      }
     }
-  }, [isSendOpen, activeWallet, isPasswordEnabled]);
+  }, [isSendOpen, activeWallet, isPasswordEnabled, handleAddressChange]);
 
   // Handle automatic on-the-fly password verification/decryption
   const decryptingTaskRef = useRef<number>(0);
@@ -226,7 +258,7 @@ export const SendModal: React.FC = () => {
     showToastRef.current = showToast;
   }, [showToast]);
 
-  // Live status polling for transaction confirmation
+  // Live status polling for transaction confirmation (listens to background updates from context)
   useEffect(() => {
     let pollInterval: any;
 
@@ -238,8 +270,6 @@ export const SendModal: React.FC = () => {
         if (found && found.isAccepted) {
           setSuccessTx((prev) => (prev ? { ...prev, isConfirmed: true } : null));
           showToastRef.current('Transaction confirmed on-chain!', 'success');
-        } else {
-          refreshBalanceRef.current();
         }
       };
 
@@ -252,39 +282,79 @@ export const SendModal: React.FC = () => {
     };
   }, [successTx]);
 
-  if (!isSendOpen) return null;
+  const addrType = activeWallet?.addressType || (activeWallet?.receiveAddress?.includes(':p') ? 'P2SH' : 'P2PKH');
+  const numericAmount = parseFloat(amountInput) || 0;
+  const targetSompi = kasToSompi(numericAmount);
 
-  const feeValuesKas = {
-    low: 0.0046,
-    normal: 0.005,
-    fast: 0.007,
-  };
+  // Dynamically calculate how many UTXOs are needed to fund numericAmount
+  const dynamicFeeInfo = useMemo(() => {
+    if (!utxos || utxos.length === 0) {
+      const rec = getRecommendedFees(1, 2, addrType);
+      return {
+        inputsCount: 1,
+        fees: {
+          low: Number(sompiToKas(rec.lowFeeSompi)),
+          normal: Number(sompiToKas(rec.normalFeeSompi)),
+          fast: Number(sompiToKas(rec.fastFeeSompi)),
+        },
+      };
+    }
 
+    // Sort descending by amount
+    const sorted = [...utxos].sort((a, b) => {
+      const amtA = BigInt(a.amountSompi || 0);
+      const amtB = BigInt(b.amountSompi || 0);
+      return amtB > amtA ? 1 : amtB < amtA ? -1 : 0;
+    });
+
+    let accum = 0n;
+    let count = 0;
+    for (const u of sorted) {
+      accum += BigInt(u.amountSompi || 0);
+      count++;
+      const curFee = calculateDynamicFeeForTransaction(count, 2, addrType, 20, 15000n);
+      if (accum >= (targetSompi + curFee) || count >= 80) {
+        break;
+      }
+    }
+    const finalCount = Math.max(1, count);
+    const rec = getRecommendedFees(finalCount, 2, addrType);
+
+    return {
+      inputsCount: finalCount,
+      fees: {
+        low: Number(sompiToKas(rec.lowFeeSompi)),
+        normal: Number(sompiToKas(rec.normalFeeSompi)),
+        fast: Number(sompiToKas(rec.fastFeeSompi)),
+      },
+    };
+  }, [utxos, targetSompi, addrType]);
+
+  const feeValuesKas = dynamicFeeInfo.fees;
   const selectedFee = feeValuesKas[feeSpeed];
   const maxBalanceKas = activeWallet ? sompiToKas(activeWallet.balanceSompi) : 0;
 
-  const handleAddressChange = (val: string) => {
-    setToAddress(val);
-    if (val.trim()) {
-      const res = validateKaspaAddress(val, network);
-      if (!res.isValid) {
-        setAddressError(res.error || 'Invalid address');
-      } else {
-        setAddressError(null);
-      }
-    } else {
-      setAddressError(null);
-    }
-  };
-
   const handleMaxClick = () => {
-    const maxSendable = Math.max(0, maxBalanceKas - selectedFee);
-    const strVal = maxSendable.toString();
+    if (!utxos || utxos.length === 0) {
+      const maxSendable = Math.max(0, maxBalanceKas - selectedFee);
+      const strVal = maxSendable > 0 ? maxSendable.toFixed(8).replace(/\.?0+$/, '') : '0';
+      setAmountInput(strVal);
+      openKeyboard({ value: strVal, onChange: setAmountInput, layoutName: 'numeric' });
+      return;
+    }
+
+    // Up to 80 UTXOs
+    const usableUtxos = utxos.slice(0, 80);
+    const totalUtxoSompi = usableUtxos.reduce((sum, u) => sum + BigInt(u.amountSompi || 0), 0n);
+    const rec = getRecommendedFees(usableUtxos.length, 1, addrType);
+    const feeSompi = feeSpeed === 'low' ? rec.lowFeeSompi : feeSpeed === 'fast' ? rec.fastFeeSompi : rec.normalFeeSompi;
+    const maxSendableSompi = totalUtxoSompi > feeSompi ? totalUtxoSompi - feeSompi : 0n;
+    const maxSendableKas = sompiToKas(maxSendableSompi);
+    const strVal = maxSendableKas > 0 ? maxSendableKas.toString() : '0';
     setAmountInput(strVal);
     openKeyboard({ value: strVal, onChange: setAmountInput, layoutName: 'numeric' });
   };
 
-  const numericAmount = parseFloat(amountInput) || 0;
   const fiatEquivalent = (numericAmount * marketData.priceUsd * fiatRate).toFixed(2);
 
   const isFormValid =
@@ -293,7 +363,7 @@ export const SendModal: React.FC = () => {
     toAddress.trim().length > 0 &&
     !addressError &&
     numericAmount > 0 &&
-    numericAmount + selectedFee <= maxBalanceKas;
+    (numericAmount + selectedFee <= maxBalanceKas + 0.00000001);
 
   const handleProceedToConfirm = (e: React.FormEvent) => {
     e.preventDefault();
@@ -357,11 +427,19 @@ export const SendModal: React.FC = () => {
           return;
         }
 
-        const res = await sendKaspa(toAddress, numericAmount, selectedFee, note, mnemonicToUse, passphraseToUse);
+        const res = await sendKaspa(
+          toAddress,
+          numericAmount,
+          selectedFee,
+          note,
+          mnemonicToUse,
+          passphraseToUse,
+          selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined
+        );
 
         if (res.success) {
           setSuccessTx({
-            txid: res.txid || 'kaspa-txid-pending',
+            txid: res.txid || 'kaspa-txid',
             amountKas: numericAmount,
             feeKas: selectedFee,
             toAddress: toAddress.trim(),
@@ -384,7 +462,7 @@ export const SendModal: React.FC = () => {
         // ALWAYS wipe application-managed sensitive references
         // --------------------------------------------------------
         mnemonicToUse = null;
-        passphraseToUse = null;
+        passphraseToUse = undefined;
         
         // Clear sensitive UI state
         setPasswordInput('');
@@ -393,6 +471,8 @@ export const SendModal: React.FC = () => {
     }, 50);
   };
 
+  if (!isSendOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 bg-[#090D12] flex flex-col overflow-hidden">
       <motion.div
@@ -400,7 +480,7 @@ export const SendModal: React.FC = () => {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
         className="w-full max-w-3xl mx-auto h-full flex flex-col p-6 overflow-y-auto no-scrollbar pt-safe pb-safe"
-        style={{ paddingBottom: isKeyboardOpen ? '280px' : '' }}
+        style={{ paddingBottom: isKeyboardOpen ? '220px' : '' }}
       >
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-2.5 border-b border-[#212B38]">
@@ -583,14 +663,37 @@ export const SendModal: React.FC = () => {
                   <span>Paste</span>
                 </button>
               </div>
+
+              {/* Contact Selector Dropdown */}
+              {contacts && contacts.length > 0 && (
+                <div className="mb-2">
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleAddressChange(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                    defaultValue=""
+                    className="w-full bg-[#0B151E] border border-[#273E54] rounded-xl px-3 py-1.5 text-[11px] text-slate-300 outline-none focus:border-[#70C7BA] cursor-pointer"
+                  >
+                    <option value="" disabled>Select from saved contacts...</option>
+                    {contacts.map((c) => (
+                      <option key={c.id} value={c.address}>
+                        {c.name} ({shortenAddress(c.address)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <input
                 type="text"
                 placeholder={`kaspa:q...`}
                 value={toAddress}
                 onFocus={() => openKeyboard({ value: toAddress, onChange: handleAddressChange })}
                 onClick={() => openKeyboard({ value: toAddress, onChange: handleAddressChange })}
-                readOnly
-                inputMode="none"
+                inputMode="none" onChange={() => {}}
                 className={`w-full px-3 py-2 rounded-xl bg-[#0B151E] border ${
                   addressError ? 'border-rose-500' : 'border-[#273E54] focus:border-[#70C7BA]'
                 } font-mono text-xs text-slate-100 outline-none transition-colors`}
@@ -627,8 +730,7 @@ export const SendModal: React.FC = () => {
                   value={amountInput}
                   onFocus={() => openKeyboard({ value: amountInput, onChange: setAmountInput, layoutName: 'numeric', type: 'number' })}
                   onClick={() => openKeyboard({ value: amountInput, onChange: setAmountInput, layoutName: 'numeric', type: 'number' })}
-                  readOnly
-                  inputMode="none"
+                  inputMode="none" onChange={() => {}}
                   className="w-full pl-3 pr-14 py-2 rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] font-mono text-base font-bold text-slate-100 outline-none"
                 />
                 <span className="absolute right-3 top-2.5 font-bold text-xs text-[#70C7BA]">KAS</span>
@@ -662,6 +764,132 @@ export const SendModal: React.FC = () => {
                   </button>
                 ))}
               </div>
+              {dynamicFeeInfo.inputsCount > 1 && (
+                <div className="mt-1.5 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#0B151E] border border-[#273E54] text-[9px] text-slate-300 font-medium">
+                  <Layers className="w-3 h-3 text-[#70C7BA] shrink-0" />
+                  <span>Consolidating {dynamicFeeInfo.inputsCount} UTXOs to fund this payment</span>
+                </div>
+              )}
+            </div>
+
+            {/* Coin Control & UTXO Privacy Management */}
+            <div className="rounded-xl border border-[#273E54] bg-[#0B151E]/60 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowCoinControl(!showCoinControl)}
+                className="w-full p-2.5 flex items-center justify-between text-left hover:bg-[#1C2F42]/30 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Shield className="w-3.5 h-3.5 text-[#70C7BA]" />
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-200 block">
+                      Coin Control & UTXO Privacy
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-mono">
+                      {selectedUtxoOutpoints.length > 0
+                        ? `Manual Selection: ${selectedUtxoOutpoints.length} UTXO(s)`
+                        : `Auto-Selection (${(utxos || []).length} available, ${(activeWallet?.lockedUtxoOutpoints || []).length} frozen)`}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {selectedUtxoOutpoints.length > 0 && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#70C7BA]/20 text-[#70C7BA] font-bold">
+                      Custom
+                    </span>
+                  )}
+                  {showCoinControl ? (
+                    <ChevronUp className="w-4 h-4 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                  )}
+                </div>
+              </button>
+
+              {showCoinControl && (
+                <div className="p-2.5 border-t border-[#273E54] space-y-2 bg-[#090D12]">
+                  <div className="flex items-center justify-between text-[9px] text-slate-400">
+                    <span>Select specific UTXOs or freeze unlinked outputs:</span>
+                    {selectedUtxoOutpoints.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUtxoOutpoints([])}
+                        className="text-[#70C7BA] hover:underline font-semibold"
+                      >
+                        Reset to Auto
+                      </button>
+                    )}
+                  </div>
+
+                  {(!utxos || utxos.length === 0) ? (
+                    <p className="text-[10px] text-slate-500 italic py-1">No spendable UTXOs indexed yet.</p>
+                  ) : (
+                    <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 no-scrollbar">
+                      {utxos.map((u) => {
+                        const outpoint = `${u.txid}:${u.vout}`;
+                        const isLocked = (activeWallet?.lockedUtxoOutpoints || []).includes(outpoint);
+                        const isSelected = selectedUtxoOutpoints.includes(outpoint);
+                        const uAmtKas = sompiToKas(u.amountSompi);
+
+                        return (
+                          <div
+                            key={outpoint}
+                            className={`p-2 rounded-lg border text-[10px] flex items-center justify-between gap-2 transition-all ${
+                              isSelected
+                                ? 'bg-[#70C7BA]/10 border-[#70C7BA]/50'
+                                : isLocked
+                                ? 'bg-rose-950/20 border-rose-800/30 opacity-60'
+                                : 'bg-[#0B151E] border-[#273E54]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={isLocked}
+                                onChange={() => {
+                                  setSelectedUtxoOutpoints((prev) =>
+                                    prev.includes(outpoint)
+                                      ? prev.filter((o) => o !== outpoint)
+                                      : [...prev, outpoint]
+                                  );
+                                }}
+                                className="accent-[#70C7BA] rounded cursor-pointer"
+                              />
+                              <div className="truncate">
+                                <div className="font-mono text-slate-200 font-bold truncate">
+                                  {shortenAddress(u.txid, 6, 4)}:{u.vout}
+                                </div>
+                                <div className="text-[9px] text-slate-400 font-mono truncate">
+                                  {shortenAddress(u.address, 6, 4)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-mono font-bold text-[#70C7BA]">
+                                {uAmtKas.toFixed(4)} KAS
+                              </span>
+                              <button
+                                type="button"
+                                title={isLocked ? 'Unlock / Unfreeze UTXO' : 'Freeze UTXO (prevent auto-spending)'}
+                                onClick={() => toggleLockUtxo(outpoint)}
+                                className={`p-1 rounded ${
+                                  isLocked
+                                    ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30'
+                                    : 'bg-[#1C2F42] text-slate-400 hover:text-slate-200'
+                                }`}
+                              >
+                                {isLocked ? <Lock className="w-3 h-3 text-rose-400" /> : <Unlock className="w-3 h-3" />}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Optional Note */}
@@ -675,8 +903,7 @@ export const SendModal: React.FC = () => {
                 value={note}
                 onFocus={() => openKeyboard({ value: note, onChange: setNote })}
                 onClick={() => openKeyboard({ value: note, onChange: setNote })}
-                readOnly
-                inputMode="none"
+                inputMode="none" onChange={() => {}}
                 className="w-full px-3 py-2 rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
               />
             </div>
@@ -753,8 +980,7 @@ export const SendModal: React.FC = () => {
                 value={passphraseInput}
                 onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                 onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
-                readOnly
-                inputMode="none"
+                inputMode="none" onChange={() => {}}
                 placeholder="Enter passphrase if set during creation..."
                 className="w-full px-2.5 py-1.5 rounded-lg bg-[#090D12]  focus:border-[#70C7BA] text-[11px] font-mono text-slate-100 outline-none transition-colors"
               />
@@ -773,8 +999,7 @@ export const SendModal: React.FC = () => {
                     value={passwordInput}
                     onFocus={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
                     onClick={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
-                    readOnly
-                    inputMode="none"
+                    inputMode="none" onChange={() => {}}
                     className="w-full px-3 py-2 rounded-lg bg-[#090D12] focus:border-[#70C7BA] text-sm text-slate-100 outline-none transition-colors pr-10"
                   />
                   <button

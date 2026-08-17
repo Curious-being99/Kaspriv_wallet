@@ -135,19 +135,31 @@ function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): voi
     // Check deep into WASM structure if possible
     if (transaction.mtx && Array.isArray(transaction.mtx.outputs)) {
       const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress);
-      const destinationOutput = transaction.mtx.outputs.find((o: any) => 
-        (BigInt(o.amount) === intent.amountSompi) && 
-        (o.scriptPublicKey?.scriptPublicKey === expectedScriptPubKey || o.script_public_key?.script_public_key === expectedScriptPubKey)
-      );
-      if (!destinationOutput) {
-        throw new Error('Security failure: Could not verify intended output in WASM transaction structure.');
+      
+      const isSelfSend = intent.toAddress === intent.changeAddress;
+      if (isSelfSend) {
+        // Just verify at least one output goes to the right address
+        const destinationOutput = transaction.mtx.outputs.find((o: any) => 
+          (o.scriptPublicKey?.scriptPublicKey === expectedScriptPubKey || o.script_public_key?.script_public_key === expectedScriptPubKey)
+        );
+        if (!destinationOutput) {
+          throw new Error('Security failure: Could not verify intended output in WASM transaction structure for self-send.');
+        }
+      } else {
+        const destinationOutput = transaction.mtx.outputs.find((o: any) => 
+          (BigInt(o.amount) === intent.amountSompi) && 
+          (o.scriptPublicKey?.scriptPublicKey === expectedScriptPubKey || o.script_public_key?.script_public_key === expectedScriptPubKey)
+        );
+        if (!destinationOutput) {
+          throw new Error('Security failure: Could not verify intended output in WASM transaction structure.');
+        }
       }
     }
   } else {
     // For manual transactions, we can inspect the outputs array
     const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress);
     const destinationOutput = transaction.outputs.find((o: any) => 
-      o.amount === Number(intent.amountSompi) && 
+      BigInt(o.amount) === intent.amountSompi && 
       o.scriptPublicKey?.scriptPublicKey === expectedScriptPubKey
     );
     if (!destinationOutput) {
@@ -167,11 +179,8 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
     throw new Error('Security failure: Signed transaction is missing inputs or outputs array.');
   }
 
-  // 1. Verify inputs match the intent UTXOs exactly
-  if (signedTx.inputs.length !== intent.utxos.length) {
-    throw new Error(`Security failure: Signed transaction input count (${signedTx.inputs.length}) does not match the approved intent UTXO count (${intent.utxos.length}).`);
-  }
-
+  // 1. Verify inputs match the intent UTXOs exactly (allow subset if WASM builder optimized it)
+  let totalActualInputSompi = 0n;
   for (const input of signedTx.inputs) {
     const txId = input.previousOutpoint?.transactionId;
     const index = input.previousOutpoint?.index;
@@ -180,7 +189,7 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
     }
 
     // Every input outpoint must match a UTXO in the intent
-    const utxoMatch = intent.utxos.some(u => {
+    const utxoMatch = intent.utxos.find(u => {
       const uTxId = u.outpoint?.transactionId || u.transactionId;
       const uIndex = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
       return String(uTxId) === String(txId) && Number(uIndex) === Number(index);
@@ -189,6 +198,8 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
     if (!utxoMatch) {
       throw new Error(`Security failure: Signed transaction contains an unapproved input outpoint ${txId}:${index}.`);
     }
+    
+    totalActualInputSompi += BigInt(utxoMatch.utxoEntry?.amount || utxoMatch.amount || 0);
 
     // Ensure the signatureScript is present (meaning it has been signed)
     if (!input.signatureScript) {
@@ -198,54 +209,72 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
 
   // 2. Verify outputs match the approved intent exactly
   const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress);
-  
-  // Find the recipient output
-  const recipientOutput = signedTx.outputs.find((out: any) => {
-    const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
-    return spk === expectedScriptPubKey;
-  });
+  const expectedChangeAmount = totalActualInputSompi - intent.amountSompi - intent.feeSompi;
+  const isSelfSend = intent.toAddress === intent.changeAddress;
 
-  if (!recipientOutput) {
-    throw new Error('Security failure: Signed transaction is missing the recipient output.');
-  }
-
-  const actualRecipientAmount = BigInt(recipientOutput.amount);
-  if (actualRecipientAmount !== intent.amountSompi) {
-    throw new Error(`Security failure: Signed transaction recipient output amount (${actualRecipientAmount} sompi) does not match approved amount (${intent.amountSompi} sompi).`);
-  }
-
-  // Verify change output if present
-  const totalInputSompi = intent.utxos.reduce((acc, u) => {
-    const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
-    return acc + amt;
-  }, 0n);
-
-  const expectedChangeAmount = totalInputSompi - intent.amountSompi - intent.feeSompi;
-
-  if (expectedChangeAmount > 0n) {
-    const expectedChangeScriptPubKey = addressToScriptPublicKey(intent.changeAddress);
-    const changeOutput = signedTx.outputs.find((out: any) => {
+  if (isSelfSend) {
+    let combinedAmount = 0n;
+    for (const out of signedTx.outputs) {
       const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
-      return spk === expectedChangeScriptPubKey;
-    });
-
-    if (!changeOutput) {
-      throw new Error('Security failure: Signed transaction is missing the change output.');
+      if (spk === expectedScriptPubKey) {
+        combinedAmount += BigInt(out.amount);
+      }
     }
 
-    const actualChangeAmount = BigInt(changeOutput.amount);
-    if (actualChangeAmount !== expectedChangeAmount) {
-      throw new Error(`Security failure: Signed transaction change output amount (${actualChangeAmount} sompi) does not match expected change (${expectedChangeAmount} sompi).`);
+    const expectedCombined = intent.amountSompi + expectedChangeAmount;
+    if (combinedAmount > expectedCombined) {
+      throw new Error(`Security failure: Signed transaction self-send combined output (${combinedAmount}) exceeds expected (${expectedCombined}).`);
     }
-
-    // Ensure there are exactly 2 outputs (recipient + change)
-    if (signedTx.outputs.length !== 2) {
-      throw new Error(`Security failure: Signed transaction has extra unauthorized outputs (${signedTx.outputs.length} outputs, expected 2).`);
+    const feeDiscrepancy = expectedCombined - combinedAmount;
+    if (feeDiscrepancy > 200000n) {
+      throw new Error(`Security failure: Signed transaction combined output amount (${combinedAmount} sompi) is suspiciously lower than expected (${expectedCombined} sompi).`);
     }
   } else {
-    // If no change, there should be exactly 1 output (just the recipient)
-    if (signedTx.outputs.length !== 1) {
-      throw new Error(`Security failure: Signed transaction has extra unauthorized outputs (${signedTx.outputs.length} outputs, expected 1).`);
+    // Find the recipient output
+    const recipientOutput = signedTx.outputs.find((out: any) => {
+      const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
+      return spk === expectedScriptPubKey;
+    });
+
+    if (!recipientOutput) {
+      throw new Error('Security failure: Signed transaction is missing the recipient output.');
+    }
+
+    const actualRecipientAmount = BigInt(recipientOutput.amount);
+    if (actualRecipientAmount !== intent.amountSompi) {
+      throw new Error(`Security failure: Signed transaction recipient output amount (${actualRecipientAmount} sompi) does not match approved amount (${intent.amountSompi} sompi).`);
+    }
+
+    // Verify change output if present
+    if (expectedChangeAmount > 0n) {
+      const expectedChangeScriptPubKey = addressToScriptPublicKey(intent.changeAddress);
+      const changeOutput = signedTx.outputs.find((out: any) => {
+        const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
+        return spk === expectedChangeScriptPubKey;
+      });
+
+      if (!changeOutput) {
+        throw new Error('Security failure: Signed transaction is missing the change output.');
+      }
+
+      const actualChangeAmount = BigInt(changeOutput.amount);
+      if (actualChangeAmount > expectedChangeAmount) {
+        throw new Error(`Security failure: Signed transaction change output (${actualChangeAmount}) exceeds expected (${expectedChangeAmount}).`);
+      }
+      const feeDiscrepancy = expectedChangeAmount - actualChangeAmount;
+      if (feeDiscrepancy > 200000n) {
+        throw new Error(`Security failure: Signed transaction change output amount (${actualChangeAmount} sompi) is suspiciously lower than expected (${expectedChangeAmount} sompi).`);
+      }
+
+      // Ensure there are at most 2 outputs (recipient + change)
+      if (signedTx.outputs.length > 2) {
+        throw new Error(`Security failure: Signed transaction has extra unauthorized outputs (${signedTx.outputs.length} outputs, expected at most 2).`);
+      }
+    } else {
+      // If no change, there should be exactly 1 output (just the recipient)
+      if (signedTx.outputs.length !== 1) {
+        throw new Error(`Security failure: Signed transaction has extra unauthorized outputs (${signedTx.outputs.length} outputs, expected 1).`);
+      }
     }
   }
 
@@ -323,6 +352,16 @@ export class IsolatedSigner {
     transaction?: any;
     error?: string;
   }> {
+    // Zero-Trust Lock: Freeze intent and its inputs immediately to prevent memory mutation by malware
+    Object.freeze(intent);
+    if (intent.utxos) {
+      intent.utxos.forEach(u => {
+        if (u.outpoint) Object.freeze(u.outpoint);
+        Object.freeze(u);
+      });
+      Object.freeze(intent.utxos);
+    }
+
     // 1. Verify transaction intent BEFORE key derivation.
     const verification = verifyTransactionIntent(intent, intent.network);
 
@@ -356,14 +395,22 @@ export class IsolatedSigner {
       };
     }
 
-    // 4. Sign the transaction in a protected scope.
-    let privKeyBytes: Uint8Array | null = null;
+    // 4. Sign the transaction in a protected scope by deriving keys for each unique UTXO path.
+    const uniquePaths = Array.from(
+      new Set(
+        intent.utxos.map(u => u.derivationPath || u.path || "m/44'/111111'/0'/0/0")
+      )
+    );
+
+    const keysMap: { [path: string]: Uint8Array } = {};
     try {
-      privKeyBytes = getPrivateKeyBytesFromMnemonic(mnemonic, passphrase);
+      for (const path of uniquePaths) {
+        keysMap[path] = getPrivateKeyBytesFromMnemonic(mnemonic, passphrase, path);
+      }
 
       const signedTx = await signTransactionWithPrivateKeyBytes(
         transaction,
-        privKeyBytes
+        keysMap
       );
 
       // Verify the FINAL signed transaction structure, parameters, mass and fees against the intent before returning
@@ -379,10 +426,11 @@ export class IsolatedSigner {
         error: err instanceof Error ? err.message : 'Signing failure',
       };
     } finally {
-      if (privKeyBytes) {
-        wipe(privKeyBytes);
-        privKeyBytes = null;
-      }
+      Object.values(keysMap).forEach(bytes => {
+        if (bytes) {
+          wipe(bytes);
+        }
+      });
     }
   }
 

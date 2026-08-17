@@ -3,7 +3,6 @@ import { useWallet } from '../context/WalletContext';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 import { KaspaTransaction } from '../types';
 import { formatKas, shortenAddress, sompiToKas } from '../utils/kaspa';
-import { KaspaLogo } from './KaspaLogo';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -37,6 +36,18 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTx, setSelectedTx] = useState<KaspaTransaction | null>(null);
   const [copiedTxid, setCopiedTxid] = useState(false);
+
+  // Diagnostic utility: Log raw output from transaction fetching hook & validate mapping logic
+  React.useEffect(() => {
+    console.group('[TransactionList Diagnostic Utility]');
+    console.log('Active Wallet ID:', activeWallet.id);
+    console.log('Active Receive Address:', activeWallet.receiveAddress);
+    console.log('Discovered Addresses:', activeWallet.discoveredAddresses);
+    console.log('Raw Transactions Hook Output Count:', transactions?.length || 0);
+    console.log('Raw Transactions Data:', transactions);
+    console.log('Current Active Filter:', filter);
+    console.groupEnd();
+  }, [transactions, activeWallet, filter]);
 
   const kasAmount = sompiToKas(activeWallet.balanceSompi);
   const fiatValue = (kasAmount * marketData.priceUsd * fiatRate).toLocaleString('en-US', {
@@ -75,7 +86,26 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
         >
           <div className="flex items-center gap-3">
             {/* Kaspa logo asset with robust multi-tier fallback */}
-            <KaspaLogo sizeClassName="w-10 h-10" />
+            <div className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shadow-sm shrink-0 bg-[#090D12] border border-[#212B38]">
+              <img
+                src="/asset_logo.png"
+                alt="Kaspa Logo"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const target = e.currentTarget as HTMLImageElement;
+                  if (target.src.includes('asset_logo.png')) {
+                    target.src = '/assets/kaspa-transaction-icon.png';
+                  } else if (target.src.includes('kaspa-transaction-icon.png')) {
+                    target.src = '/assets/kaspa-logo.svg';
+                  } else {
+                    target.style.display = 'none';
+                    if (target.parentElement) {
+                      target.parentElement.innerHTML = '<span class="text-xs font-black text-[#70C7BA]">K</span>';
+                    }
+                  }
+                }}
+              />
+            </div>
             <div>
               <div className="text-sm font-extrabold text-slate-100">
                 Kaspa
@@ -117,8 +147,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
               value={searchQuery}
               onFocus={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
               onClick={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
-              readOnly
-              inputMode="none"
+              inputMode="none" onChange={() => {}}
               className="w-full bg-[#131924] border border-[#212B38] rounded-2xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#70C7BA] transition-colors"
             />
             {searchQuery && (
@@ -204,11 +233,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
                     <div>
                       <div className="text-sm font-bold text-slate-100 flex items-center gap-2">
                         <span className="capitalize">{tx.type}</span>
-                        {!tx.isAccepted && (
-                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-500 animate-pulse">
-                            Pending
-                          </span>
-                        )}
                         {tx.addressLabel && (
                           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1C2F42] text-slate-300">
                             {tx.addressLabel}
@@ -329,7 +353,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
                     <div className="font-mono font-bold text-slate-200">
                       {selectedTx.blockDaaScore > 0 
                         ? selectedTx.blockDaaScore.toLocaleString() 
-                        : 'Pending'}
+                        : 'Confirmed'}
                     </div>
                   </div>
 

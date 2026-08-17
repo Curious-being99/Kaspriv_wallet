@@ -1,6 +1,6 @@
 import React from 'react';
 import { useWallet } from '../context/WalletContext';
-import { Wallet, History, Code2, Settings } from 'lucide-react';
+import { Wallet, History, Users, Settings } from 'lucide-react';
 
 export const MobileBottomNav: React.FC = () => {
   const { activeBottomTab, setActiveBottomTab } = useWallet();
@@ -8,13 +8,13 @@ export const MobileBottomNav: React.FC = () => {
   const navItems = [
     { id: 'home', label: 'Wallet', icon: Wallet },
     { id: 'history', label: 'History', icon: History },
-    { id: 'covenant', label: 'Covenant', icon: Code2 },
+    { id: 'contacts', label: 'Contacts', icon: Users },
     { id: 'settings', label: 'Settings', icon: Settings },
   ] as const;
 
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-[#090D12] px-3 py-2 flex justify-center z-50">
-      <div className="w-full max-w-3xl flex items-center justify-around">
+    <nav className="fixed bottom-0 left-0 w-full bg-[#090D12] px-3 pt-2 pb-[max(0.75rem,calc(0.5rem+env(safe-area-inset-bottom,0px)))] flex justify-center z-50 border-t border-[#1a2330]/40">
+      <div className="w-full max-w-3xl flex items-center justify-around h-16">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeBottomTab === item.id;

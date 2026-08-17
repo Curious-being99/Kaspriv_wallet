@@ -14,41 +14,62 @@ export const MainCard: React.FC = () => {
     setIsBalanceVisible,
   } = useWallet();
 
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  if (!activeWallet) {
+    return (
+      <div className="w-full mx-auto px-4 py-8 text-center text-slate-500 text-xs">
+        Please unlock or import a wallet to view balance
+      </div>
+    );
+  }
+
   const kasAmount = sompiToKas(activeWallet.balanceSompi);
   const fiatValue = (kasAmount * marketData.priceUsd * fiatRate).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(text);
+    setTimeout(() => setCopiedText(null), 2000);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full mx-auto px-4 py-3"
+      className="w-full max-w-xl mx-auto rounded-3xl border border-slate-800 bg-slate-900/40 p-6 backdrop-blur-md relative overflow-hidden"
     >
-      <div>
-        {/* Top Toggle Bar */}
-        <div className="flex justify-end mb-2">
-          <button
-            onClick={() => setIsBalanceVisible(!isBalanceVisible)}
-            className="p-1.5 rounded-lg bg-[#090D12] text-slate-400 hover:text-[#70C7BA] transition-colors"
-            title={isBalanceVisible ? "Hide Balance" : "Show Balance"}
-          >
-            {isBalanceVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
+      <div className="absolute top-0 right-0 w-64 h-64 bg-[#70C7BA]/5 rounded-full filter blur-3xl -mr-20 -mt-20 pointer-events-none" />
+
+      <div className="flex flex-col items-center text-center relative z-10">
+        <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">
+          Active Balance
         </div>
 
-        {/* Balance Display */}
-        <div className="text-center mb-5">
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <div className="text-[11px] uppercase tracking-wider text-[#70C7BA] font-black">
-              {activeWallet.addressType || 'Total Balance'}
-            </div>
-            {(activeWallet.isWatchOnly || activeWallet.isImportedKpub) && (
-              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[9px] font-extrabold uppercase tracking-wider border border-amber-500/30">
-                Watch-Only
-              </span>
-            )}
+        <div className="flex flex-col items-center mt-2">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="font-mono text-xs text-slate-400 font-semibold bg-slate-950/60 px-3.5 py-1.5 rounded-full border border-slate-800">
+              {shortenAddress(activeWallet.receiveAddress)}
+            </span>
+            <button
+              onClick={() => handleCopy(activeWallet.receiveAddress)}
+              className="p-2 rounded-xl bg-slate-950/40 border border-slate-800 hover:bg-slate-950 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              {copiedText === activeWallet.receiveAddress ? (
+                <Check size={14} className="text-green-400" />
+              ) : (
+                <Copy size={14} />
+              )}
+            </button>
+            <button
+              onClick={() => setIsBalanceVisible(!isBalanceVisible)}
+              className="p-2 rounded-xl bg-slate-950/40 border border-slate-800 hover:bg-slate-950 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              {isBalanceVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
           </div>
           <div className="flex items-baseline justify-center gap-2">
             <h1 className="text-4xl font-black text-slate-100 font-mono tracking-tight">

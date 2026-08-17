@@ -45,7 +45,7 @@ export function testBufferWipe(): AuditResult {
 /**
  * Test 2: Verify message signing accepts raw Uint8Array and zeroizes internal copies without leaking keys.
  */
-export async function testMessageSigningHygiene(): AuditResult {
+export async function testMessageSigningHygiene(): Promise<AuditResult> {
   const dummyPrivateKey = new Uint8Array(32);
   for (let i = 0; i < 32; i++) dummyPrivateKey[i] = i + 1;
 
@@ -104,7 +104,7 @@ export async function testMessageSigningHygiene(): AuditResult {
 /**
  * Test 3: Verify transaction signing memory hygiene and zeroization.
  */
-export async function testTransactionSigningHygiene(): AuditResult {
+export async function testTransactionSigningHygiene(): Promise<AuditResult> {
   const dummyPrivateKey = new Uint8Array(32);
   for (let i = 0; i < 32; i++) dummyPrivateKey[i] = (i * 7) % 255 + 1;
 

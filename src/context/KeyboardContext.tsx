@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useRef, useEffect, useCallb
 import Keyboard from 'react-simple-keyboard';
 import 'react-simple-keyboard/build/css/index.css';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clipboard, Trash2, Check } from 'lucide-react';
+import { Clipboard, Trash2, Check, X } from 'lucide-react';
 
 interface KeyboardContextType {
   openKeyboard: (props: {
@@ -20,35 +20,35 @@ const KEYBOARD_LAYOUTS = {
     "q w e r t y u i o p",
     "a s d f g h j k l",
     "{shift} z x c v b n m {backspace}",
-    "{123} {space} {enter}"
+    "{123} , {space} . {enter}"
   ],
   shift: [
     "Q W E R T Y U I O P",
     "A S D F G H J K L",
     "{shift} Z X C V B N M {backspace}",
-    "{123} {space} {enter}"
+    "{123} , {space} . {enter}"
   ],
   numeric: [
     "1 2 3",
     "4 5 6",
     "7 8 9",
-    ". 0 {backspace}",
+    ", 0 {backspace}",
     "{abc} {enter}"
   ],
   numbers: [
     "1 2 3 4 5 6 7 8 9 0",
-    "- / : ; ( ) $ & @ \"",
-    "{abc} . , ? ! ' {backspace}",
-    "{abc} {space} {enter}"
+    "@ # $ _ & - + ( ) /",
+    "{abc} * \" ' : ; ! ? {backspace}",
+    "{123} , {space} . {enter}"
   ]
 };
 
 const KEYBOARD_DISPLAY = {
   "{backspace}": "⌫",
-  "{enter}": "Enter",
+  "{enter}": "↵",
   "{shift}": "⇧",
   "{space}": " ",
-  "{123}": "123",
+  "{123}": "?123",
   "{abc}": "ABC"
 };
 
@@ -60,6 +60,8 @@ export const useVirtualKeyboard = () => {
   return ctx;
 };
 
+export const useKeyboard = useVirtualKeyboard;
+
 export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -68,6 +70,14 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [pastedNotice, setPastedNotice] = useState(false);
   const onChangeRef = useRef<(val: string) => void>();
   const keyboardRef = useRef<any>(null);
+
+  const [isCapsLock, setIsCapsLock] = useState(false);
+  const lastShiftPress = useRef<number>(0);
+  const layoutNameRef = useRef<string>('default');
+
+  useEffect(() => {
+    layoutNameRef.current = layoutName;
+  }, [layoutName]);
 
   const openKeyboard = useCallback(({ value, onChange, layoutName: initialLayout = 'default', type = 'text' }: {
     value: string;
@@ -79,6 +89,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setInputValue(val);
     onChangeRef.current = onChange;
     setLayoutName(initialLayout);
+    setIsCapsLock(false);
     setInputType(type);
     setIsOpen(true);
     if (keyboardRef.current) {
@@ -99,7 +110,15 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const onKeyPress = useCallback((button: string) => {
     if (button === "{shift}") {
-      setLayoutName(prev => (prev === "default" ? "shift" : "default"));
+      const now = Date.now();
+      if (now - lastShiftPress.current < 400) {
+        setIsCapsLock(true);
+        setLayoutName("shift");
+      } else {
+        setIsCapsLock(false);
+        setLayoutName(prev => (prev === "default" ? "shift" : "default"));
+      }
+      lastShiftPress.current = now;
     } else if (button === "{123}") {
       const newLayout = inputType === 'number' ? "numeric" : "numbers";
       setLayoutName(prev => (prev === newLayout ? "default" : newLayout));
@@ -107,26 +126,12 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setLayoutName("default");
     } else if (button === "{enter}") {
       closeKeyboard();
-    } else if (button === "{backspace}") {
-        const newValue = inputValue.slice(0, -1);
-        setInputValue(newValue);
-        if (onChangeRef.current) {
-            onChangeRef.current(newValue);
-        }
-        if (keyboardRef.current) {
-            keyboardRef.current.setInput(newValue);
-        }
-    } else if (button === "{space}") {
-        const newValue = inputValue + " ";
-        setInputValue(newValue);
-        if (onChangeRef.current) {
-            onChangeRef.current(newValue);
-        }
-        if (keyboardRef.current) {
-            keyboardRef.current.setInput(newValue);
-        }
+    } else {
+      if (!isCapsLock && layoutNameRef.current === "shift") {
+        setLayoutName("default");
+      }
     }
-  }, [closeKeyboard, inputType, inputValue]);
+  }, [closeKeyboard, inputType, isCapsLock]);
 
   const [showPasteFallback, setShowPasteFallback] = useState(false);
   const [fallbackText, setFallbackText] = useState('');
@@ -155,8 +160,8 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
       }
       setShowPasteFallback(prev => !prev);
-    } catch (err) {
-      console.warn('Clipboard read error:', err);
+    } catch {
+      // Browsers restrict clipboard read in cross-origin iframes without explicit permission policy
       setShowPasteFallback(prev => !prev);
     }
   };
@@ -170,6 +175,30 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         keyboardRef.current.setInput('');
     }
   };
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.closest('.keyboard-overlay-container') ||
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA'
+      ) {
+        return;
+      }
+      closeKeyboard();
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+      document.addEventListener('touchstart', handleOutsideClick, { passive: true });
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [isOpen, closeKeyboard]);
 
   const contextValue = React.useMemo(() => ({
     openKeyboard,
@@ -187,9 +216,9 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'tween', duration: 0.2, ease: 'easeOut' }}
-            className="fixed bottom-0 left-0 right-0 z-[9999] bg-[#0C1016] border-t border-[#1F2937] p-1.5 shadow-2xl pt-safe pb-safe"
+            className="fixed bottom-0 left-0 right-0 z-[9999] bg-[#090D12] border-t border-[#1F2937] pt-1 pb-safe shadow-2xl keyboard-overlay-container"
           >
-            <div className="flex items-center justify-between mb-1.5 px-2">
+            <div className="flex items-center justify-between mb-1 px-3">
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={handlePaste} className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-[#1F2937] text-[#70C7BA] transition-colors">
                   {pastedNotice ? <Check className="w-3 h-3 text-emerald-400" /> : <Clipboard className="w-3 h-3" />}
@@ -201,7 +230,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               </button>
             </div>
             {showPasteFallback && (
-              <div className="mb-1.5 px-2 flex items-center gap-1.5">
+              <div className="mb-1.5 px-3 flex items-center gap-1.5">
                 <input
                   type="text"
                   inputMode="none"
@@ -227,6 +256,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                     onKeyPress={onKeyPress}
                     layout={KEYBOARD_LAYOUTS}
                     display={KEYBOARD_DISPLAY}
+                    buttonTheme={isCapsLock ? [{ class: "caps-lock-on", buttons: "{shift}" }] : []}
                     preventMouseDownDefault={false}
                     preventMouseUpDefault={false}
                     theme={"hg-theme-default gboard-dark-theme"}

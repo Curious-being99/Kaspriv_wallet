@@ -6,17 +6,29 @@ import { motion, AnimatePresence } from 'motion/react';
 
 export const LockScreen: React.FC = () => {
   const { unlockWallet, setIsLocked, isLocked } = useWallet();
-  const { openKeyboard, isKeyboardOpen } = useVirtualKeyboard();
+  const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
   const [password, setPassword] = useState('');
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Clear password input when unmounted or unlocked
+  // Auto-activate Virtual Keyboard when LockScreen is shown, clear when unlocked
   useEffect(() => {
-    if (!isLocked) {
+    if (isLocked) {
       setPassword('');
+      setError(null);
+      openKeyboard({
+        value: '',
+        onChange: (val) => {
+          setPassword(val);
+          setError(null);
+        },
+      });
+    } else {
+      setPassword('');
+      closeKeyboard();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLocked]);
 
   if (!isLocked) return null;
@@ -32,6 +44,7 @@ export const LockScreen: React.FC = () => {
       const success = await unlockWallet(password);
       if (success) {
         setIsLocked(false);
+        closeKeyboard();
       } else {
         setError('Incorrect password');
       }
@@ -48,7 +61,7 @@ export const LockScreen: React.FC = () => {
       className={`fixed inset-0 z-[100] bg-[#05080A] flex flex-col items-center p-6 overflow-hidden transition-all duration-300 ${
         isKeyboardOpen ? 'justify-start pt-6 sm:pt-12' : 'justify-center'
       }`}
-      style={{ paddingBottom: isKeyboardOpen ? '320px' : '24px' }}
+      style={{ paddingBottom: isKeyboardOpen ? '220px' : '24px' }}
     >
       <div className={`w-full max-w-sm flex flex-col items-center transition-all duration-300 ${
         isKeyboardOpen ? 'gap-3 mb-0' : 'gap-6 mb-24'
@@ -80,9 +93,13 @@ export const LockScreen: React.FC = () => {
                 type={showPassword ? "text" : "password"}
                 placeholder="Enter password"
                 value={password}
-                onFocus={() => openKeyboard({ value: password, onChange: setPassword })}
-                onClick={() => openKeyboard({ value: password, onChange: setPassword })}
-                readOnly
+                onFocus={() => openKeyboard({ value: password, onChange: (val) => { setPassword(val); setError(null); } })}
+                onClick={() => openKeyboard({ value: password, onChange: (val) => { setPassword(val); setError(null); } })}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                  openKeyboard({ value: e.target.value, onChange: (val) => { setPassword(val); setError(null); } });
+                }}
                 inputMode="none"
                 className={`w-full px-4 py-3 rounded-xl bg-[#0B151E] border-2 transition-all text-center text-sm ${
                   error ? 'border-rose-500/50' : 'border-[#1C2F42] focus:border-[#70C7BA]'

@@ -1,6 +1,6 @@
 import { blake2b } from '@noble/hashes/blake2.js';
 import * as secp from '@noble/secp256k1';
-import { wipe, kaspaWasmModule } from './common';
+import { wipe } from './common';
 
 /**
  * Internal helper to sign a message with raw private key bytes.
@@ -9,26 +9,7 @@ async function signMessageWithPrivateKeyBytes(
   message: string,
   privateKeyBytes: Uint8Array
 ): Promise<string> {
-  if (kaspaWasmModule && typeof kaspaWasmModule.signMessage === 'function') {
-    // Create an explicit PrivateKey object to ensure we can free it
-    const privateKeyObj = new kaspaWasmModule.PrivateKey(privateKeyBytes);
-    try {
-      const sig = kaspaWasmModule.signMessage({
-        message,
-        privateKey: privateKeyObj,
-      });
-      if (!sig) {
-        throw new Error('kaspa-wasm message signing returned no signature');
-      }
-      return sig;
-    } finally {
-      if (typeof privateKeyObj.free === 'function') {
-        privateKeyObj.free();
-      }
-    }
-  }
-
-  // Manual fallback logic only if WASM is not available or hasn't returned yet
+  // Manual logic using pure high-speed JS cryptographic primitives
   const msgBytes = new TextEncoder().encode(message);
   const msgHash = blake2b(msgBytes, { dkLen: 32 });
   
@@ -69,18 +50,6 @@ export async function signKaspaMessage(
  * Verify message signature using kaspa-wasm / Schnorr verification
  */
 export function verifyKaspaMessage(message: string, signatureHex: string, publicKeyHex: string): boolean {
-  try {
-    if (kaspaWasmModule && typeof kaspaWasmModule.verifyMessage === 'function') {
-      return kaspaWasmModule.verifyMessage({
-        message,
-        signature: signatureHex,
-        publicKey: publicKeyHex,
-      });
-    }
-  } catch (e) {
-    // fallback
-  }
-
   try {
     const msgBytes = new TextEncoder().encode(message);
     const msgHash = blake2b(msgBytes, { dkLen: 32 });

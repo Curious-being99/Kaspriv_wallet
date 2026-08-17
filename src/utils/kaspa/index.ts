@@ -2,7 +2,6 @@ export * from './common';
 export * from './units';
 export * from './address';
 export * from './keys';
-export * from './covenant';
 export * from './tx';
 export * from './messages';
 export * from './api';

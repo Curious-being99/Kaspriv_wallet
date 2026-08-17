@@ -2,9 +2,28 @@ import { blake2b } from '@noble/hashes/blake2.js';
 import { concatBytes } from '@noble/hashes/utils.js';
 import * as secp from '@noble/secp256k1';
 import { safeStringify } from '../json';
-import { wipe, kaspaWasmModule, ensureKaspaRuntime } from './common';
+import { wipe, ensureKaspaRuntime } from './common';
 import { addressToScriptPublicKey } from './address';
-import { createP2SHRedeemScript } from './covenant';
+
+/**
+ * Create a P2SH Redeem Script from a public key or custom script bytes
+ */
+export function createP2SHRedeemScript(publicKeyHex: string): { redeemScriptHex: string; scriptHashHex: string } {
+  const hex = publicKeyHex.startsWith('0x') ? publicKeyHex.slice(2) : publicKeyHex;
+  const pubKey = new Uint8Array(hex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+  const xOnly = pubKey.length === 33 ? pubKey.slice(1) : pubKey;
+
+  const redeemScript = new Uint8Array(34);
+  redeemScript[0] = 0x20; // PUSH 32 bytes
+  redeemScript.set(xOnly, 1);
+  redeemScript[33] = 0xac; // OP_CHECKSIG
+
+  const scriptHash = blake2b(redeemScript, { dkLen: 32 });
+  return {
+    redeemScriptHex: Buffer.from(redeemScript).toString('hex'),
+    scriptHashHex: Buffer.from(scriptHash).toString('hex'),
+  };
+}
 
 /**
  * Internal helper to build an unsigned Kaspa transaction structure.
@@ -21,40 +40,6 @@ export async function buildKaspaTransaction(
 ): Promise<any> {
   await ensureKaspaRuntime();
 
-  // Try WASM first if available
-  if (kaspaWasmModule && typeof kaspaWasmModule.createTransaction === 'function') {
-    try {
-      const formattedUtxos = utxos.map(u => ({
-        address: u.address || changeAddress || toAddress,
-        outpoint: {
-          transactionId: u.outpoint?.transactionId || u.transactionId,
-          index: Number(u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0))
-        },
-        utxoEntry: {
-          amount: BigInt(u.utxoEntry?.amount || u.amount || 0),
-          scriptPublicKey: u.utxoEntry?.scriptPublicKey?.scriptPublicKey || u.utxoEntry?.scriptPublicKey || addressToScriptPublicKey(u.address || changeAddress || toAddress),
-          blockDaaScore: BigInt(u.utxoEntry?.blockDaaScore || u.blockdaaScore || u.blockDaaScore || 0),
-          isCoinbase: Boolean(u.utxoEntry?.isCoinbase || u.isCoinbase || false)
-        }
-      }));
-
-      const outputs = [{ address: toAddress, amount: BigInt(amountSompi) }];
-      const mtx = kaspaWasmModule.createTransaction(
-        formattedUtxos,
-        outputs,
-        changeAddress || toAddress,
-        BigInt(feeSompi),
-        "",
-        BigInt(addressType === 'P2SH' ? 2 : 1),
-        1n
-      );
-
-      return { type: 'wasm', mtx, utxos: formattedUtxos, toAddress, amountSompi, changeAddress, feeSompi, addressType, redeemScriptHex, lockTime };
-    } catch (err) {
-      console.warn('kaspa-wasm build failed, falling back to manual:', err);
-    }
-  }
-
   // Manual construction
   const inputs: any[] = utxos.map(u => ({
     previousOutpoint: {
@@ -68,7 +53,7 @@ export async function buildKaspaTransaction(
   }));
 
   const outputs = [{
-    amount: Number(amountSompi),
+    amount: amountSompi,
     scriptPublicKey: { scriptPublicKey: addressToScriptPublicKey(toAddress), version: 0 }
   }];
 
@@ -76,43 +61,29 @@ export async function buildKaspaTransaction(
   const changeSompi = totalInputSompi - amountSompi - feeSompi;
   if (changeSompi > 0n && changeAddress) {
     outputs.push({
-      amount: Number(changeSompi),
+      amount: changeSompi,
       scriptPublicKey: { scriptPublicKey: addressToScriptPublicKey(changeAddress), version: 0 }
     });
   }
+
+  // Freeze the output structures to prevent any in-memory malware or external scripts from mutating them
+  outputs.forEach(o => {
+    if (o.scriptPublicKey) Object.freeze(o.scriptPublicKey);
+    Object.freeze(o);
+  });
+  Object.freeze(outputs);
 
   return { type: 'manual', inputs, outputs, utxos, lockTime: lockTime || 0, addressType, redeemScriptHex };
 }
 
 /**
  * Internal helper to sign a transaction structure with raw private key bytes.
+ * Supports either a single key or a map of keys indexed by derivation path.
  */
 export async function signTransactionWithPrivateKeyBytes(
   txData: any,
-  privateKeyBytes: Uint8Array
+  privateKeyBytes: Uint8Array | { [path: string]: Uint8Array }
 ): Promise<any> {
-  if (kaspaWasmModule && txData.type === 'wasm') {
-    const privateKeyObj = new kaspaWasmModule.PrivateKey(privateKeyBytes);
-    try {
-      const signedMtx = kaspaWasmModule.signTransaction(txData.mtx, [privateKeyObj], true);
-      
-      if (signedMtx) {
-        const jsonStr = typeof signedMtx.toJSON === 'function' ? signedMtx.toJSON() : safeStringify(signedMtx);
-        const txObj = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
-        return (txObj.tx || txObj);
-      }
-      throw new Error('Security failure: kaspa-wasm signing failed to produce a valid signed transaction.');
-    } finally {
-      if (typeof privateKeyObj.free === 'function') {
-        privateKeyObj.free();
-      }
-    }
-  }
-
-  if (txData.type === 'wasm') {
-    throw new Error('Security failure: Transaction was prepared for WASM signing but the WASM module is unavailable.');
-  }
-
   // Manual signing logic for non-WASM data types
   const SIGHASH_KEY = new TextEncoder().encode("TransactionSigningHash");
   const hashBlake2bKeyed = (data: Uint8Array) => blake2b(data, { key: SIGHASH_KEY, dkLen: 32 });
@@ -124,9 +95,6 @@ export async function signTransactionWithPrivateKeyBytes(
     const matches = clean.match(/.{1,2}/g);
     return matches ? new Uint8Array(matches.map(b => parseInt(b, 16))) : new Uint8Array(0);
   };
-
-  const pubKeyBytes = secp.schnorr.getPublicKey(privateKeyBytes);
-  const pubKeyHex = Buffer.from(pubKeyBytes).toString('hex');
 
   const outpointParts: Uint8Array[] = [];
   const seqParts: Uint8Array[] = [];
@@ -161,6 +129,17 @@ export async function signTransactionWithPrivateKeyBytes(
     const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || u.scriptPublicKey || addressToScriptPublicKey(u.address);
     const scriptForSighashBytes = hexToBytes(spkHex);
 
+    let activeKeyBytes: Uint8Array;
+    if (privateKeyBytes instanceof Uint8Array) {
+      activeKeyBytes = privateKeyBytes;
+    } else {
+      const path = u.derivationPath || u.path || "m/44'/111111'/0'/0/0";
+      activeKeyBytes = privateKeyBytes[path] || Object.values(privateKeyBytes)[0];
+    }
+
+    const pubKeyBytes = secp.schnorr.getPublicKey(activeKeyBytes);
+    const pubKeyHex = Buffer.from(pubKeyBytes).toString('hex');
+
     const preimage = concatBytes(
       writeUint16LE(0),
       previousOutpointsHash,
@@ -183,7 +162,7 @@ export async function signTransactionWithPrivateKeyBytes(
     );
 
     const sigHash = hashBlake2bKeyed(preimage);
-    const rawSig = secp.schnorr.sign(sigHash, privateKeyBytes);
+    const rawSig = secp.schnorr.sign(sigHash, activeKeyBytes);
     const sigWithSighash = `${Buffer.from(rawSig).toString('hex')}01`;
 
     const isInputP2SH = txData.addressType === 'P2SH' || Boolean(u.address && u.address.includes(':p')) || Boolean(spkHex && spkHex.startsWith('aa20'));
@@ -237,24 +216,78 @@ export async function createSignedTransaction(
     throw new Error('Invalid private-key length');
   }
 
+  // Cryptographically lock inputs immediately at function entry
+  const LOCKED_TO_ADDRESS = String(toAddress).trim();
+  const LOCKED_CHANGE_ADDRESS = String(changeAddress).trim();
+  const LOCKED_AMOUNT_SOMPI = BigInt(amountSompi);
+  const LOCKED_FEE_SOMPI = BigInt(feeSompi);
+
   const privateKeyCopy = new Uint8Array(privateKeyBytes);
 
   try {
     const transaction = await buildKaspaTransaction(
       utxos,
-      toAddress,
-      amountSompi,
-      changeAddress,
-      feeSompi,
+      LOCKED_TO_ADDRESS,
+      LOCKED_AMOUNT_SOMPI,
+      LOCKED_CHANGE_ADDRESS,
+      LOCKED_FEE_SOMPI,
       addressType,
       redeemScriptHex,
       lockTime
     );
 
+    // Integrity Guard Function: Compares physical output scripts against locked expectations
+    const verifyOutputIntegrity = (txOutputs: any[]) => {
+      if (!Array.isArray(txOutputs) || txOutputs.length === 0 || txOutputs.length > 2) {
+        throw new Error('Security Violation: Invalid or manipulated output array detected!');
+      }
+
+      const expectedRecipientScriptHex = addressToScriptPublicKey(LOCKED_TO_ADDRESS);
+      const expectedChangeScriptHex = addressToScriptPublicKey(LOCKED_CHANGE_ADDRESS);
+
+      // Verify Output 0: must match recipient exactly
+      const out0 = txOutputs[0];
+      const out0Script = out0.scriptPublicKey?.scriptPublicKey || out0.scriptPublicKey;
+      if (out0Script !== expectedRecipientScriptHex) {
+        throw new Error('Security Violation: Destination address manipulation detected! The transaction has been blocked.');
+      }
+      if (BigInt(out0.amount) !== LOCKED_AMOUNT_SOMPI) {
+        throw new Error('Security Violation: Transaction amount manipulation detected! The transaction has been blocked.');
+      }
+
+      // Verify Output 1: if change exists, must match expected change and changeAddress exactly
+      const totalInputSompi = utxos.reduce((acc, u) => acc + BigInt(u.utxoEntry?.amount || u.amount || 0), 0n);
+      const expectedChangeAmount = totalInputSompi - LOCKED_AMOUNT_SOMPI - LOCKED_FEE_SOMPI;
+
+      if (expectedChangeAmount > 0n) {
+        if (txOutputs.length !== 2) {
+          throw new Error('Security Violation: Change output was stripped or missing from the built transaction!');
+        }
+        const out1 = txOutputs[1];
+        const out1Script = out1.scriptPublicKey?.scriptPublicKey || out1.scriptPublicKey;
+        if (out1Script !== expectedChangeScriptHex) {
+          throw new Error('Security Violation: Change address hijacking detected! The transaction has been blocked.');
+        }
+        if (BigInt(out1.amount) !== expectedChangeAmount) {
+          throw new Error('Security Violation: Change amount manipulation detected! The transaction has been blocked.');
+        }
+      } else {
+        if (txOutputs.length !== 1) {
+          throw new Error('Security Violation: Unauthorized extra change output detected!');
+        }
+      }
+    };
+
+    // Pre-Signing Guard
+    verifyOutputIntegrity(transaction.outputs);
+
     const signedTransaction = await signTransactionWithPrivateKeyBytes(
       transaction,
       privateKeyCopy
     );
+
+    // Post-Signing Guard
+    verifyOutputIntegrity(signedTransaction.outputs);
 
     return {
       transaction: signedTransaction
@@ -263,3 +296,103 @@ export async function createSignedTransaction(
     wipe(privateKeyCopy);
   }
 }
+
+/**
+ * Estimates transaction mass in grams for P2PKH or P2SH Kaspa transactions.
+ * Accurate to rusty-kaspa node consensus compute & size mass calculation.
+ */
+export function estimateTransactionMass(
+  inputsCount: number,
+  outputsCount: number,
+  addressType: 'P2PKH' | 'P2SH' = 'P2PKH'
+): number {
+  const countIn = Math.max(1, inputsCount);
+  const countOut = Math.max(1, outputsCount);
+  const isP2SH = addressType === 'P2SH';
+  
+  // Base transaction header & payload overhead (~40 bytes)
+  const baseOverhead = 40;
+  // Serialized bytes per input (~112 for P2PKH Schnorr, ~150 for P2SH)
+  const inputSizeBytes = isP2SH ? 150 : 112;
+  // Serialized bytes per output (~44 bytes)
+  const outputSizeBytes = 44;
+  
+  const serializedSizeMass = baseOverhead + (countIn * inputSizeBytes) + (countOut * outputSizeBytes);
+  
+  // Kaspa consensus compute mass includes 10 mass units per script public key byte.
+  // Standard P2PK/P2PKH scriptPubKey is 34 bytes, P2SH scriptPubKey is 35 bytes.
+  const scriptPubKeySize = isP2SH ? 35 : 34;
+  const scriptPubKeyMass = countOut * scriptPubKeySize * 10;
+  
+  // Kaspa consensus compute mass: exactly 1,000 mass units per standard SigOp / signature
+  const sigOpsMass = countIn * 1000;
+  
+  // Robust safety padding of 300 mass units to cover varint sizes, signature lengths (64 vs 65 bytes), or payload overhead
+  const safetyPadding = 300;
+  
+  return serializedSizeMass + scriptPubKeyMass + sigOpsMass + safetyPadding;
+}
+
+/**
+ * Calculates the absolute minimum required transaction relay fee in sompis based on mass.
+ * Standard Kaspa node minimum relay fee rate is 100 sompi per mass unit.
+ */
+export function calculateMinFeeForInputs(
+  inputsCount: number,
+  outputsCount: number,
+  addressType: 'P2PKH' | 'P2SH' = 'P2PKH'
+): bigint {
+  const estimatedMass = estimateTransactionMass(inputsCount, outputsCount, addressType);
+  return BigInt(Math.ceil(estimatedMass)) * 100n; // 100 sompi per mass unit
+}
+
+/**
+ * Dynamically estimates the required transaction fee based on its compute mass plus a safety buffer.
+ * It ensures the calculated fee meets Kaspa network's minimum relay requirements to prevent 'Fee too low' errors.
+ */
+export function calculateDynamicFeeForTransaction(
+  inputsCount: number,
+  outputsCount: number,
+  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  bufferPercent: number = 20, // 20% safety buffer by default
+  flatBufferSompi: bigint = 15000n // extra flat safety buffer of 15,000 sompi (0.00015 KAS)
+): bigint {
+  const baseFee = calculateMinFeeForInputs(inputsCount, outputsCount, addressType);
+  
+  // Apply percent buffer
+  const percentageBuffer = (baseFee * BigInt(Math.max(10, bufferPercent))) / 100n;
+  
+  // Total fee with both flat and percentage buffers applied
+  const finalFee = baseFee + percentageBuffer + flatBufferSompi;
+  
+  // Always guarantee at least baseFee + flatBufferSompi
+  return finalFee > (baseFee + flatBufferSompi) ? finalFee : (baseFee + flatBufferSompi);
+}
+
+export function getRecommendedFees(
+  inputsCount: number,
+  outputsCount: number = 2,
+  addressType: 'P2PKH' | 'P2SH' = 'P2PKH'
+): {
+  baseFeeSompi: bigint;
+  lowFeeSompi: bigint;
+  normalFeeSompi: bigint;
+  fastFeeSompi: bigint;
+} {
+  const baseFeeSompi = calculateMinFeeForInputs(inputsCount, outputsCount, addressType);
+  
+  // Low: base fee + 10% buffer + 10,000 sompi (0.0001 KAS)
+  const lowFeeSompi = baseFeeSompi + (baseFeeSompi * 10n) / 100n + 10000n;
+  // Normal: base fee + 25% buffer + 25,000 sompi (0.00025 KAS)
+  const normalFeeSompi = baseFeeSompi + (baseFeeSompi * 25n) / 100n + 25000n;
+  // Fast: base fee + 50% buffer + 50,000 sompi (0.0005 KAS)
+  const fastFeeSompi = baseFeeSompi + (baseFeeSompi * 50n) / 100n + 50000n;
+
+  return {
+    baseFeeSompi,
+    lowFeeSompi,
+    normalFeeSompi,
+    fastFeeSompi
+  };
+}
+

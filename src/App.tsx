@@ -5,7 +5,8 @@ import { Header } from './components/Header';
 import { MainCard } from './components/MainCard';
 import { ExplorerSearch } from './components/ExplorerSearch';
 import { TransactionList } from './components/TransactionList';
-import { MobileCovenantView } from './components/MobileCovenantView';
+import { UtxoList } from './components/UtxoList';
+import { ContactsView } from './components/ContactsView';
 import { MobileSettingsView } from './components/MobileSettingsView';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SendModal } from './components/SendModal';
@@ -14,8 +15,8 @@ import { LockScreen } from './components/LockScreen';
 import { WalletSetupModal } from './components/WalletSetupModal';
 import { SignMessageModal } from './components/SignMessageModal';
 import { CompoundUtxoModal } from './components/CompoundUtxoModal';
-import { CovenantModal } from './components/CovenantModal';
 import { AssetDetailModal } from './components/AssetDetailModal';
+import { NodeManagerModal } from './components/NodeManagerModal';
 import { MainLandingPage } from './components/MainLandingPage';
 import { LogoutModal } from './components/LogoutModal';
 import { DevConsoleDrawer } from './components/DevConsoleDrawer';
@@ -35,7 +36,6 @@ const WalletAppContent: React.FC = () => {
     setIsSendOpen,
     setIsReceiveOpen,
     setIsCompoundOpen,
-    setIsCovenantOpen,
     activeWallet,
   } = useWallet();
 
@@ -49,7 +49,7 @@ const WalletAppContent: React.FC = () => {
       {activeBottomTab === 'home' && <Header />}
 
       {/* Main Viewport Content Area */}
-      <main className={`flex-1 min-h-0 overflow-y-auto no-scrollbar px-2.5 sm:px-4 ${activeBottomTab === 'home' ? 'pt-20' : 'pt-3'} pb-20 space-y-3.5 w-full max-w-3xl mx-auto`}>
+      <main className={`flex-1 min-h-0 overflow-y-auto no-scrollbar px-2.5 sm:px-4 ${activeBottomTab === 'home' ? 'pt-20' : 'pt-3'} pb-24 space-y-3.5 w-full max-w-3xl mx-auto`}>
         {activeBottomTab === 'home' && (
           <>
             {/* Main Balance Card */}
@@ -75,16 +75,16 @@ const WalletAppContent: React.FC = () => {
                 <span>Receive</span>
               </button>
             </div>
-            
-            {/* Transactions List */}
-            <TransactionList hideHeader={true} hideList={true} />
+
+            {/* UTXO List */}
+            <UtxoList />
           </>
         )}
 
         {activeBottomTab === 'history' && (
           <TransactionList hideAssetCard={true} />
         )}
-        {activeBottomTab === 'covenant' && <MobileCovenantView />}
+        {activeBottomTab === 'contacts' && <ContactsView />}
         {activeBottomTab === 'settings' && <MobileSettingsView />}
       </main>
 
@@ -99,8 +99,8 @@ const WalletAppContent: React.FC = () => {
       <WalletSetupModal />
       <SignMessageModal />
       <CompoundUtxoModal />
-      <CovenantModal />
       <AssetDetailModal />
+      <NodeManagerModal />
       <LogoutModal />
       <DevConsoleDrawer />
       <IndexingOverlay />

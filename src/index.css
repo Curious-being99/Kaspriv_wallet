@@ -3,10 +3,10 @@
 @tailwind utilities;
 
 @layer base {
-  html, body {
+  html, body, #root {
     overflow-x: hidden;
     max-width: 100vw;
-    background-color: #090D12;
+    background-color: #090D12 !important;
     color: #FFFFFF;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-weight: normal;
@@ -15,6 +15,8 @@
     -webkit-tap-highlight-color: transparent;
     user-select: none;
     -webkit-user-select: none;
+    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   input, textarea {
@@ -95,53 +97,115 @@ body {
 .pr-safe { padding-right: env(safe-area-inset-right); }
 
 /* Virtual Keyboard Styles - Zero Animation / Privacy Mode */
-.hg-theme-default {
-  background-color: #090D12 !important;
+.hg-theme-default,
+.hg-theme-default * {
+  -webkit-tap-highlight-color: transparent !important;
   user-select: none !important;
   -webkit-user-select: none !important;
 }
-.hg-theme-default .hg-button {
+
+.hg-theme-default {
+  background-color: #090D12 !important;
+}
+
+.hg-theme-default .hg-button,
+.gboard-dark-theme .hg-button {
   background: #131924 !important;
   color: #F1F5F9 !important;
-  border: 1px solid #212B38 !important;
+  border: 1px solid #1F2937 !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  margin: 0 3px !important;
+  padding: 0 !important;
+  height: 48px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 20px !important;
+  font-weight: 400 !important;
+  transition: none !important;
+  transform: none !important;
+  animation: none !important;
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+.hg-theme-default .hg-button:active,
+.hg-theme-default .hg-button:focus,
+.hg-theme-default .hg-button:hover,
+.hg-theme-default .hg-button.hg-activeButton,
+.gboard-dark-theme .hg-button:active,
+.gboard-dark-theme .hg-button:focus,
+.gboard-dark-theme .hg-button:hover,
+.gboard-dark-theme .hg-button.hg-activeButton {
+  background: #131924 !important;
+  color: #F1F5F9 !important;
+  border-color: #1F2937 !important;
   box-shadow: none !important;
   transform: none !important;
-  transition: none !important;
+  outline: none !important;
 }
+
 /* Gboard Dark Theme Styles */
 .gboard-dark-theme {
-    background-color: #0C1016 !important;
-}
-
-.gboard-dark-theme .hg-button {
-    background: #1F2937 !important;
-    color: #F3F4F6 !important;
-    border: none !important;
-    border-radius: 6px !important;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
-    margin: 2px !important;
+    background-color: transparent !important;
     padding: 0 !important;
-    height: 45px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    font-size: 16px !important;
-    font-weight: 600 !important;
-    transition: none !important;
 }
-
-.gboard-dark-theme .hg-button:active {
-    background: #1F2937 !important;
+.gboard-dark-theme .hg-row {
+    margin-bottom: 6px !important;
 }
-
+.gboard-dark-theme .hg-row:last-child {
+    margin-bottom: 0 !important;
+}
 .gboard-dark-theme .hg-button.hg-functionBtn {
-    background: #4B5563 !important;
-    color: #E5E7EB !important;
+    background: #090D12 !important;
+    color: #94A3B8 !important;
+    font-size: 16px !important;
+    border-color: #1F2937 !important;
 }
-
-.gboard-dark-theme .hg-button.hg-activeButton {
+.gboard-dark-theme .hg-button.hg-functionBtn:active,
+.gboard-dark-theme .hg-button.hg-functionBtn:focus,
+.gboard-dark-theme .hg-button.hg-functionBtn:hover,
+.gboard-dark-theme .hg-button.hg-functionBtn.hg-activeButton {
+    background: #090D12 !important;
+    color: #94A3B8 !important;
+    border-color: #1F2937 !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+.gboard-dark-theme .hg-button.caps-lock-on {
     background: #1F2937 !important;
-    color: #F3F4F6 !important;
+    color: #70C7BA !important;
+    border-color: #70C7BA !important;
 }
-
-
+.gboard-dark-theme .hg-button-space {
+    flex-grow: 4 !important;
+    max-width: 50% !important;
+}
+.gboard-dark-theme .hg-button-shift,
+.gboard-dark-theme .hg-button-backspace {
+    flex-grow: 1.5 !important;
+    max-width: 15% !important;
+    background: #090D12 !important;
+}
+.gboard-dark-theme .hg-button-shift:active,
+.gboard-dark-theme .hg-button-backspace:active {
+    background: #090D12 !important;
+}
+.gboard-dark-theme .hg-button-enter {
+    background: #70C7BA !important;
+    color: #090D12 !important;
+    border-color: #70C7BA !important;
+    flex-grow: 1.5 !important;
+    max-width: 15% !important;
+}
+.gboard-dark-theme .hg-button-enter:active,
+.gboard-dark-theme .hg-button-enter:focus,
+.gboard-dark-theme .hg-button-enter:hover {
+    background: #70C7BA !important;
+    border-color: #70C7BA !important;
+}
+/* Half indent on row 2 */
+.gboard-dark-theme .hg-row:nth-child(2) {
+    padding: 0 5% !important;
+}

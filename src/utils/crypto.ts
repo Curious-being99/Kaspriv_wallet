@@ -82,7 +82,7 @@ export async function encryptWithPassword(plaintext: string, password: string, c
 
   const kek = await window.crypto.subtle.importKey(
     'raw',
-    kekBytes,
+    kekBytes as unknown as BufferSource,
     { name: 'AES-GCM' },
     false,
     ['encrypt', 'decrypt']
@@ -93,7 +93,7 @@ export async function encryptWithPassword(plaintext: string, password: string, c
   const dekBytes = window.crypto.getRandomValues(new Uint8Array(32));
   const dek = await window.crypto.subtle.importKey(
     'raw',
-    dekBytes,
+    dekBytes as unknown as BufferSource,
     { name: 'AES-GCM' },
     false,
     ['encrypt', 'decrypt']
@@ -102,17 +102,17 @@ export async function encryptWithPassword(plaintext: string, password: string, c
   // 4. Encrypt plaintext with DEK
   const dekIv = window.crypto.getRandomValues(new Uint8Array(12));
   const payloadEncrypted = await window.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: dekIv, additionalData: aadBytes },
+    { name: 'AES-GCM', iv: dekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
     dek,
-    plaintextBytes
+    plaintextBytes as unknown as BufferSource
   );
   wipe(plaintextBytes);
 
   // 5. Encrypt DEK with KEK
   const dekEncrypted = await window.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: kekIv, additionalData: aadBytes },
+    { name: 'AES-GCM', iv: kekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
     kek,
-    dekBytes
+    dekBytes as unknown as BufferSource
   );
   wipe(dekBytes);
 
@@ -164,7 +164,7 @@ async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: strin
 
   const kek = await window.crypto.subtle.importKey(
     'raw',
-    kekBytes,
+    kekBytes as unknown as BufferSource,
     { name: 'AES-GCM' },
     false,
     ['encrypt', 'decrypt']
@@ -181,14 +181,14 @@ async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: strin
 
       // Unwrap DEK
       const dekBytesBuffer = await window.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: kekIv, additionalData: aadBytes },
+        { name: 'AES-GCM', iv: kekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
         kek,
-        dekEncrypted
+        dekEncrypted as unknown as BufferSource
       );
       const dekBytes = new Uint8Array(dekBytesBuffer);
       const dek = await window.crypto.subtle.importKey(
         'raw',
-        dekBytes,
+        dekBytes as unknown as BufferSource,
         { name: 'AES-GCM' },
         false,
         ['encrypt', 'decrypt']
@@ -197,9 +197,9 @@ async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: strin
 
       // Decrypt payload
       const decryptedBuffer = await window.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: dekIv, additionalData: aadBytes },
+        { name: 'AES-GCM', iv: dekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
         dek,
-        payloadEncrypted
+        payloadEncrypted as unknown as BufferSource
       );
       
       const decryptedArray = new Uint8Array(decryptedBuffer);
@@ -211,9 +211,9 @@ async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: strin
       // Legacy format (v1)
       const ciphertext = hexToBytes(ciphertextHex);
       const decryptedBuffer = await window.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: kekIv, additionalData: aadBytes },
+        { name: 'AES-GCM', iv: kekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
         kek,
-        ciphertext
+        ciphertext as unknown as BufferSource
       );
       const decryptedArray = new Uint8Array(decryptedBuffer);
       const result = decoder.decode(decryptedArray);

@@ -19,6 +19,7 @@ export interface DiscoveredAddressInfo {
 
 export interface ScannedWalletChainResult {
   primaryAddress: string;
+  primaryChangeAddress: string;
   totalBalanceSompi: bigint;
   discoveredAddresses: DiscoveredAddressInfo[];
   allUtxos: any[];
@@ -47,9 +48,12 @@ export async function scanKaspaWalletChain(
     const allTransactionsMap = new Map<string, any>();
     let totalBalanceSompi = 0n;
 
-    // Derive primary address immediately
+    // Derive primary address and primary change address immediately (BIP44 format)
     const primaryChild = root.derive("m/44'/111111'/0'/0/0");
     const primaryAddress = getAddressFromPublicKey(primaryChild.publicKey!, addressType, prefix);
+
+    const primaryChangeChild = root.derive("m/44'/111111'/0'/1/0");
+    const primaryChangeAddress = getAddressFromPublicKey(primaryChangeChild.publicKey!, addressType, prefix);
 
     // Quick mode for brand new wallet creation (gapLimit <= 1)
     if (gapLimit <= 1) {
@@ -88,6 +92,7 @@ export async function scanKaspaWalletChain(
 
       return {
         primaryAddress,
+        primaryChangeAddress,
         totalBalanceSompi,
         discoveredAddresses,
         allUtxos,
@@ -99,10 +104,29 @@ export async function scanKaspaWalletChain(
     const coinTypes = [111111, 972];
     let totalScanned = 0;
 
+    // Always include primary receive and change addresses in discovered list initially
+    discoveredAddresses.push({
+      address: primaryAddress,
+      balanceSompi: 0n,
+      path: "m/44'/111111'/0'/0/0",
+      index: 0,
+      isChange: false,
+      coinType: 111111,
+    });
+    discoveredAddresses.push({
+      address: primaryChangeAddress,
+      balanceSompi: 0n,
+      path: "m/44'/111111'/0'/1/0",
+      index: 0,
+      isChange: true,
+      coinType: 111111,
+    });
+
     for (const coinType of coinTypes) {
       for (const isChange of [false, true]) {
         const changeVal = isChange ? 1 : 0;
-        const batchSize = 4;
+        const batchSize = 5;
+        let consecutiveEmptyBatches = 0;
 
         for (let i = 0; i < gapLimit; i += batchSize) {
           const batchIndices = Array.from({ length: Math.min(batchSize, gapLimit - i) }, (_, idx) => i + idx);
@@ -121,25 +145,32 @@ export async function scanKaspaWalletChain(
 
           if (batchItems.length === 0) break;
 
+          let batchHasActivity = false;
+
           const results = await Promise.all(
             batchItems.map(async (item) => {
               try {
-                const [balance, utxos, txs] = await Promise.all([
-                  fetchKaspaAddressBalance(item.addr),
-                  fetchKaspaAddressUtxos(item.addr),
-                  fetchKaspaAddressTransactions(item.addr),
-                ]);
+                // Fetch balance, UTXOs, and transactions with individual catch blocks so a failure in one doesn't drop the balance
+                const balance = await fetchKaspaAddressBalance(item.addr).catch(() => null);
+                const utxos = await fetchKaspaAddressUtxos(item.addr).catch(() => null);
+                const txs = await fetchKaspaAddressTransactions(item.addr).catch(() => null);
+
+                totalScanned++;
+                if (onProgress) {
+                  onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
+                }
                 return { item, balance, utxos, txs };
               } catch {
+                totalScanned++;
+                if (onProgress) {
+                  onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
+                }
                 return { item, balance: null, utxos: null, txs: null };
               }
             })
           );
 
-          let batchHasActivity = false;
-
           for (const res of results) {
-            totalScanned++;
             const hasBalance = res.balance !== null && res.balance > 0n;
             const hasUtxos = res.utxos !== null && Array.isArray(res.utxos) && res.utxos.length > 0;
             const hasTxs = res.txs !== null && Array.isArray(res.txs) && res.txs.length > 0;
@@ -149,14 +180,20 @@ export async function scanKaspaWalletChain(
               const currentBal = res.balance || 0n;
               totalBalanceSompi += currentBal;
 
-              discoveredAddresses.push({
-                address: res.item.addr,
-                balanceSompi: currentBal,
-                path: res.item.path,
-                index: res.item.idx,
-                isChange,
-                coinType,
-              });
+              // Check if address is already in discoveredAddresses
+              const existingIdx = discoveredAddresses.findIndex(d => d.address === res.item.addr);
+              if (existingIdx >= 0) {
+                discoveredAddresses[existingIdx].balanceSompi = currentBal;
+              } else {
+                discoveredAddresses.push({
+                  address: res.item.addr,
+                  balanceSompi: currentBal,
+                  path: res.item.path,
+                  index: res.item.idx,
+                  isChange,
+                  coinType,
+                });
+              }
 
               if (res.utxos && Array.isArray(res.utxos)) {
                 res.utxos.forEach((u: any) => {
@@ -183,9 +220,17 @@ export async function scanKaspaWalletChain(
             onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
           }
 
-          // If this entire batch of 4 paths has no activity and we're past index 0, stop scanning this subchain early
-          if (!batchHasActivity && i >= 4) {
-            break;
+          // Yield execution briefly to keep mobile UI responsive during scanning
+          await new Promise((r) => setTimeout(r, 10));
+
+          if (batchHasActivity) {
+            consecutiveEmptyBatches = 0;
+          } else {
+            consecutiveEmptyBatches++;
+            // Stop scanning this subchain early if 2 consecutive batches (20 addresses) have no activity
+            if (consecutiveEmptyBatches >= 2 && i >= 10) {
+              break;
+            }
           }
         }
       }
@@ -193,6 +238,7 @@ export async function scanKaspaWalletChain(
 
     return {
       primaryAddress,
+      primaryChangeAddress,
       totalBalanceSompi,
       discoveredAddresses,
       allUtxos,

@@ -2,8 +2,8 @@ import * as bip39 from 'bip39';
 import { mnemonicToSeedSync } from '@scure/bip39';
 import { HDKey } from '@scure/bip32';
 import { blake2b } from '@noble/hashes/blake2.js';
-import { wipe, kaspaWasmModule } from './common';
-import { encodeKaspaAddress } from './address';
+import { wipe } from './common';
+import { encodeKaspaAddress, VERSION_P2PKH, VERSION_P2SH } from './address';
 
 /**
  * Extract and clean BIP39 words from any formatted user input (numbered lists, capitalization, commas, etc.)
@@ -17,6 +17,34 @@ export function cleanMnemonic(text: string): string {
     .split(/\s+/)
     .filter(Boolean)
     .join(' ');
+}
+
+/**
+ * Sanitize and enforce clean, safe wallet names
+ */
+export function sanitizeWalletName(name: string, defaultFallback = 'Kaspa Wallet'): string {
+  if (!name || typeof name !== 'string') return defaultFallback;
+  let cleaned = name.trim().replace(/[\r\n\t]/g, ' ');
+
+  // If the name contains multiple words that look like seed phrase concatenation or is over 25 chars
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length > 4 || cleaned.length > 25) {
+    const knownPrefixes = ['Primary Wallet', 'Restored Wallet', 'Kaspa Wallet', 'New Kaspa Wallet', 'Imported Wallet', 'Watch-Only Wallet', 'Address Tracker'];
+    for (const prefix of knownPrefixes) {
+      if (cleaned.toLowerCase().startsWith(prefix.toLowerCase())) {
+        return prefix;
+      }
+    }
+    if (words.length >= 1 && words[0].length <= 16) {
+      if (words.length >= 2 && words[1].length <= 16 && (words[0] + ' ' + words[1]).length <= 20) {
+        return `${words[0]} ${words[1]}`;
+      }
+      return words[0];
+    }
+    return defaultFallback;
+  }
+
+  return cleaned || defaultFallback;
 }
 
 /**
@@ -45,29 +73,6 @@ export function getAddressFromPublicKey(
 
   const xOnlyPubKey = pubKey.length === 33 ? pubKey.slice(1) : pubKey;
 
-  try {
-    const networkTypeNum = prefix === 'kaspa' ? 0 : prefix === 'kaspatest' ? 1 : 2;
-    if (kaspaWasmModule && typeof kaspaWasmModule.createAddress === 'function') {
-      const pubKeyHex = Buffer.from(xOnlyPubKey).toString('hex');
-      const wasmAddr = kaspaWasmModule.createAddress(
-        pubKeyHex,
-        networkTypeNum,
-        false,
-        addressType === 'P2SH' ? 2 : 0
-      );
-      if (wasmAddr) {
-        const addrStr = wasmAddr.toString();
-        if (addressType === 'P2SH' && addrStr.includes(':p')) {
-          return addrStr;
-        } else if (addressType === 'P2PKH' && addrStr.includes(':q')) {
-          return addrStr;
-        }
-      }
-    }
-  } catch (e) {
-    // Graceful fallback to deterministic Bech32 script hash
-  }
-
   if (addressType === 'P2SH') {
     const redeemScript = new Uint8Array(34);
     redeemScript[0] = 0x20; // PUSH 32 bytes
@@ -75,9 +80,9 @@ export function getAddressFromPublicKey(
     redeemScript[33] = 0xac; // OP_CHECKSIG
     
     const scriptHash = blake2b(redeemScript, { dkLen: 32 });
-    return encodeKaspaAddress(prefix, 0x08, scriptHash);
+    return encodeKaspaAddress(prefix, VERSION_P2SH, scriptHash);
   } else {
-    return encodeKaspaAddress(prefix, 0x00, xOnlyPubKey);
+    return encodeKaspaAddress(prefix, VERSION_P2PKH, xOnlyPubKey);
   }
 }
 

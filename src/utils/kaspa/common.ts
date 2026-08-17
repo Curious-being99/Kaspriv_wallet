@@ -41,22 +41,5 @@ export const SOMPI_PER_KAS = 100_000_000n;
 let isKaspaInit = false;
 
 export async function ensureKaspaRuntime() {
-  if (isKaspaInit) return;
-  try {
-    if (!kaspaWasmModule) {
-      try {
-        kaspaWasmModule = await import('kaspa-wasm');
-      } catch (e) {
-        console.warn('kaspa-wasm notice:', e);
-      }
-    }
-    if (kaspaWasmModule && typeof kaspaWasmModule.initConsolePanicHook === 'function') {
-      try {
-        kaspaWasmModule.initConsolePanicHook();
-      } catch (e) {}
-    }
-    isKaspaInit = true;
-  } catch (err) {
-    isKaspaInit = true;
-  }
+  isKaspaInit = true;
 }

@@ -11,58 +11,64 @@ export const IndexingOverlay: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#090D12] flex flex-col items-center justify-center p-6">
-      <div className="w-full  flex flex-col items-center text-center space-y-12 relative z-10">
+    <div className="fixed inset-0 z-50 bg-[#05080A] flex flex-col items-center justify-between p-6 sm:p-10 select-none pointer-events-auto overflow-y-auto">
+      <div className="w-full max-w-md mx-auto my-auto flex flex-col items-center text-center space-y-8 py-6">
         {/* Title & Subtitle */}
         <div>
-          <h2 className="text-3xl font-black text-slate-100 tracking-tight">
-            Indexing DAG Chain
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#70C7BA]/10 text-[#70C7BA] text-xs font-semibold mb-3">
+            <span className="w-2 h-2 rounded-full bg-[#70C7BA] animate-pulse" />
+            Live BlockDAG Syncing
+          </div>
+          <h2 className="text-2xl font-bold text-slate-100 tracking-tight">
+            Scanning Kaspa Chain
           </h2>
-          <p className="text-base text-slate-400 font-medium mt-2">
-            Scanning HD derivation paths in real-time...
+          <p className="text-xs text-slate-400 font-medium mt-1">
+            Checking real on-chain balances across HD derivation paths...
           </p>
         </div>
 
-        {/* Running Balance */}
-        <div className="w-full flex flex-col items-center">
-          <span className="text-xs uppercase tracking-[0.2em] text-slate-500 font-bold mb-4">
-            Discovered Balance
+        {/* Discovered Balance */}
+        <div className="w-full bg-[#080C10] p-4 rounded-2xl border border-[#16212E] flex flex-col items-center">
+          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-1">
+            Discovered On-Chain Balance
           </span>
           <div className="flex items-baseline gap-2">
-            <span className="text-6xl font-black text-white font-mono tracking-tighter">
+            <span className="text-4xl font-black text-white font-mono tracking-tighter">
               {formatKas(indexingState.balanceSompi, 2)}
             </span>
-            <span className="text-2xl font-bold text-slate-400">KAS</span>
+            <span className="text-lg font-bold text-[#70C7BA]">KAS</span>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="w-full grid grid-cols-2 gap-8 mt-4 pt-8 border-t border-[#131924]">
-          <div className="flex flex-col items-center justify-center">
-            <span className="text-4xl font-mono font-bold text-slate-200">
+        {/* Address Stats */}
+        <div className="w-full grid grid-cols-2 gap-4">
+          <div className="bg-[#080C10] p-4 rounded-2xl border border-[#16212E] flex flex-col items-center">
+            <span className="text-2xl font-mono font-bold text-slate-100">
               {indexingState.scannedAddresses}
             </span>
-            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mt-2 flex items-center gap-1.5">
-              <Hash className="w-3 h-3" /> Addresses Scanned
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mt-1 flex items-center gap-1">
+              <Hash className="w-3 h-3 text-[#70C7BA]" /> Addresses Scanned
             </span>
           </div>
 
-          <div className="flex flex-col items-center justify-center">
-            <span className="text-4xl font-mono font-bold text-slate-200">
+          <div className="bg-[#080C10] p-4 rounded-2xl border border-[#16212E] flex flex-col items-center">
+            <span className="text-2xl font-mono font-bold text-emerald-400">
               {indexingState.foundAddresses}
             </span>
-            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mt-2 flex items-center gap-1.5">
-              <Activity className="w-3 h-3" /> Funded Addresses
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mt-1 flex items-center gap-1">
+              <Activity className="w-3 h-3 text-emerald-400" /> Active Addresses
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-slate-500 font-medium pt-4">
-          <Server className="w-4 h-4" />
-          <span>Checking Receive & Change chains</span>
+        {/* Status Indicator */}
+        <div className="w-full pt-2">
+          <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500 font-medium">
+            <Server className="w-3.5 h-3.5 text-[#70C7BA] animate-spin" />
+            <span>Connected to api.kaspa.org — Please wait until scan completes</span>
+          </div>
         </div>
       </div>
     </div>
   );
 };
-

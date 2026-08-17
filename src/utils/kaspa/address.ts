@@ -1,5 +1,9 @@
 import { NetworkType } from '../../types';
 
+// Kaspa address version constants
+export const VERSION_P2PKH = 0x00;
+export const VERSION_P2SH = 0x08;
+
 // Kaspa Bech32 implementation
 export const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 
@@ -159,7 +163,7 @@ export function validateKaspaAddress(address: string, network: NetworkType = 'ma
   }
 
   const version = bytes[0];
-  if (version !== 0x00 && version !== 0x08) {
+  if (version !== VERSION_P2PKH && version !== VERSION_P2SH) {
     return { isValid: false, error: `Unsupported address version 0x${version.toString(16)}` };
   }
 
@@ -245,7 +249,7 @@ export function addressToScriptPublicKeyBytes(address: string): Uint8Array {
   const payload = bytes.slice(1);
 
   // P2PKH (version 0x00): 20 + [32 bytes pubkey hash] + ac
-  if (version === 0x00) {
+  if (version === VERSION_P2PKH) {
     const script = new Uint8Array(34);
     script[0] = 0x20;
     script.set(payload, 1);
@@ -282,5 +286,5 @@ export function addressToScriptPublicKey(address: string): string {
 export function generateRandomKaspaAddress(prefix: string = 'kaspa:'): string {
   const payload = new Uint8Array(32);
   crypto.getRandomValues(payload);
-  return encodeKaspaAddress(prefix.replace(':', ''), 0x00, payload);
+  return encodeKaspaAddress(prefix.replace(':', ''), VERSION_P2PKH, payload);
 }

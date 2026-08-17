@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
+import { sanitizeWalletName } from '../utils/kaspa';
 import { ChevronDown, Check, Plus, Lock, Edit2, Wallet as WalletIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -39,16 +40,16 @@ export const Header: React.FC = () => {
               <img src="/assets/kas_icon.svg" alt="Kaspriv Logo" className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none">
-                  {activeWallet.name}
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none max-w-[180px] sm:max-w-xs truncate">
+                  {sanitizeWalletName(activeWallet.name)}
                 </h1>
                 {activeWallet.isImportedKpub && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono shrink-0">
                     Watch
                   </span>
                 )}
-                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isWalletMenuOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isWalletMenuOpen ? 'rotate-180' : ''}`} />
               </div>
             </div>
           </button>
@@ -112,10 +113,10 @@ export const Header: React.FC = () => {
                       }`}
                     >
                       <div>
-                        <div className="text-xs font-bold flex items-center gap-2">
-                          {w.name}
+                        <div className="text-xs font-bold flex items-center gap-2 truncate max-w-[180px]">
+                          {sanitizeWalletName(w.name)}
                           {w.isImportedKpub && (
-                            <span className="text-[9px] px-1 bg-amber-500/20 text-amber-300 rounded">Watch</span>
+                            <span className="text-[9px] px-1 bg-amber-500/20 text-amber-300 rounded shrink-0">Watch</span>
                           )}
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono">

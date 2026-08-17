@@ -25,8 +25,8 @@ export const SignMessageModal: React.FC = () => {
       return;
     }
 
-    let seedToUse = activeWallet.mnemonic;
-    let passphraseToUse = activeWallet.passphrase;
+    let seedToUse: string | undefined | null = activeWallet.mnemonic;
+    let passphraseToUse: string | undefined | null = activeWallet.passphrase;
 
     // Handle decryption if seed is encrypted at rest
     if (!seedToUse && activeWallet.encryptedMnemonic) {
@@ -63,7 +63,7 @@ export const SignMessageModal: React.FC = () => {
     }
 
     try {
-      const res = await IsolatedSigner.signMessageIsolated(seedToUse, passphraseToUse, message.trim());
+      const res = await IsolatedSigner.signMessageIsolated(seedToUse, passphraseToUse || undefined, message.trim());
       
       if (res.success && res.signature) {
         setSignature(res.signature);
@@ -130,8 +130,7 @@ export const SignMessageModal: React.FC = () => {
               value={message}
               onFocus={() => openKeyboard({ value: message, onChange: setMessage })}
               onClick={() => openKeyboard({ value: message, onChange: setMessage })}
-              readOnly
-              inputMode="none"
+              inputMode="none" onChange={() => {}}
               className="w-full p-3 rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
             />
           </div>
@@ -165,8 +164,7 @@ export const SignMessageModal: React.FC = () => {
                   value={passwordInput}
                   onFocus={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
                   onClick={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
-                  readOnly
-                  inputMode="none"
+                  inputMode="none" onChange={() => {}}
                   className="w-full px-3 py-2.5 rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] text-sm text-slate-100 outline-none transition-colors pr-10"
                 />
                 <button
