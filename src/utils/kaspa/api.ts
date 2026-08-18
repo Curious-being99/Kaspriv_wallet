@@ -302,13 +302,28 @@ export async function broadcastKaspaTransaction(txPayload: any): Promise<{ succe
       sequence: Number(inTx?.sequence || 0),
       sigOpCount: Number(inTx?.sigOpCount !== undefined ? inTx.sigOpCount : 1)
     })) : [],
-    outputs: Array.isArray(rawTx?.outputs) ? rawTx.outputs.map((outTx: any) => ({
-      amount: Number(outTx?.amount || 0),
-      scriptPublicKey: {
-        version: Number(outTx?.scriptPublicKey?.version || 0),
-        scriptPublicKey: String(outTx?.scriptPublicKey?.scriptPublicKey || outTx?.scriptPublicKey || '')
+    outputs: Array.isArray(rawTx?.outputs) ? rawTx.outputs.map((outTx: any) => {
+      const rawAmt = outTx?.amount;
+      let safeAmount: number | string;
+      if (typeof rawAmt === 'bigint') {
+        safeAmount = rawAmt <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(rawAmt) : rawAmt.toString();
+      } else if (typeof rawAmt === 'number') {
+        safeAmount = Number.isSafeInteger(rawAmt) ? rawAmt : String(rawAmt);
+      } else if (typeof rawAmt === 'string') {
+        const parsed = Number(rawAmt);
+        safeAmount = Number.isSafeInteger(parsed) ? parsed : rawAmt;
+      } else {
+        safeAmount = 0;
       }
-    })) : [],
+
+      return {
+        amount: safeAmount,
+        scriptPublicKey: {
+          version: Number(outTx?.scriptPublicKey?.version || 0),
+          scriptPublicKey: String(outTx?.scriptPublicKey?.scriptPublicKey || outTx?.scriptPublicKey || '')
+        }
+      };
+    }) : [],
     lockTime: Number(rawTx?.lockTime || 0),
     subnetworkId: String(rawTx?.subnetworkId || '0000000000000000000000000000000000000000')
   };
