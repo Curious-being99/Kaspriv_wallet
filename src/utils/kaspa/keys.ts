@@ -1,5 +1,5 @@
-import * as bip39 from 'bip39';
-import { mnemonicToSeedSync } from '@scure/bip39';
+import { generateMnemonic, mnemonicToSeedSync } from '@scure/bip39';
+import { wordlist as englishWordlist } from '@scure/bip39/wordlists/english.js';
 import { HDKey } from '@scure/bip32';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { wipe } from './common';
@@ -51,7 +51,7 @@ export function sanitizeWalletName(name: string, defaultFallback = 'Kaspa Wallet
  * Generate a 24-word Kaspa BIP39 mnemonic seed
  */
 export function generate24WordMnemonic(): string[] {
-  const mnemonic = bip39.generateMnemonic(256);
+  const mnemonic = generateMnemonic(englishWordlist, 256);
   return mnemonic.split(' ');
 }
 
@@ -99,8 +99,7 @@ export async function generateDeterministicAddress(
   isChange: boolean = false,
   coinType: number = 111111
 ): Promise<string> {
-  const seed = await bip39.mnemonicToSeed(mnemonic, passphrase || '');
-  const seedArray = new Uint8Array(seed);
+  const seedArray = mnemonicToSeedSync(mnemonic, passphrase || '');
   try {
     const root = HDKey.fromMasterSeed(seedArray);
     const changeVal = isChange ? 1 : 0;

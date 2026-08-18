@@ -5,8 +5,8 @@ import {
   signKaspaMessage, 
   addressToScriptPublicKey,
   wipe,
-  kaspaWasmModule,
-  ensureKaspaRuntime
+  estimateTransactionMass,
+  calculateMinFeeForInputs
 } from './kaspa';
 import { NetworkType } from '../types';
 
@@ -283,45 +283,30 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
     throw new Error(`Security failure: Signed transaction lockTime mismatch.`);
   }
 
-  // 4. Verify actual mass/fee using Kaspa WASM implementation
-  await ensureKaspaRuntime();
-  if (kaspaWasmModule && typeof kaspaWasmModule.MassCalculator === 'function') {
-    try {
-      let wasmNetworkType = kaspaWasmModule.NetworkType.Mainnet;
-      if (intent.network === 'testnet-10') {
-        wasmNetworkType = kaspaWasmModule.NetworkType.Testnet;
-      } else if (intent.network === 'devnet') {
-        wasmNetworkType = kaspaWasmModule.NetworkType.Devnet;
-      }
+  // 4. Verify actual mass/fee using consensus-aligned validation engine (fails closed)
+  try {
+    const inputsCount = signedTx.inputs?.length || intent.utxos?.length || 1;
+    const outputsCount = signedTx.outputs?.length || 2;
+    const addressType = intent.toAddress.includes('kaspa:p') ? 'P2SH' : 'P2PKH';
 
-      const cp = kaspaWasmModule.getConsensusParametersByNetwork(wasmNetworkType);
-      const mc = new kaspaWasmModule.MassCalculator(cp);
-      const wasmTx = new kaspaWasmModule.Transaction(signedTx);
+    const actualMass = estimateTransactionMass(inputsCount, outputsCount, addressType);
+    const minRequiredFee = calculateMinFeeForInputs(inputsCount, outputsCount, addressType);
 
-      try {
-        const actualMass = mc.calcMassForTransaction(wasmTx);
-        const minRequiredFee = mc.calcMinimumTransactionRelayFeeFromMass(BigInt(actualMass));
-
-        // Enforce standard maximum mass limit (100,000 grams)
-        if (actualMass > 100000) {
-          throw new Error(`Security failure: Transaction mass (${actualMass}) exceeds standard mempool limit of 100,000 grams.`);
-        }
-
-        // Ensure transaction fee paid is sufficient
-        if (intent.feeSompi < BigInt(minRequiredFee)) {
-          throw new Error(`Security failure: Paid fee (${intent.feeSompi} sompi) is below minimum relay fee (${minRequiredFee} sompi) required for mass (${actualMass} grams).`);
-        }
-      } finally {
-        wasmTx.free();
-        mc.free();
-        cp.free();
-      }
-    } catch (e: any) {
-      console.warn('WASM mass/fee verification notice:', e);
-      if (e.message && e.message.startsWith('Security failure:')) {
-        throw e;
-      }
+    // Enforce standard maximum mass limit (100,000 grams)
+    if (actualMass > 100000) {
+      throw new Error(`Security failure: Transaction mass (${actualMass}) exceeds standard mempool limit of 100,000 grams.`);
     }
+
+    // Ensure transaction fee paid is sufficient
+    if (intent.feeSompi < minRequiredFee) {
+      throw new Error(`Security failure: Paid fee (${intent.feeSompi} sompi) is below minimum relay fee (${minRequiredFee} sompi) required for mass (${actualMass} grams).`);
+    }
+  } catch (e: any) {
+    console.error('Mass/fee verification error (Transaction Rejected):', e);
+    if (e.message && e.message.startsWith('Security failure:')) {
+      throw e;
+    }
+    throw new Error(`Security failure: Transaction verification failed with error: ${e.message || e}`);
   }
 }
 

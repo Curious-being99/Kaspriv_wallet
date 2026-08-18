@@ -44,7 +44,22 @@ function getDB(): Promise<IDBPDatabase> {
   return dbPromise;
 }
 
+let panicWipeTriggered = false;
+
+export function setPanicWipeTriggered(val: boolean): void {
+  panicWipeTriggered = val;
+}
+
+export function isPanicWipeTriggered(): boolean {
+  return panicWipeTriggered;
+}
+
 async function withDB<T>(operation: (db: IDBPDatabase) => Promise<T>): Promise<T> {
+  if (panicWipeTriggered) {
+    console.warn('Storage operation blocked: Panic/Duress wipe is in progress.');
+    return undefined as unknown as T;
+  }
+
   let db: IDBPDatabase;
   try {
     db = await getDB();
@@ -166,6 +181,28 @@ export async function getTransactionsFromDB(walletId: string): Promise<KaspaTran
   return result || [];
 }
 
+function awaitDeleteDatabase(name: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      resolve();
+      return;
+    }
+    try {
+      const request = window.indexedDB.deleteDatabase(name);
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+      request.onblocked = () => {
+        console.warn(`Database deletion blocked for ${name}`);
+        resolve();
+      };
+      // 2-second safety fallback timeout
+      setTimeout(resolve, 2000);
+    } catch {
+      resolve();
+    }
+  });
+}
+
 /**
  * Emergency Panic Wipe:
  * Closes connections, drops all IndexedDB object stores/databases,
@@ -191,9 +228,11 @@ export async function purgeAllDatabases(): Promise<void> {
 
   try {
     if (typeof window !== 'undefined' && window.indexedDB) {
-      window.indexedDB.deleteDatabase(DB_NAME);
-      window.indexedDB.deleteDatabase('kaspriv_db_v1');
-      window.indexedDB.deleteDatabase('kaspriv_audit_db');
+      await Promise.all([
+        awaitDeleteDatabase(DB_NAME),
+        awaitDeleteDatabase('kaspriv_db_v1'),
+        awaitDeleteDatabase('kaspriv_audit_db'),
+      ]);
     }
   } catch {}
 
@@ -206,6 +245,29 @@ export async function purgeAllDatabases(): Promise<void> {
   try {
     if (typeof window !== 'undefined' && window.sessionStorage) {
       window.sessionStorage.clear();
+    }
+  } catch {}
+
+  // Post a panic message to any active Service Worker and unregister them
+  try {
+    if (typeof window !== 'undefined' && window.navigator && window.navigator.serviceWorker) {
+      if (window.navigator.serviceWorker.controller) {
+        window.navigator.serviceWorker.controller.postMessage('PANIC_WIPE');
+      }
+      const registrations = await window.navigator.serviceWorker.getRegistrations();
+      for (const registration of registrations) {
+        await registration.unregister();
+      }
+    }
+  } catch {}
+
+  // Delete all items inside Cache Storage
+  try {
+    if (typeof window !== 'undefined' && window.caches) {
+      const cacheNames = await window.caches.keys();
+      for (const cacheName of cacheNames) {
+        await window.caches.delete(cacheName);
+      }
     }
   } catch {}
 }

@@ -128,13 +128,33 @@ export async function encryptWithPassword(plaintext: string, password: string, c
 
 /**
  * Decrypts a hex-encoded ciphertext string using a key derived from a password.
+ * Strictly enforces the provided AAD context, guaranteeing strong wallet-specific ciphertext binding.
  * Throws an error if decryption fails (e.g. invalid password or wrong AAD context).
  */
-export async function decryptWithPassword(ciphertextHex: string, saltHex: string, ivHex: string, password: string, context: string = AAD_CONTEXT): Promise<string> {
+export async function decryptWithPassword(
+  ciphertextHex: string, 
+  saltHex: string, 
+  ivHex: string, 
+  password: string, 
+  context: string = AAD_CONTEXT
+): Promise<string> {
+  return await decryptWithPasswordInternal(ciphertextHex, saltHex, ivHex, password, context);
+}
+
+/**
+ * Explicit migration helper for legacy compatibility.
+ * Safely isolates legacy AAD fallback (without wallet-ID suffix) into a non-standard decryption path.
+ */
+export async function decryptWithPasswordLegacy(
+  ciphertextHex: string, 
+  saltHex: string, 
+  ivHex: string, 
+  password: string, 
+  context: string = AAD_CONTEXT
+): Promise<string> {
   try {
     return await decryptWithPasswordInternal(ciphertextHex, saltHex, ivHex, password, context);
   } catch (err) {
-    // If context contains walletId suffix (e.g. "KASPRIV-WALLET-v1|KASPA-MAINNET|MNEMONIC|w-123"), attempt fallback without walletId
     const parts = context.split('|');
     if (parts.length > 3) {
       const legacyContext = parts.slice(0, 3).join('|');

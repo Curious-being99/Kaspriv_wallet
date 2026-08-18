@@ -1,4 +1,4 @@
-import * as bip39 from 'bip39';
+import { mnemonicToSeedSync } from '@scure/bip39';
 import { HDKey } from '@scure/bip32';
 import { wipe } from './common';
 import { getAddressFromPublicKey } from './keys';
@@ -38,8 +38,7 @@ export async function scanKaspaWalletChain(
   gapLimit: number = 20,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<ScannedWalletChainResult> {
-  const seed = await bip39.mnemonicToSeed(mnemonic, passphrase || '');
-  const seedArray = new Uint8Array(seed);
+  const seedArray = mnemonicToSeedSync(mnemonic, passphrase || '');
   
   try {
     const root = HDKey.fromMasterSeed(seedArray);
