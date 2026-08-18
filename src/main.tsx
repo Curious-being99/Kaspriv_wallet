@@ -1,3 +1,4 @@
+import './components/DevConsoleDrawer';
 import { Buffer } from 'buffer';
 import React, { Component, ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';

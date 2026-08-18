@@ -225,7 +225,7 @@ if (typeof window !== 'undefined' && !globalObj.__KASPRIV_CONSOLE_PATCHED__) {
       globalObj.__KASPRIV_ORIGINALS__.log.apply(console, sanitizedArgs);
     } catch (e) {
       try {
-        originalLog.apply(console, args);
+        originalLog.call(console, '[LOG_SANITIZED]');
       } catch (_) {}
     }
   };
@@ -238,7 +238,7 @@ if (typeof window !== 'undefined' && !globalObj.__KASPRIV_CONSOLE_PATCHED__) {
       addDevLog('warn', msg);
     } catch (e) {
       try {
-        originalWarn.apply(console, args);
+        originalWarn.call(console, '[WARN_SANITIZED]');
       } catch (_) {}
     }
   };
@@ -251,7 +251,7 @@ if (typeof window !== 'undefined' && !globalObj.__KASPRIV_CONSOLE_PATCHED__) {
       addDevLog('error', msg, sanitizedArgs.length > 1 ? sanitizedArgs.slice(1) : undefined);
     } catch (e) {
       try {
-        originalError.apply(console, args);
+        originalError.call(console, '[ERROR_SANITIZED]');
       } catch (_) {}
     }
   };
@@ -262,7 +262,7 @@ if (typeof window !== 'undefined' && !globalObj.__KASPRIV_CONSOLE_PATCHED__) {
       globalObj.__KASPRIV_ORIGINALS__.info.apply(console, sanitizedArgs);
     } catch (e) {
       try {
-        originalInfo.apply(console, args);
+        originalInfo.call(console, '[INFO_SANITIZED]');
       } catch (_) {}
     }
   };

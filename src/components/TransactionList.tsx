@@ -37,18 +37,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
   const [selectedTx, setSelectedTx] = useState<KaspaTransaction | null>(null);
   const [copiedTxid, setCopiedTxid] = useState(false);
 
-  // Diagnostic utility: Log raw output from transaction fetching hook & validate mapping logic
-  React.useEffect(() => {
-    console.group('[TransactionList Diagnostic Utility]');
-    console.log('Active Wallet ID:', activeWallet.id);
-    console.log('Active Receive Address:', activeWallet.receiveAddress);
-    console.log('Discovered Addresses:', activeWallet.discoveredAddresses);
-    console.log('Raw Transactions Hook Output Count:', transactions?.length || 0);
-    console.log('Raw Transactions Data:', transactions);
-    console.log('Current Active Filter:', filter);
-    console.groupEnd();
-  }, [transactions, activeWallet, filter]);
-
   const kasAmount = sompiToKas(activeWallet.balanceSompi);
   const fiatValue = (kasAmount * marketData.priceUsd * fiatRate).toLocaleString('en-US', {
     minimumFractionDigits: 2,
