@@ -29,6 +29,38 @@ import { KaspaNode, NetworkType } from '../types';
 import { pingKaspaNode } from '../utils/kaspa/api';
 import { useKeyboard } from '../context/KeyboardContext';
 
+function isCspCompliantUrl(urlString: string): boolean {
+  if (!urlString) return true;
+  try {
+    const rawUrl = urlString.trim().toLowerCase();
+    const url = new URL(rawUrl.startsWith('http') ? rawUrl : 'http://' + rawUrl);
+    const host = url.hostname;
+    
+    if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.onion')) {
+      return true;
+    }
+    
+    const allowedPatterns = [
+      /\.kaspa\.org$/,
+      /\.kaspa\.net$/,
+      /\.kaspa\.stream$/,
+      /\.kaspagov\.org$/,
+      /\.aspectron\.org$/,
+      /\.kaspriv\.io$/,
+      /^api\.coingecko\.com$/,
+      /^api\.coinpaprika\.com$/
+    ];
+    
+    if (host === 'kaspa.org' || host === 'kaspa.net' || host === 'kaspa.stream' || host === 'kaspagov.org' || host === 'aspectron.org' || host === 'kaspriv.io') {
+      return true;
+    }
+    
+    return allowedPatterns.some(pattern => pattern.test(host));
+  } catch {
+    return false;
+  }
+}
+
 export const NodeManagerModal: React.FC = () => {
   const {
     nodes,
@@ -116,7 +148,12 @@ export const NodeManagerModal: React.FC = () => {
       setRpcUrl('');
       setCustomExplorerUrl('');
       setTestResult(null);
-      showToast('Custom privacy node connected successfully!', 'success');
+      
+      if (!isCspCompliantUrl(cleanUrl) || (rpcUrl.trim() && !isCspCompliantUrl(rpcUrl))) {
+        showToast('Custom node added with CSP Warnings. Your browser may block requests to this domain.', 'warning');
+      } else {
+        showToast('Custom privacy node connected successfully!', 'success');
+      }
     } catch (err: any) {
       showToast(err.message || 'Failed to connect to node', 'error');
     } finally {
@@ -385,6 +422,18 @@ export const NodeManagerModal: React.FC = () => {
                       />
                     </div>
                   </div>
+                  
+                  {((restApiUrl.trim() && !isCspCompliantUrl(restApiUrl)) || (rpcUrl.trim() && !isCspCompliantUrl(rpcUrl))) && (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <Info className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>Content Security Policy (CSP) Warning</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed">
+                        This custom endpoint domain is not listed in the browser's security policy. Direct network requests to this domain may be blocked by your browser's CSP. Whitelisted domains include <code className="text-slate-200">*.kaspa.org</code>, <code className="text-slate-200">*.kaspa.net</code>, <code className="text-slate-200">*.aspectron.org</code>, and local hosts (<code className="text-slate-200">localhost</code>, <code className="text-slate-200">127.0.0.1</code>).
+                      </p>
+                    </div>
+                  )}
 
                   {/* Privacy Flag Checkboxes */}
                   <div className="flex items-center gap-4 pt-1">
@@ -506,6 +555,11 @@ export const NodeManagerModal: React.FC = () => {
                           {n.isCustom && !n.isPrivateSelfHosted && (
                             <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 font-mono">
                               Custom
+                            </span>
+                          )}
+                          {n.isCustom && n.apiUrl && !isCspCompliantUrl(n.apiUrl) && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 font-mono font-bold" title="Potential CSP Block">
+                              CSP Restricted
                             </span>
                           )}
                         </div>

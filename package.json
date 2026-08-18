@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "postinstall": "sed -i 's/const { TextDecoder, TextEncoder, inspect } = require(`util`);/const inspect = require(`util`).inspect; const TextDecoder = globalThis.TextDecoder; const TextEncoder = globalThis.TextEncoder;/g' node_modules/kaspa-wasm/kaspa_wasm.js"
+    "postinstall": "node patch-kaspa-wasm.js"
   },
   "dependencies": {
     "@kaspa/core-lib": "1.6.5",

@@ -344,7 +344,6 @@ export const SendModal: React.FC = () => {
     try {
       const authRes = await authorizeSigningWithBiometrics();
       if (authRes.success && authRes.decryptedPassword) {
-        setPasswordInput(authRes.decryptedPassword);
         showToast('Biometric authorization successful!', 'success');
         
         setIsSending(true);

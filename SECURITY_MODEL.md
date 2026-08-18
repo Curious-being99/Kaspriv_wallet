@@ -87,6 +87,12 @@ To eliminate private key leaks across component render cycles or long-lived stat
    * **WASM Objects**: For cryptographic operations using `kaspa-wasm`, explicit `PrivateKey` objects are created from byte buffers and released using `.free()` in `finally` blocks. This returns the native allocation to the WASM allocator; the application treats this as a best-effort release of the native representation.
    * **Zero Hex-Back Storage**: Plaintext private keys, derived hex values, or seed words are never stored back, cached in state, or logged. The context only yields final signature outputs, securely purging the underlying cryptographic parameters immediately after signing.
 
+### Hardened Biometric Security (WebAuthn Platform Auth)
+To provide frictionless access without compromising the zero-trust architecture, the wallet supports WebAuthn platform biometrics (TouchID/FaceID) hardened against common Web UI vulnerabilities:
+1. **Zero-State Retention**: The decrypted password retrieved during the biometric authorization path resides exclusively inside the local, temporary closure memory block. It is never stored in React states (such as `passwordInput`), never rendered to DOM input nodes, and never saved in any state variables.
+2. **Dual-Prompt Prevention**: Inline biometric checks within critical functions (`sendKaspa`, `compoundUtxos`) are automatically bypassed when pre-decrypted seed material is supplied, preventing annoying and dangerous double-prompting cycles.
+3. **Biometric Overlay Blur Bypass**: To prevent the browser's native credential prompt from triggering false security-shield locks (as system overlays de-focus the main viewport), we utilize a temporary, bounded global flag (`window.isBiometricPromptActive`). Focus loss events are ignored while this state is active, and the shield settling window is padded with a `500ms` delay to allow the viewport to fully recover before re-evaluating layout focus.
+
 ### Hardened Lock Wallet & Memory Purge Mechanism
 The wallet-lock routine goes far beyond a superficial React state flag (`isLocked(true)`). To ensure that active credentials cannot linger in memory or be extracted via client inspection:
 
@@ -121,6 +127,8 @@ Before password verification, seed decryption, or private key derivation occurs,
 
 For a mobile web wallet, JavaScript supply-chain integrity and runtime hardening are first-class security boundaries:
 * **Strict Content Security Policy (CSP)**: Enforces a strict runtime policy directly in `index.html` allowing WebAssembly compilation (`'wasm-unsafe-eval'`), local assets (`'self'`), and strictly explicitly permitted Kaspa RPC nodes/APIs. Prevents inline script injection (`object-src 'none'`) and strictly eliminates external tracking or Google domains.
+* **CSP-Compliant Custom Node Validation**: Since the application allows users to add their own API endpoints, we have integrated a mathematical hostname whitelist verifier (`isCspCompliantUrl`) inside the node registration UI. If a user tries to configure a custom node that falls outside the browser's CSP parameters, an inline warning is shown, a warn-toast is triggered on submission, and the node is rendered with a prominent `CSP Restricted` badge, preventing unannounced network connection blockages.
+* **Automated Security & CI Pipeline**: A continuous integration pipeline is active via GitHub Actions (`.github/workflows/ci.yml`). This automates compilation verification, ESLint code structure analysis, high-severity package vulnerability audits (`npm audit`), and custom regex checks to scan commits for potential hardcoded secrets, seed phrases, or private keys prior to merging.
 * **Minimal Third-Party JavaScript**: Keeps dependency footprint lean and audited.
 * **Lockfile Integrity**: Cryptographic package lockfiles (`package-lock.json`) enforced across builds.
 * **Automated Vulnerability Scanning**: Dependabot/Renovate-style dependency update monitoring.

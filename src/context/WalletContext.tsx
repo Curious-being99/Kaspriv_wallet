@@ -58,6 +58,7 @@ import {
   generate24WordMnemonic,
   generateDeterministicAddress,
   getAddressFromPublicKey,
+  validateKaspaAddress,
   SOMPI_PER_KAS,
   fetchKaspaPrice,
   fetchKaspaAddressBalance,
@@ -2035,14 +2036,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     
     let targetAddress: string;
     if (isDirectAddress && kpubOrAddress.includes(':')) {
-      targetAddress = kpubOrAddress;
+      const trimmedAddr = kpubOrAddress.trim();
+      const validation = validateKaspaAddress(trimmedAddr, network);
+      if (!validation.isValid) {
+        showToast('Invalid public key/address — import cancelled.', 'error');
+        throw new Error('Invalid public key/address — import cancelled.');
+      }
+      targetAddress = trimmedAddr;
     } else {
       try {
         // Try to derive from kpub/pubkey hex
-        targetAddress = getAddressFromPublicKey(kpubOrAddress, addressType, prefix);
+        targetAddress = getAddressFromPublicKey(kpubOrAddress.trim(), addressType, prefix);
       } catch (e) {
-        // Fallback or random for demo
-        targetAddress = generateRandomKaspaAddress(prefix + ':');
+        showToast('Invalid public key/address — import cancelled.', 'error');
+        throw new Error('Invalid public key/address — import cancelled.');
       }
     }
 

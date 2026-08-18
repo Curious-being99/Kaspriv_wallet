@@ -1,0 +1,47 @@
+name: Security & Build Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-lint:
+    name: Build, Lint, and Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Static Analysis & Code Linting
+        run: npm run lint
+
+      - name: Production Compilation Check
+        run: npm run build
+
+      - name: Vulnerability & Dependency Security Audit
+        run: npm audit --audit-level=high || echo "Audit scan completed. Review warnings above."
+
+      - name: Scan for Potential Secrets & Private Keys
+        run: |
+          echo "Scanning for accidental hardcoded credentials..."
+          ! git grep -E "(private_key|mnemonic|seed_phrase|api_key|password)\s*=\s*['\"][a-zA-Z0-9]{12,}['\"]" -- 'src/**' || (echo "Potential credential leak detected!" && exit 1)
+          echo "Credential scanning completed successfully."
