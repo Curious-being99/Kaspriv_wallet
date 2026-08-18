@@ -32,6 +32,7 @@ import {
   ChevronDown,
   ChevronUp,
   Unlock,
+  Fingerprint,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -58,6 +59,8 @@ export const SendModal: React.FC = () => {
     sendKaspa,
     isPasswordEnabled,
     password,
+    isBiometricsEnabled,
+    authorizeSigningWithBiometrics,
     showToast,
     transactions,
     refreshBalance,
@@ -80,6 +83,7 @@ export const SendModal: React.FC = () => {
 
   const [isConfirmingStep, setIsConfirmingStep] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isAuthenticatingBiometrics, setIsAuthenticatingBiometrics] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
 
   const [successTx, setSuccessTx] = useState<SuccessTxData | null>(null);
@@ -331,6 +335,103 @@ export const SendModal: React.FC = () => {
     setCopiedAddr(true);
     showToast('Recipient address copied!', 'success');
     setTimeout(() => setCopiedAddr(false), 2000);
+  };
+
+  const handleBiometricSign = async () => {
+    if (isAuthenticatingBiometrics || isSending) return;
+    setIsAuthenticatingBiometrics(true);
+    setPasswordError(null);
+    try {
+      const authRes = await authorizeSigningWithBiometrics();
+      if (authRes.success && authRes.decryptedPassword) {
+        setPasswordInput(authRes.decryptedPassword);
+        showToast('Biometric authorization successful!', 'success');
+        
+        setIsSending(true);
+        setTimeout(async () => {
+          let mnemonicToUse: string | null = null;
+          let passphraseToUse: string | undefined = undefined;
+
+          try {
+            if (activeWallet?.encryptedMnemonic) {
+              mnemonicToUse = await decryptWithPassword(
+                activeWallet.encryptedMnemonic.ciphertext,
+                activeWallet.encryptedMnemonic.salt,
+                activeWallet.encryptedMnemonic.iv,
+                authRes.decryptedPassword!,
+                buildAadContext('MNEMONIC', activeWallet.id)
+              );
+            } else {
+              mnemonicToUse = activeWallet?.mnemonic || null;
+            }
+
+            if (activeWallet?.encryptedPassphrase) {
+              passphraseToUse = await decryptWithPassword(
+                activeWallet.encryptedPassphrase.ciphertext,
+                activeWallet.encryptedPassphrase.salt,
+                activeWallet.encryptedPassphrase.iv,
+                authRes.decryptedPassword!,
+                buildAadContext('PASSPHRASE', activeWallet.id)
+              );
+            } else if (passphraseInput) {
+              passphraseToUse = passphraseInput;
+            } else {
+              passphraseToUse = activeWallet?.passphrase || undefined;
+            }
+
+            if (!mnemonicToUse) {
+              setPasswordError('Biometric decryption error: Wallet key decryption failed.');
+              showToast('Biometric decryption error: Wallet key decryption failed.', 'error');
+              setIsSending(false);
+              return;
+            }
+
+            const res = await sendKaspa(
+              toAddress,
+              numericAmount,
+              selectedFee,
+              note,
+              mnemonicToUse,
+              passphraseToUse,
+              selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined
+            );
+
+            if (res.success) {
+              setSuccessTx({
+                txid: res.txid || 'kaspa-txid',
+                amountKas: numericAmount,
+                feeKas: selectedFee,
+                toAddress: toAddress.trim(),
+                fiatValue: fiatEquivalent,
+                note: note.trim() || undefined,
+                timestamp: Date.now(),
+              });
+              setIsConfirmingStep(false);
+              setToAddress('');
+              setAmountInput('');
+              setNote('');
+              setPasswordInput('');
+              setPassphraseInput('');
+              setPasswordError(null);
+              showToast('Transaction successfully broadcast!', 'success');
+            } else {
+              showToast(res.error || 'Failed to broadcast transaction', 'error');
+            }
+          } catch (err: any) {
+            showToast(err.message || 'Biometric authorization failed', 'error');
+          } finally {
+            setIsSending(false);
+          }
+        }, 100);
+
+      } else if (!authRes.success && authRes.error) {
+        showToast(authRes.error, 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Biometric authentication failed', 'error');
+    } finally {
+      setIsAuthenticatingBiometrics(false);
+    }
   };
 
   const handleExecuteSend = async () => {
@@ -926,7 +1027,7 @@ export const SendModal: React.FC = () => {
 
             {/* Wallet Password Lock if enabled */}
             {isPasswordEnabled && (
-              <div className="p-2.5 rounded-xl bg-[#0B151E] space-y-1">
+              <div className="p-2.5 rounded-xl bg-[#0B151E] space-y-1.5">
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
                   Wallet Password
                 </label>
@@ -948,6 +1049,17 @@ export const SendModal: React.FC = () => {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {isBiometricsEnabled && (
+                  <button
+                    type="button"
+                    onClick={handleBiometricSign}
+                    disabled={isSending || isAuthenticatingBiometrics}
+                    className="w-full flex items-center justify-center gap-1.5 py-1 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer mt-1"
+                  >
+                    <Fingerprint className="w-3.5 h-3.5 text-[#70C7BA]" />
+                    <span>Tap to unlock with Biometrics</span>
+                  </button>
+                )}
               </div>
             )}
 

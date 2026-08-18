@@ -71,61 +71,68 @@ export async function registerBiometricUnlock(
     throw new Error('Platform biometrics are not supported or enabled on this device.');
   }
 
-  const challenge = new Uint8Array(32);
-  crypto.getRandomValues(challenge);
+  (window as any).isBiometricPromptActive = true;
+  try {
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
 
-  const userId = new Uint8Array(16);
-  crypto.getRandomValues(userId);
+    const userId = new Uint8Array(16);
+    crypto.getRandomValues(userId);
 
-  const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
-    challenge,
-    rp: {
-      name: 'KasPriv Wallet',
-      id: window.location.hostname,
-    },
-    user: {
-      id: userId,
-      name: 'KasPriv Vault',
-      displayName: 'KasPriv User',
-    },
-    pubKeyCredParams: [
-      { alg: -7, type: 'public-key' },  // ES256
-      { alg: -257, type: 'public-key' }, // RS256
-    ],
-    authenticatorSelection: {
-      authenticatorAttachment: 'platform',
-      userVerification: 'required',
-      residentKey: 'discouraged',
-    },
-    timeout: 60000,
-    attestation: 'none',
-  };
+    const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
+      challenge,
+      rp: {
+        name: 'KasPriv Wallet',
+        id: window.location.hostname,
+      },
+      user: {
+        id: userId,
+        name: 'KasPriv Vault',
+        displayName: 'KasPriv User',
+      },
+      pubKeyCredParams: [
+        { alg: -7, type: 'public-key' },  // ES256
+        { alg: -257, type: 'public-key' }, // RS256
+      ],
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',
+        userVerification: 'required',
+        residentKey: 'discouraged',
+      },
+      timeout: 60000,
+      attestation: 'none',
+    };
 
-  const credential = (await navigator.credentials.create({
-    publicKey: publicKeyCredentialCreationOptions,
-  })) as PublicKeyCredential | null;
+    const credential = (await navigator.credentials.create({
+      publicKey: publicKeyCredentialCreationOptions,
+    })) as PublicKeyCredential | null;
 
-  if (!credential) {
-    throw new Error('Biometric registration was cancelled or not completed.');
+    if (!credential) {
+      throw new Error('Biometric registration was cancelled or not completed.');
+    }
+
+    const credentialIdStr = bufferToBase64Url(credential.rawId);
+
+    // Securely wrap the wallet password using the hardware-bound credential ID as context
+    const encryptionKey = `${credentialIdStr}:${credential.id}`;
+    const encrypted = await encryptWithPassword(
+      walletPassword,
+      encryptionKey,
+      BIOMETRIC_AAD_CONTEXT
+    );
+
+    return {
+      credentialId: credentialIdStr,
+      ciphertext: encrypted.ciphertext,
+      salt: encrypted.salt,
+      iv: encrypted.iv,
+      createdAt: Date.now(),
+    };
+  } finally {
+    setTimeout(() => {
+      (window as any).isBiometricPromptActive = false;
+    }, 500);
   }
-
-  const credentialIdStr = bufferToBase64Url(credential.rawId);
-
-  // Securely wrap the wallet password using the hardware-bound credential ID as context
-  const encryptionKey = `${credentialIdStr}:${credential.id}`;
-  const encrypted = await encryptWithPassword(
-    walletPassword,
-    encryptionKey,
-    BIOMETRIC_AAD_CONTEXT
-  );
-
-  return {
-    credentialId: credentialIdStr,
-    ciphertext: encrypted.ciphertext,
-    salt: encrypted.salt,
-    iv: encrypted.iv,
-    createdAt: Date.now(),
-  };
 }
 
 /**
@@ -140,43 +147,50 @@ export async function authenticateWithBiometrics(
     throw new Error('Biometric hardware is not available on this device.');
   }
 
-  const challenge = new Uint8Array(32);
-  crypto.getRandomValues(challenge);
+  (window as any).isBiometricPromptActive = true;
+  try {
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
 
-  const credentialIdBuffer = base64UrlToBuffer(record.credentialId);
+    const credentialIdBuffer = base64UrlToBuffer(record.credentialId);
 
-  const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
-    challenge,
-    rpId: window.location.hostname,
-    allowCredentials: [
-      {
-        id: credentialIdBuffer,
-        type: 'public-key',
-        transports: ['internal'],
-      },
-    ],
-    userVerification: 'required',
-    timeout: 60000,
-  };
+    const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
+      challenge,
+      rpId: window.location.hostname,
+      allowCredentials: [
+        {
+          id: credentialIdBuffer,
+          type: 'public-key',
+          transports: ['internal'],
+        },
+      ],
+      userVerification: 'required',
+      timeout: 60000,
+    };
 
-  const assertion = (await navigator.credentials.get({
-    publicKey: publicKeyCredentialRequestOptions,
-  })) as PublicKeyCredential | null;
+    const assertion = (await navigator.credentials.get({
+      publicKey: publicKeyCredentialRequestOptions,
+    })) as PublicKeyCredential | null;
 
-  if (!assertion) {
-    throw new Error('Biometric authentication failed or was cancelled.');
+    if (!assertion) {
+      throw new Error('Biometric authentication failed or was cancelled.');
+    }
+
+    const credentialIdStr = bufferToBase64Url(assertion.rawId);
+    const encryptionKey = `${credentialIdStr}:${assertion.id}`;
+
+    const decryptedPassword = await decryptWithPassword(
+      record.ciphertext,
+      record.salt,
+      record.iv,
+      encryptionKey,
+      BIOMETRIC_AAD_CONTEXT
+    );
+
+    return decryptedPassword;
+  } finally {
+    setTimeout(() => {
+      (window as any).isBiometricPromptActive = false;
+    }, 500);
   }
-
-  const credentialIdStr = bufferToBase64Url(assertion.rawId);
-  const encryptionKey = `${credentialIdStr}:${assertion.id}`;
-
-  const decryptedPassword = await decryptWithPassword(
-    record.ciphertext,
-    record.salt,
-    record.iv,
-    encryptionKey,
-    BIOMETRIC_AAD_CONTEXT
-  );
-
-  return decryptedPassword;
 }

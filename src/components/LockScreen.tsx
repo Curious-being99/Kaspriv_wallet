@@ -97,27 +97,15 @@ export const LockScreen: React.FC = () => {
           animate={{ scale: isKeyboardOpen ? 0.8 : 1 }}
           className="relative"
         >
-          <button
-            type="button"
-            onClick={isBiometricsEnabled ? handleBiometricUnlock : undefined}
-            disabled={!isBiometricsEnabled || isAuthenticatingBiometrics}
+          <div
             className={`rounded-3xl bg-gradient-to-br from-[#1C2F42] to-[#0B151E] flex items-center justify-center border border-white/5 shadow-2xl transition-all duration-300 ${
-              isBiometricsEnabled ? 'cursor-pointer hover:border-[#70C7BA]/40 active:scale-95' : 'cursor-default'
-            } ${
               isKeyboardOpen ? 'w-12 h-12' : 'w-16 h-16'
             }`}
-            title={isBiometricsEnabled ? 'Tap to unlock with Biometrics' : undefined}
           >
-            {isBiometricsEnabled ? (
-              <Fingerprint className={`text-[#70C7BA] transition-all duration-300 ${
-                isKeyboardOpen ? 'w-5 h-5' : 'w-7 h-7'
-              }`} />
-            ) : (
-              <Lock className={`text-[#70C7BA] transition-all duration-300 ${
-                isKeyboardOpen ? 'w-5 h-5' : 'w-7 h-7'
-              }`} />
-            )}
-          </button>
+            <Lock className={`text-[#70C7BA] transition-all duration-300 ${
+              isKeyboardOpen ? 'w-5 h-5' : 'w-7 h-7'
+            }`} />
+          </div>
         </motion.div>
 
         <div className="text-center space-y-1">
@@ -171,38 +159,20 @@ export const LockScreen: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={!password || isDecrypting}
-                className="flex-1 py-3.5 rounded-xl bg-[#70C7BA] text-[#090D12] font-bold text-sm shadow-sm hover:bg-[#5eb5a8] active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isDecrypting ? (
-                  <div className="w-5 h-5 border-2 border-[#0B151E]/30 border-t-[#0B151E] rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <Unlock className="w-4 h-4" />
-                    <span>Unlock</span>
-                  </>
-                )}
-              </button>
-
-              {isBiometricsEnabled && (
-                <button
-                  type="button"
-                  onClick={handleBiometricUnlock}
-                  disabled={isAuthenticatingBiometrics || isDecrypting}
-                  title="Unlock with Biometrics (Face ID / Fingerprint)"
-                  className="w-13 h-12 rounded-xl bg-[#131924] hover:bg-[#1a2332] border border-[#212B38] hover:border-[#70C7BA]/50 text-slate-300 hover:text-[#70C7BA] flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0 disabled:opacity-50"
-                >
-                  {isAuthenticatingBiometrics ? (
-                    <div className="w-4 h-4 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
-                  ) : (
-                    <Fingerprint className="w-5 h-5" />
-                  )}
-                </button>
+            <button
+              type="submit"
+              disabled={!password || isDecrypting}
+              className="w-full py-3.5 rounded-xl bg-[#70C7BA] text-[#090D12] font-bold text-sm shadow-sm hover:bg-[#5eb5a8] active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {isDecrypting ? (
+                <div className="w-5 h-5 border-2 border-[#0B151E]/30 border-t-[#0B151E] rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Unlock className="w-4 h-4" />
+                  <span>Unlock</span>
+                </>
               )}
-            </div>
+            </button>
 
             {isBiometricsEnabled && (
               <button

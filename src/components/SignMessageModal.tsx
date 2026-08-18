@@ -7,7 +7,7 @@ import { motion } from 'motion/react';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 
 export const SignMessageModal: React.FC = () => {
-  const { activeWallet, isSignMessageOpen, setIsSignMessageOpen, showToast, isPasswordEnabled, password } = useWallet();
+  const { activeWallet, isSignMessageOpen, setIsSignMessageOpen, showToast, isPasswordEnabled, password, isBiometricsEnabled, authorizeSigningWithBiometrics, unlockWallet } = useWallet();
   const { openKeyboard } = useVirtualKeyboard();
 
   const [message, setMessage] = useState('');
@@ -28,9 +28,24 @@ export const SignMessageModal: React.FC = () => {
     let seedToUse: string | undefined | null = activeWallet.mnemonic;
     let passphraseToUse: string | undefined | null = activeWallet.passphrase;
 
+    let activePassword = passwordInput || password;
+
+    if (isBiometricsEnabled) {
+      const authRes = await authorizeSigningWithBiometrics();
+      if (!authRes.success) {
+        showToast(authRes.error || 'Biometric authentication required.', 'error');
+        return;
+      }
+      if (authRes.decryptedPassword) {
+        activePassword = authRes.decryptedPassword;
+        if (!password) {
+          await unlockWallet(authRes.decryptedPassword);
+        }
+      }
+    }
+
     // Handle decryption if seed is encrypted at rest
     if (!seedToUse && activeWallet.encryptedMnemonic) {
-      const activePassword = passwordInput || password;
       if (activePassword) {
         try {
           seedToUse = await decryptWithPassword(

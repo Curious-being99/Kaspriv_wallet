@@ -160,6 +160,7 @@ interface WalletContextType {
   enableBiometrics: (password: string) => Promise<boolean>;
   disableBiometrics: () => Promise<void>;
   unlockWithBiometrics: () => Promise<boolean>;
+  authorizeSigningWithBiometrics: () => Promise<{ success: boolean; decryptedPassword?: string; error?: string }>;
 
   // UI Modal States
   isSendOpen: boolean;
@@ -2093,7 +2094,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let seedToUse: string | null = (providedSeedPhrase && providedSeedPhrase.trim()) || activeWallet.mnemonic || null;
     let passphraseToUse: string | null | undefined = providedPassphrase !== undefined ? providedPassphrase : activeWallet.passphrase;
 
-    const activePassword = password;
+    let activePassword = password;
+
+    if (isBiometricsEnabled && !providedSeedPhrase) {
+      const authRes = await authorizeSigningWithBiometrics();
+      if (!authRes.success) {
+        return { success: false, error: authRes.error || 'Biometric authentication required.' };
+      }
+      if (authRes.decryptedPassword) {
+        activePassword = authRes.decryptedPassword;
+        if (!password) {
+          await unlockWallet(authRes.decryptedPassword);
+        }
+      }
+    }
 
     // Handle decryption if seed is encrypted at rest
     if (!seedToUse && (activeWallet.encryptedMnemonic)) {
@@ -2422,16 +2436,32 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let seedToUse: string | null = (providedSeedPhrase && providedSeedPhrase.trim()) || activeWallet.mnemonic || null;
     let passphraseToUse: string | null | undefined = activeWallet.passphrase;
 
+    let activePassword = password;
+
+    if (isBiometricsEnabled && !providedSeedPhrase) {
+      const authRes = await authorizeSigningWithBiometrics();
+      if (!authRes.success) {
+        showToast(authRes.error || 'Biometric authentication required.', 'error');
+        return { success: false };
+      }
+      if (authRes.decryptedPassword) {
+        activePassword = authRes.decryptedPassword;
+        if (!password) {
+          await unlockWallet(authRes.decryptedPassword);
+        }
+      }
+    }
+
     // Handle decryption if seed is encrypted at rest
     if (!seedToUse && (activeWallet.encryptedMnemonic)) {
-      if (password) {
+      if (activePassword) {
         try {
           if (activeWallet.encryptedMnemonic) {
             seedToUse = await decryptWithPassword(
               activeWallet.encryptedMnemonic.ciphertext,
               activeWallet.encryptedMnemonic.salt,
               activeWallet.encryptedMnemonic.iv,
-              password,
+              activePassword,
               buildAadContext('MNEMONIC', activeWallet.id)
             );
           }
@@ -2441,7 +2471,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               activeWallet.encryptedPassphrase.ciphertext,
               activeWallet.encryptedPassphrase.salt,
               activeWallet.encryptedPassphrase.iv,
-              password,
+              activePassword,
               buildAadContext('PASSPHRASE', activeWallet.id)
             );
           }
@@ -2930,6 +2960,37 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
+  const authorizeSigningWithBiometrics = async (): Promise<{ success: boolean; decryptedPassword?: string; error?: string }> => {
+    if (!isBiometricsEnabled) {
+      return { success: true };
+    }
+    try {
+      const bioRecord = await getSetting<BiometricCredentialRecord>('wallet_biometric_credential');
+      if (!bioRecord) {
+        return { success: false, error: 'Biometric credentials not configured on this device.' };
+      }
+      const decryptedPassword = await authenticateWithBiometrics(bioRecord);
+      if (!decryptedPassword) {
+        return { success: false, error: 'Biometric authentication cancelled or failed.' };
+      }
+      return { success: true, decryptedPassword };
+    } catch (err: any) {
+      const isExpectedCancellation =
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'AbortError' ||
+        err?.name === 'InvalidStateError' ||
+        err?.message?.toLowerCase().includes('cancelled') ||
+        err?.message?.toLowerCase().includes('canceled') ||
+        err?.message?.toLowerCase().includes('timed out') ||
+        err?.message?.toLowerCase().includes('not allowed');
+
+      if (!isExpectedCancellation) {
+        console.warn('Biometric signing authorization failed:', err);
+      }
+      return { success: false, error: err?.message || 'Biometric authentication failed or was cancelled.' };
+    }
+  };
+
   const generateNewReceiveAddress = React.useCallback(async (): Promise<string | null> => {
     if (!activeWallet) return null;
     let seedToUse = activeWallet.mnemonic;
@@ -3088,6 +3149,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         enableBiometrics,
         disableBiometrics,
         unlockWithBiometrics,
+        authorizeSigningWithBiometrics,
         isHapticsSupported,
         isHapticsEnabled: isHapticsEnabledState,
         setIsHapticsEnabled,

@@ -7,7 +7,10 @@ export const PrivacyShield: React.FC = () => {
 
   useEffect(() => {
     const handleBlur = () => {
-      // Blur when window loses focus (e.g. taking screenshot via snippet tool or switching tab)
+      // Ignore blur events caused by browser native biometric overlays
+      if ((window as any).isBiometricPromptActive) {
+        return;
+      }
       setIsShieldActive(true);
       setShieldReason('blur');
     };
@@ -17,6 +20,9 @@ export const PrivacyShield: React.FC = () => {
     };
 
     const handleVisibilityChange = () => {
+      if ((window as any).isBiometricPromptActive) {
+        return;
+      }
       if (document.hidden) {
         setIsShieldActive(true);
         setShieldReason('blur');
@@ -96,4 +102,3 @@ export const PrivacyShield: React.FC = () => {
     </>
   );
 };
-
