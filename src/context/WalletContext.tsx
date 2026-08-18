@@ -684,6 +684,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (isPasswordEnabled) {
       setPasswordState(null);  // clear password from memory
       setIsLocked(true);
+      setWallets((prevWallets) =>
+        prevWallets.map((w) => ({
+          ...w,
+          mnemonic: undefined,
+          passphrase: undefined,
+        }))
+      );
       showToast('Wallet locked', 'info');
     }
   }, [isPasswordEnabled, showToast]);
@@ -2832,10 +2839,31 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const setDuressPassword = async (duressPassword: string | null) => {
     if (duressPassword && duressPassword.trim().length >= 8) {
+      const cleanDuress = duressPassword.trim();
+      
+      // Enforce: Duress password must NOT be identical to main wallet password
+      if (password && cleanDuress === password.trim()) {
+        showToast('Emergency Duress Password cannot be identical to main password', 'error');
+        return;
+      }
+      
+      const mainCanary = await getSetting<{ ciphertext: string; salt: string; iv: string }>('wallet_password_canary') || await getSetting<{ ciphertext: string; salt: string; iv: string }>('wallet_pin_canary');
+      if (mainCanary) {
+        try {
+          const dec = await decryptWithPassword(mainCanary.ciphertext, mainCanary.salt, mainCanary.iv, cleanDuress, "KASPRIV-WALLET-v1|KASPA-MAINNET|CANARY");
+          if (dec === "kaspriv-canary") {
+            showToast('Emergency Duress Password cannot be identical to main password', 'error');
+            return;
+          }
+        } catch {
+          // Pass: duress password is unique
+        }
+      }
+
       try {
         const canaryObj = await encryptWithPassword(
           "kaspriv-duress-canary",
-          duressPassword.trim(),
+          cleanDuress,
           "KASPRIV-WALLET-v1|KASPA-MAINNET|DURESS"
         );
         await saveSetting('wallet_duress_canary', canaryObj);
@@ -2912,9 +2940,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             "KASPRIV-WALLET-v1|KASPA-MAINNET|DURESS"
           );
           if (decryptedDuress === "kaspriv-duress-canary") {
-            // DURESS PASSWORD DETECTED -> INSTANT SECURE PURGE & LOGOUT TO LANDING PAGE
+            // DURESS PASSWORD DETECTED -> INSTANT SECURE PURGE & LOGOUT
+            // Return false to avoid "success unlock" semantics / animations in UI
             await executePanicWipe();
-            return true;
+            return false;
           }
         } catch {
           // Not duress password, proceed to normal password check
