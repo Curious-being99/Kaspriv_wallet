@@ -263,7 +263,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
                     </div>
                     <div className="text-xs text-slate-400 font-medium">
                       {isBalanceVisible 
-                        ? (tx.type === 'compound' ? `Fee ${sompiToKas(tx.feeSompi)} KAS` : `≈ $${fiatVal} ${currency}`)
+                        ? (tx.type === 'compound' ? `Fee ${formatKas(tx.feeSompi, 4)} KAS` : `≈ $${fiatVal} ${currency}`)
                         : '≈ $••.••'
                       }
                     </div>
@@ -371,7 +371,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-3 rounded-xl bg-[#090D12] ">
                     <div className="text-slate-400 mb-0.5">Network Fee</div>
-                    <div className="font-mono text-slate-200">{sompiToKas(selectedTx.feeSompi)} KAS</div>
+                    <div className="font-mono text-slate-200">{formatKas(selectedTx.feeSompi, 8)} KAS</div>
                   </div>
 
                   <div className="p-3 rounded-xl bg-[#090D12] ">

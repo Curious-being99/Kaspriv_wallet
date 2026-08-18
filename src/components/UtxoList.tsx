@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
-import { shortenAddress, sompiToKas, formatKas } from '../utils/kaspa';
+import { shortenAddress, sompiToKas, formatKas, sompiToKasString } from '../utils/kaspa';
 import {
   Layers,
   Search,
   ExternalLink,
   Copy,
-  Check,
   Lock,
   Unlock,
   RefreshCw,
@@ -14,6 +13,7 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
+  ArrowUpDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -30,8 +30,9 @@ export const UtxoList: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'spendable' | 'frozen'>('all');
+  const [sortBy, setSortBy] = useState<'amount-desc' | 'amount-asc' | 'score-desc'>('amount-desc');
   const [expandedUtxoId, setExpandedUtxoId] = useState<string | null>(null);
-  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [, setCopiedText] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   if (!activeWallet) {
@@ -43,7 +44,7 @@ export const UtxoList: React.FC = () => {
     try {
       await refreshBalance();
       showToast('UTXOs refreshed successfully', 'success');
-    } catch (err) {
+    } catch {
       showToast('Failed to refresh UTXOs', 'error');
     } finally {
       setIsRefreshing(false);
@@ -69,13 +70,30 @@ export const UtxoList: React.FC = () => {
     // Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
+      const kasStr = sompiToKasString(u.amountSompi);
+      const formattedKasStr = formatKas(u.amountSompi, 8);
       return (
         u.txid.toLowerCase().includes(q) ||
         u.address.toLowerCase().includes(q) ||
-        sompiToKas(u.amountSompi).toString().includes(q)
+        kasStr.includes(q) ||
+        formattedKasStr.includes(q)
       );
     }
     return true;
+  });
+
+  // Sort logic
+  const sortedUtxos = [...filteredUtxos].sort((a, b) => {
+    if (sortBy === 'amount-desc') {
+      return b.amountSompi > a.amountSompi ? 1 : b.amountSompi < a.amountSompi ? -1 : 0;
+    }
+    if (sortBy === 'amount-asc') {
+      return a.amountSompi > b.amountSompi ? 1 : a.amountSompi < b.amountSompi ? -1 : 0;
+    }
+    if (sortBy === 'score-desc') {
+      return (b.blockDaaScore || 0) - (a.blockDaaScore || 0);
+    }
+    return 0;
   });
 
   // Calculate metrics
@@ -85,13 +103,15 @@ export const UtxoList: React.FC = () => {
   ).length;
   const spendableUtxosCount = totalUtxosCount - frozenUtxosCount;
 
-  const spendableSumSompi = utxos
-    .filter((u) => !activeWallet.lockedUtxoOutpoints?.includes(`${u.txid}:${u.vout}`))
-    .reduce((sum, u) => sum + BigInt(u.amountSompi), 0n);
+  const totalSumSompi = utxos.reduce((sum, u) => sum + BigInt(u.amountSompi || 0), 0n);
+  const frozenSumSompi = utxos
+    .filter((u) => activeWallet.lockedUtxoOutpoints?.includes(`${u.txid}:${u.vout}`))
+    .reduce((sum, u) => sum + BigInt(u.amountSompi || 0), 0n);
+  const spendableSumSompi = totalSumSompi - frozenSumSompi;
 
   return (
     <div className="w-full mt-4 space-y-4">
-      {/* 1. Header Action Row - Sit flat on the page */}
+      {/* 1. Header Action Row */}
       <div className="flex items-center justify-between px-1">
         <div>
           <h2 className="text-sm font-extrabold text-slate-100 uppercase tracking-wider flex items-center gap-2">
@@ -128,50 +148,88 @@ export const UtxoList: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Flat Stat Counters */}
+      {/* 2. Interactive Stat & Filter Cards */}
       <div className="grid grid-cols-3 gap-2 px-1">
-        <div className="py-2.5 px-3 bg-[#0E131B] border border-[#1B232E]/60 rounded-2xl">
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total</div>
-          <div className="text-sm font-mono font-black text-slate-200 mt-0.5">
-            {totalUtxosCount}
+        <button
+          onClick={() => setFilter('all')}
+          className={`py-2.5 px-3 rounded-2xl text-left transition-all cursor-pointer border ${
+            filter === 'all'
+              ? 'bg-[#70C7BA]/10 border-[#70C7BA] text-[#70C7BA]'
+              : 'bg-[#0E131B] border-[#1B232E]/60 text-slate-400 hover:border-slate-700'
+          }`}
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">All ({totalUtxosCount})</div>
+          <div className={`text-xs font-mono font-black mt-0.5 truncate ${filter === 'all' ? 'text-[#70C7BA]' : 'text-slate-200'}`}>
+            {formatKas(totalSumSompi, 2)} <span className="text-[9px] opacity-70">KAS</span>
           </div>
-        </div>
-        <div className="py-2.5 px-3 bg-[#0E131B] border border-[#1B232E]/60 rounded-2xl">
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Spendable</div>
-          <div className="text-sm font-mono font-black text-[#70C7BA] mt-0.5">
-            {spendableUtxosCount}
+        </button>
+
+        <button
+          onClick={() => setFilter('spendable')}
+          className={`py-2.5 px-3 rounded-2xl text-left transition-all cursor-pointer border ${
+            filter === 'spendable'
+              ? 'bg-[#70C7BA]/10 border-[#70C7BA] text-[#70C7BA]'
+              : 'bg-[#0E131B] border-[#1B232E]/60 text-slate-400 hover:border-slate-700'
+          }`}
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">Spendable ({spendableUtxosCount})</div>
+          <div className="text-xs font-mono font-black text-[#70C7BA] mt-0.5 truncate">
+            {formatKas(spendableSumSompi, 2)} <span className="text-[9px] opacity-70">KAS</span>
           </div>
-        </div>
-        <div className="py-2.5 px-3 bg-[#0E131B] border border-[#1B232E]/60 rounded-2xl">
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Frozen</div>
-          <div className="text-sm font-mono font-black text-rose-400 mt-0.5">
-            {frozenUtxosCount}
+        </button>
+
+        <button
+          onClick={() => setFilter('frozen')}
+          className={`py-2.5 px-3 rounded-2xl text-left transition-all cursor-pointer border ${
+            filter === 'frozen'
+              ? 'bg-rose-500/10 border-rose-500 text-rose-400'
+              : 'bg-[#0E131B] border-[#1B232E]/60 text-slate-400 hover:border-slate-700'
+          }`}
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">Frozen ({frozenUtxosCount})</div>
+          <div className="text-xs font-mono font-black text-rose-400 mt-0.5 truncate">
+            {formatKas(frozenSumSompi, 2)} <span className="text-[9px] opacity-70">KAS</span>
           </div>
-        </div>
+        </button>
       </div>
 
-      {/* 3. Search & Filter Bar */}
-      <div className="space-y-2.5 px-1">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          {(['all', 'spendable', 'frozen'] as const).map((f) => (
+      {/* 3. Search & Sort Controls */}
+      <div className="space-y-2 px-1">
+        <div className="flex items-center gap-2">
+          {/* Search Input */}
+          <div className="relative flex-1">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search TXID, address, or KAS amount..."
+              className="w-full bg-[#0E131B] border border-[#1B232E] rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-[#70C7BA]/50 transition-colors"
+            />
+          </div>
+
+          {/* Sort Selector */}
+          <div className="relative">
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition-all cursor-pointer ${
-                filter === f
-                  ? 'bg-[#70C7BA] text-[#090D12]'
-                  : 'bg-[#131924] text-slate-400 hover:text-slate-200 border border-[#212B38]/60'
-              }`}
+              onClick={() => {
+                const nextSort = sortBy === 'amount-desc' ? 'amount-asc' : sortBy === 'amount-asc' ? 'score-desc' : 'amount-desc';
+                setSortBy(nextSort);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#0E131B] border border-[#1B232E] text-slate-400 hover:text-slate-200 text-xs font-bold transition-all cursor-pointer"
+              title="Toggle UTXO Sorting"
             >
-              {f} ({f === 'all' ? totalUtxosCount : f === 'spendable' ? spendableUtxosCount : frozenUtxosCount})
+              <ArrowUpDown className="w-3 h-3 text-[#70C7BA]" />
+              <span className="text-[11px]">
+                {sortBy === 'amount-desc' ? 'Highest' : sortBy === 'amount-asc' ? 'Lowest' : 'Newest'}
+              </span>
             </button>
-          ))}
+          </div>
         </div>
       </div>
 
-      {/* 4. UTXO List Content - Completely flat, using full view width of main page */}
+      {/* 4. UTXO List Content */}
       <div className="divide-y divide-[#1B232E]/60 border-t border-b border-[#1B232E]/50">
-        {filteredUtxos.length === 0 ? (
+        {sortedUtxos.length === 0 ? (
           <div className="text-center py-10 px-4 text-slate-400">
             <Layers className="w-9 h-9 text-slate-600 mx-auto mb-2" />
             <div className="text-xs font-bold text-slate-300">No outputs found</div>
@@ -180,10 +238,9 @@ export const UtxoList: React.FC = () => {
             </p>
           </div>
         ) : (
-          filteredUtxos.map((u) => {
+          sortedUtxos.map((u) => {
             const outpoint = `${u.txid}:${u.vout}`;
             const isLocked = activeWallet.lockedUtxoOutpoints?.includes(outpoint) || false;
-            const uAmtKas = sompiToKas(u.amountSompi);
             const isExpanded = expandedUtxoId === outpoint;
 
             return (

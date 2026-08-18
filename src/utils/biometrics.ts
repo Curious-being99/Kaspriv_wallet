@@ -5,6 +5,7 @@ export interface BiometricCredentialRecord {
   ciphertext: string;
   salt: string;
   iv: string;
+  unlockKey?: string; // Cryptographically random wallet-unlock secret key
   createdAt: number;
 }
 
@@ -113,11 +114,15 @@ export async function registerBiometricUnlock(
 
     const credentialIdStr = bufferToBase64Url(credential.rawId);
 
-    // Securely wrap the wallet password using the hardware-bound credential ID as context
-    const encryptionKey = `${credentialIdStr}:${credential.id}`;
+    // Generate a high-entropy 256-bit cryptographically random unlock key
+    const randomKeyBytes = new Uint8Array(32);
+    crypto.getRandomValues(randomKeyBytes);
+    const unlockKey = bufferToBase64Url(randomKeyBytes);
+
+    // Securely wrap the wallet password using the random unlock key
     const encrypted = await encryptWithPassword(
       walletPassword,
-      encryptionKey,
+      unlockKey,
       BIOMETRIC_AAD_CONTEXT
     );
 
@@ -126,6 +131,7 @@ export async function registerBiometricUnlock(
       ciphertext: encrypted.ciphertext,
       salt: encrypted.salt,
       iv: encrypted.iv,
+      unlockKey,
       createdAt: Date.now(),
     };
   } finally {
@@ -137,7 +143,7 @@ export async function registerBiometricUnlock(
 
 /**
  * Verify native biometrics with the hardware enclave (Face ID / Fingerprint)
- * and return the decrypted wallet password for seamless authentication.
+ * as an authorization gate and return the decrypted wallet password.
  */
 export async function authenticateWithBiometrics(
   record: BiometricCredentialRecord
@@ -168,6 +174,7 @@ export async function authenticateWithBiometrics(
       timeout: 60000,
     };
 
+    // WebAuthn Authorization Gate: User must verify biometrics on hardware enclave
     const assertion = (await navigator.credentials.get({
       publicKey: publicKeyCredentialRequestOptions,
     })) as PublicKeyCredential | null;
@@ -176,14 +183,14 @@ export async function authenticateWithBiometrics(
       throw new Error('Biometric authentication failed or was cancelled.');
     }
 
-    const credentialIdStr = bufferToBase64Url(assertion.rawId);
-    const encryptionKey = `${credentialIdStr}:${assertion.id}`;
+    // Gate passed successfully! Retrieve unlock key or legacy credential key fallback
+    const unlockSecret = record.unlockKey || `${record.credentialId}:${record.credentialId}`;
 
     const decryptedPassword = await decryptWithPassword(
       record.ciphertext,
       record.salt,
       record.iv,
-      encryptionKey,
+      unlockSecret,
       BIOMETRIC_AAD_CONTEXT
     );
 
