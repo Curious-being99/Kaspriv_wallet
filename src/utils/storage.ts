@@ -36,6 +36,11 @@ async function withDB<T>(operation: (db: IDBPDatabase) => Promise<T>): Promise<T
   let db: IDBPDatabase;
   try { db = await getDB(); }
   catch { dbPromise = null; db = await getDB(); }
+
+  // Panic can begin while openDB() is awaiting. Re-check immediately before
+  // allowing any queued read/write to reach IndexedDB.
+  if (panicWipeTriggered) return undefined as unknown as T;
+
   try { return await operation(db); }
   catch (err: any) {
     const msg = String(err?.message || err || '').toLowerCase();
@@ -186,8 +191,6 @@ export async function purgeAllDatabases(): Promise<void> {
       }
     } catch {}
   } finally {
-    // Start a fresh document after destructive wipe so the in-memory panic gate
-    // cannot accidentally prevent creation of a new wallet in this SPA session.
     if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
       window.location.reload();
     }
@@ -199,6 +202,7 @@ export async function auditWalletStorage(): Promise<{ ok: boolean; walletCount: 
   if (panicWipeTriggered) return { ok: false, walletCount: 0, plaintextSecretRecords: [] };
   try {
     const db = await getDB();
+    if (panicWipeTriggered) return { ok: false, walletCount: 0, plaintextSecretRecords: [] };
     const records = await db.getAll(WALLET_STORE);
     const plaintextSecretRecords: string[] = [];
     for (const record of records as any[]) {
