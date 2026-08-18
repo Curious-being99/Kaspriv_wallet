@@ -1,6 +1,7 @@
 import React from 'react';
 import { useWallet } from '../context/WalletContext';
 import { Wallet, History, Users, Settings } from 'lucide-react';
+import { hapticSelection } from '../utils/haptics';
 
 export const MobileBottomNav: React.FC = () => {
   const { activeBottomTab, setActiveBottomTab } = useWallet();
@@ -13,24 +14,24 @@ export const MobileBottomNav: React.FC = () => {
   ] as const;
 
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-[#090D12] px-3 pt-2 pb-[max(0.75rem,calc(0.5rem+env(safe-area-inset-bottom,0px)))] flex justify-center z-50 border-t border-[#1a2330]/40">
-      <div className="w-full max-w-3xl flex items-center justify-around h-16">
+    <nav className="fixed bottom-0 left-0 right-0 w-full bg-[#090D12] border-t border-[#1a2330]/60 z-50 px-4 py-1.5 flex justify-center">
+      <div className="w-full max-w-3xl flex items-center justify-around h-13 sm:h-14">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeBottomTab === item.id;
           return (
             <button
               key={item.id}
-              onClick={() => setActiveBottomTab(item.id)}
-              className={`flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition-all relative ${
+              onClick={() => {
+                hapticSelection();
+                setActiveBottomTab(item.id);
+              }}
+              className={`flex-1 flex flex-col items-center justify-center py-1 rounded-xl transition-all relative select-none active:scale-95 cursor-pointer ${
                 isActive ? 'text-[#70C7BA]' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              {isActive && (
-                <></>
-              )}
-              <Icon className={`w-5 h-5 mb-1 transition-transform ${isActive ? 'scale-110 stroke-[2.5]' : 'stroke-[1.75]'}`} />
-              <span className={`text-[10px] font-semibold tracking-tight ${isActive ? 'text-[#70C7BA]' : 'text-slate-400'}`}>
+              <Icon className={`w-5 h-5 transition-transform duration-150 ${isActive ? 'scale-105 stroke-[2.5]' : 'stroke-[1.75]'}`} />
+              <span className={`text-[10px] font-semibold tracking-tight mt-0.5 ${isActive ? 'text-[#70C7BA] font-bold' : 'text-slate-400'}`}>
                 {item.label}
               </span>
             </button>

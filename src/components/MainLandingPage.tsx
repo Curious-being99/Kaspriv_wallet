@@ -329,7 +329,9 @@ export const MainLandingPage: React.FC = () => {
 
       {/* Main Container */}
       <main 
-        className={`flex-1 w-full flex flex-col overflow-y-auto no-scrollbar transition-all duration-200 ${activeTab === 'home' ? 'px-5 py-6' : 'sm:px-5 sm:py-6'}`}
+        className={`flex-1 w-full flex flex-col overflow-y-auto no-scrollbar transition-all duration-200 ${
+          activeTab === 'home' ? 'px-5 py-4 justify-center' : 'sm:px-5 sm:py-6'
+        }`}
         style={{ paddingBottom: isKeyboardOpen ? '220px' : undefined }}
       >
         <AnimatePresence mode="wait">
@@ -341,32 +343,33 @@ export const MainLandingPage: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="w-full space-y-6 text-center"
+              className="w-full max-w-sm mx-auto space-y-6 text-center my-auto"
             >
-              <div className="space-y-2 w-full text-left">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#090D12]  text-[10px] text-[#70C7BA] font-bold">
+              <div className="space-y-2.5 w-full text-left">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#131924] border border-[#212B38] text-[10px] text-[#70C7BA] font-bold shadow-sm">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#70C7BA]" />
                   <span>On-Chain Cryptographic</span>
                 </div>
                 <TypewriterHeading />
-                <p className="text-xs font-serif font-bold text-slate-300 leading-relaxed tracking-wide">
-                  Zero-trust and verified signing.
+                <p className="text-xs font-medium text-slate-300 leading-relaxed tracking-wide">
+                  Zero-trust client-side encryption and verified Kaspa signing.
                 </p>
               </div>
 
-              {/* Main Action Stack - Perfectly vertical with zero side overflow */}
+              {/* Main Action Stack - Native Card Grouping */}
               <div className="flex flex-col gap-3 w-full">
                 {/* 1. Create New Wallet */}
                 <button
                   onClick={() => handleTabChange('create')}
-                  className="p-4 rounded-2xl bg-[#090D12]  hover:border-[#70C7BA] transition-all group flex items-center justify-between text-left"
+                  className="p-4 rounded-2xl bg-[#131924] border border-[#212B38] hover:border-[#70C7BA]/50 active:scale-[0.98] transition-all group flex items-center justify-between text-left cursor-pointer shadow-sm"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#70C7BA]/10 text-[#70C7BA] flex items-center justify-center font-bold">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-[#70C7BA]/10 text-[#70C7BA] flex items-center justify-center font-bold">
                       <Plus className="w-5 h-5 stroke-[2.5]" />
                     </div>
                     <div>
                       <h3 className="text-xs font-extrabold text-slate-100">Create Wallet</h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Generate new 24-word seed</p>
                     </div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-[#70C7BA] transition-all" />
@@ -375,14 +378,15 @@ export const MainLandingPage: React.FC = () => {
                 {/* 2. Import Seed Phrase */}
                 <button
                   onClick={() => handleTabChange('import-seed')}
-                  className="p-4 rounded-2xl bg-[#090D12]  hover:border-amber-400 transition-all group flex items-center justify-between text-left"
+                  className="p-4 rounded-2xl bg-[#131924] border border-[#212B38] hover:border-amber-400/50 active:scale-[0.98] transition-all group flex items-center justify-between text-left cursor-pointer shadow-sm"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold">
                       <Key className="w-5 h-5 stroke-[2.5]" />
                     </div>
                     <div>
                       <h3 className="text-xs font-extrabold text-slate-100">Import Seed</h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Restore from 12 or 24 words</p>
                     </div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition-all" />
@@ -391,15 +395,15 @@ export const MainLandingPage: React.FC = () => {
                 {/* 3. Track Real Kaspa Address */}
                 <button
                   onClick={() => handleTabChange('import-address')}
-                  className="p-4 rounded-2xl bg-[#090D12]  hover:border-emerald-400 transition-all group flex items-center justify-between text-left"
+                  className="p-4 rounded-2xl bg-[#131924] border border-[#212B38] hover:border-emerald-400/50 active:scale-[0.98] transition-all group flex items-center justify-between text-left cursor-pointer shadow-sm"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold">
                       <Eye className="w-5 h-5 stroke-[2.5]" />
                     </div>
                     <div>
                       <h3 className="text-xs font-extrabold text-slate-100">Track Address</h3>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Monitor public addresses</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Watch-only public address</p>
                     </div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-all" />
@@ -1231,7 +1235,7 @@ export const MainLandingPage: React.FC = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="w-full bg-[#090D12] pt-3 pb-[max(1.75rem,calc(1.25rem+env(safe-area-inset-bottom,0px)))] px-5"
+            className="w-full px-5 py-3.5 bg-[#090D12] flex-shrink-0"
           >
             <div className="w-full flex items-center justify-between gap-2 text-[10px] text-slate-500 font-semibold">
               <div className="flex items-center gap-1.5">

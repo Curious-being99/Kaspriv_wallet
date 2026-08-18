@@ -59,17 +59,6 @@ export interface CustomNodeConfig {
   isCustom: boolean;
   network: NetworkType;
   isTorOrOnion?: boolean;
-  proxyEnabled?: boolean;
-}
-
-export interface ProxyConfig {
-  enabled: boolean;
-  type: 'tor' | 'socks5' | 'http';
-  host: string;
-  port: number;
-  username?: string;
-  password?: string;
-  onionOnly?: boolean;
 }
 
 export interface KaspaNode {
@@ -86,7 +75,6 @@ export interface KaspaNode {
   isTorOrOnion?: boolean;
   isOnion?: boolean;
   isPrivateSelfHosted?: boolean;
-  proxyRequired?: boolean;
 }
 
 export interface MarketData {

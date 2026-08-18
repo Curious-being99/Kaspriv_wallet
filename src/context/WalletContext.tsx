@@ -8,7 +8,6 @@ import {
   CurrencyType,
   MarketData,
   Contact,
-  ProxyConfig,
 } from '../types';
 import { safeStringify } from '../utils/json';
 import { runDatabaseMigrations } from '../utils/dbMigration';
@@ -34,6 +33,22 @@ import {
   decryptWithPassword, 
   buildAadContext,
 } from '../utils/crypto';
+import {
+  isBiometricsSupported as checkBiometricsSupported,
+  registerBiometricUnlock,
+  authenticateWithBiometrics,
+  BiometricCredentialRecord,
+} from '../utils/biometrics';
+import {
+  isHapticsSupported as checkHapticsSupported,
+  getHapticsEnabled,
+  setHapticsEnabled as setHapticsStorage,
+  triggerHaptic as executeHaptic,
+  hapticSuccess,
+  hapticError,
+  hapticLight,
+  HapticType,
+} from '../utils/haptics';
 import { IsolatedSigner } from '../utils/IsolatedSigner';
 import {
   kasToSompi,
@@ -65,9 +80,6 @@ import {
   estimateTransactionMass,
   calculateDynamicFeeForTransaction,
   pingKaspaNode,
-  setProxyConfig as setGlobalProxyConfig,
-  getProxyConfig as getGlobalProxyConfig,
-  testTorOrProxyConnection,
 } from '../utils/kaspa';
 
 export interface IndexingState {
@@ -104,7 +116,7 @@ interface WalletContextType {
   compoundUtxos: (providedSeedPhrase?: string) => Promise<{ success: boolean; txid?: string; countMerged?: number }>;
   toggleLockUtxo: (outpoint: string) => void;
 
-  // Network, Private Nodes & Tor/SOCKS5 Proxy
+  // Network & Private Nodes
   network: NetworkType;
   setNetwork: (network: NetworkType) => void;
   nodes: KaspaNode[];
@@ -113,10 +125,6 @@ interface WalletContextType {
   addCustomNode: (nodeOrUrl: string | KaspaNode, network?: NetworkType, name?: string, apiUrl?: string, explorerUrl?: string) => void;
   deleteCustomNode: (nodeId: string) => void;
   pingNodes: () => Promise<void>;
-  proxyConfig: ProxyConfig;
-  updateProxyConfig: (config: Partial<ProxyConfig>) => void;
-  toggleProxy: (enabled?: boolean) => void;
-  testProxyConnection: (config?: ProxyConfig) => Promise<{ ok: boolean; message: string; latencyMs?: number }>;
 
   // Currency & Market Data
   currency: CurrencyType;
@@ -147,6 +155,11 @@ interface WalletContextType {
   isDuressEnabled: boolean;
   setDuressPassword: (duressPassword: string | null) => Promise<void>;
   executePanicWipe: () => Promise<void>;
+  isBiometricsSupported: boolean;
+  isBiometricsEnabled: boolean;
+  enableBiometrics: (password: string) => Promise<boolean>;
+  disableBiometrics: () => Promise<void>;
+  unlockWithBiometrics: () => Promise<boolean>;
 
   // UI Modal States
   isSendOpen: boolean;
@@ -183,6 +196,12 @@ interface WalletContextType {
   isScanningChain: boolean;
   isBalanceVisible: boolean;
   setIsBalanceVisible: (visible: boolean) => void;
+
+  // Haptic Feedback
+  isHapticsSupported: boolean;
+  isHapticsEnabled: boolean;
+  setIsHapticsEnabled: (enabled: boolean) => void;
+  triggerHaptic: (type?: HapticType) => boolean;
 
   // Custom Endpoints
   apiUrl: string;
@@ -273,6 +292,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           setIsDuressEnabled(true);
         }
 
+        const bioSupported = await checkBiometricsSupported();
+        setIsBiometricsSupported(bioSupported);
+        const bioRecord = await getSetting<BiometricCredentialRecord>('wallet_biometric_credential');
+        const bioEnabled = await getSetting<boolean>('wallet_biometrics_enabled');
+        if (bioSupported && (bioEnabled || bioRecord?.credentialId) && (passwordEnabled || canary)) {
+          setIsBiometricsEnabled(true);
+        }
+
         const loggedOut = await getSetting<boolean>('kaspa_is_logged_out');
         if (loggedOut !== undefined) setIsLoggedOut(loggedOut);
 
@@ -313,12 +340,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
 
         setNodes(mergedNodes);
-
-        const savedProxyConfig = await getSetting<ProxyConfig>('kaspa_proxy_config');
-        if (savedProxyConfig) {
-          setProxyConfigState(savedProxyConfig);
-          setGlobalProxyConfig(savedProxyConfig);
-        }
 
         const activeLoadedNode = mergedNodes.find(n => n.selected) || mergedNodes[0];
 
@@ -413,6 +434,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // Security & Logout
   const [isPasswordEnabled, setIsPasswordEnabled] = useState<boolean>(false);
   const [isDuressEnabled, setIsDuressEnabled] = useState<boolean>(false);
+  const [isBiometricsSupported, setIsBiometricsSupported] = useState<boolean>(false);
+  const [isBiometricsEnabled, setIsBiometricsEnabled] = useState<boolean>(false);
   const [password, setPasswordState] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [autoLockDuration, setAutoLockDuration] = useState<number>(0);
@@ -533,40 +556,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'history' | 'contacts' | 'settings'>('home');
   const [isBalanceVisible, setIsBalanceVisible] = useState<boolean>(true);
 
-  // Tor / SOCKS5 Proxy Configuration
-  const [proxyConfig, setProxyConfigState] = useState<ProxyConfig>({
-    enabled: false,
-    type: 'tor',
-    host: '127.0.0.1',
-    port: 9050,
-    onionOnly: false,
-  });
+  // Haptic feedback state
+  const [isHapticsSupported] = useState<boolean>(() => checkHapticsSupported());
+  const [isHapticsEnabledState, setIsHapticsEnabledState] = useState<boolean>(() => getHapticsEnabled());
 
-  const updateProxyConfig = (updated: Partial<ProxyConfig>) => {
-    setProxyConfigState((prev) => {
-      const next = { ...prev, ...updated };
-      setGlobalProxyConfig(next);
-      saveSetting('kaspa_proxy_config', next);
-      return next;
-    });
-    showToast(`Proxy settings updated (${updated.type || proxyConfig.type}://${updated.host || proxyConfig.host}:${updated.port || proxyConfig.port})`, 'info');
-  };
+  const setIsHapticsEnabled = React.useCallback((enabled: boolean) => {
+    setIsHapticsEnabledState(enabled);
+    setHapticsStorage(enabled);
+    if (enabled) {
+      executeHaptic('medium');
+    }
+  }, []);
 
-  const toggleProxy = (enabled?: boolean) => {
-    const nextVal = enabled !== undefined ? enabled : !proxyConfig.enabled;
-    updateProxyConfig({ enabled: nextVal });
-    showToast(
-      nextVal
-        ? `Tor / SOCKS5 Proxy enabled (${proxyConfig.host}:${proxyConfig.port})`
-        : 'Direct connection restored (Proxy disabled)',
-      nextVal ? 'success' : 'info'
-    );
-  };
-
-  const testProxyConnection = async (config?: ProxyConfig) => {
-    const target = config || proxyConfig;
-    return await testTorOrProxyConnection(target);
-  };
+  const triggerHaptic = React.useCallback((type?: HapticType) => {
+    return executeHaptic(type);
+  }, []);
 
   // Toast
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -577,6 +581,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       clearTimeout(toastTimeoutRef.current);
     }
     setToast({ message, type });
+
+    // Tactile haptic feedback for notifications
+    if (type === 'success') {
+      hapticSuccess();
+    } else if (type === 'error') {
+      hapticError();
+    } else {
+      hapticLight();
+    }
+
     toastTimeoutRef.current = setTimeout(() => {
       setToast(null);
     }, 4000);
@@ -2057,9 +2071,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setActiveWalletIdState(newW.id);
     setIsLoggedOut(false);
     try {
-      saveSetting('kaspa_is_logged_out', false);
+      await saveWalletToDB(newW);
+      await saveSetting('kaspa_is_logged_out', false);
     } catch (e) {}
     showToast(`Imported Watch-Only Kaspa Address / Kpub`, 'success');
+    setTimeout(() => { refreshBalance(); }, 100);
     return newW;
   };
 
@@ -2652,9 +2668,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } else {
       const activePassword = password;
       setIsPasswordEnabled(false);
+      setIsBiometricsEnabled(false);
       setPasswordState(null);
       await saveSetting('wallet_password_enabled', false);
       await removeSetting('wallet_password_canary');
+      await removeSetting('wallet_biometric_credential');
+      await saveSetting('wallet_biometrics_enabled', false);
       setIsLocked(false);
       
       if (activePassword) {
@@ -2750,6 +2769,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setPasswordState(null);
     setIsPasswordEnabled(false);
     setIsDuressEnabled(false);
+    setIsBiometricsEnabled(false);
 
     // Zero-trace purge of IndexedDB and Web Storage
     try {
@@ -2829,6 +2849,85 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return true;
     }
     return false;
+  };
+
+  const enableBiometrics = async (enteredPassword: string): Promise<boolean> => {
+    const cleanPass = enteredPassword.trim();
+    if (!cleanPass) {
+      showToast('Password is required to enable biometrics', 'error');
+      return false;
+    }
+
+    try {
+      const canaryObj = await getSetting<{ ciphertext: string; salt: string; iv: string }>('wallet_password_canary') || await getSetting<{ ciphertext: string; salt: string; iv: string }>('wallet_pin_canary');
+      if (canaryObj) {
+        const decryptedCanary = await decryptWithPassword(
+          canaryObj.ciphertext,
+          canaryObj.salt,
+          canaryObj.iv,
+          cleanPass,
+          "KASPRIV-WALLET-v1|KASPA-MAINNET|CANARY"
+        );
+        if (decryptedCanary !== "kaspriv-canary") {
+          showToast('Incorrect password', 'error');
+          return false;
+        }
+      }
+
+      const bioRecord = await registerBiometricUnlock(cleanPass);
+      await saveSetting('wallet_biometric_credential', bioRecord);
+      await saveSetting('wallet_biometrics_enabled', true);
+      setIsBiometricsEnabled(true);
+      showToast('Native Biometric Authentication enabled!', 'success');
+      return true;
+    } catch (err: any) {
+      console.error('Biometric registration error:', err);
+      const msg = err.message || 'Failed to register biometrics';
+      showToast(msg, 'error');
+      return false;
+    }
+  };
+
+  const disableBiometrics = async () => {
+    try {
+      await removeSetting('wallet_biometric_credential');
+      await saveSetting('wallet_biometrics_enabled', false);
+      setIsBiometricsEnabled(false);
+      showToast('Biometric authentication disabled', 'info');
+    } catch (err) {
+      console.error('Failed to disable biometrics:', err);
+    }
+  };
+
+  const unlockWithBiometrics = async (): Promise<boolean> => {
+    try {
+      const bioRecord = await getSetting<BiometricCredentialRecord>('wallet_biometric_credential');
+      if (!bioRecord) {
+        showToast('Biometric credentials not found', 'error');
+        return false;
+      }
+
+      const decryptedPassword = await authenticateWithBiometrics(bioRecord);
+      if (decryptedPassword) {
+        return await unlockWallet(decryptedPassword);
+      }
+      return false;
+    } catch (err: any) {
+      const isExpectedCancellation =
+        err?.name === 'NotAllowedError' ||
+        err?.name === 'AbortError' ||
+        err?.name === 'InvalidStateError' ||
+        err?.message?.toLowerCase().includes('cancelled') ||
+        err?.message?.toLowerCase().includes('canceled') ||
+        err?.message?.toLowerCase().includes('timed out') ||
+        err?.message?.toLowerCase().includes('not allowed');
+
+      if (!isExpectedCancellation) {
+        console.warn('Biometric unlock notice:', err?.message || err);
+        showToast(err.message || 'Biometric verification failed', 'error');
+      }
+      return false;
+    }
   };
 
   const generateNewReceiveAddress = React.useCallback(async (): Promise<string | null> => {
@@ -2958,10 +3057,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         addCustomNode,
         deleteCustomNode,
         pingNodes,
-        proxyConfig,
-        updateProxyConfig,
-        toggleProxy,
-        testProxyConnection,
         currency,
         setCurrency,
         marketData,
@@ -2988,6 +3083,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isDuressEnabled,
         setDuressPassword,
         executePanicWipe,
+        isBiometricsSupported,
+        isBiometricsEnabled,
+        enableBiometrics,
+        disableBiometrics,
+        unlockWithBiometrics,
+        isHapticsSupported,
+        isHapticsEnabled: isHapticsEnabledState,
+        setIsHapticsEnabled,
+        triggerHaptic,
         isSendOpen,
         setIsSendOpen,
         isReceiveOpen,

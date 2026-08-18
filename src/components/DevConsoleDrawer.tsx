@@ -347,7 +347,7 @@ export const DevConsoleDrawer: React.FC = () => {
       {/* Floating Toggle Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-20 right-3 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#090D12]  hover:border-[#70C7BA] text-slate-300 hover:text-[#70C7BA] font-mono text-[11px]  transition-all active:scale-95"
+        className="fixed bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] right-3 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#090D12]/90 backdrop-blur-sm border border-[#212B38] hover:border-[#70C7BA] text-slate-300 hover:text-[#70C7BA] font-mono text-[11px] transition-all active:scale-95 shadow-md cursor-pointer"
         title="Open Developer Console"
       >
         <Terminal className="w-3.5 h-3.5 text-[#70C7BA]" />

@@ -49,7 +49,7 @@ const WalletAppContent: React.FC = () => {
       {activeBottomTab === 'home' && <Header />}
 
       {/* Main Viewport Content Area */}
-      <main className={`flex-1 min-h-0 overflow-y-auto no-scrollbar px-2.5 sm:px-4 ${activeBottomTab === 'home' ? 'pt-20' : 'pt-3'} pb-24 space-y-3.5 w-full max-w-3xl mx-auto`}>
+      <main className={`flex-1 min-h-0 overflow-y-auto no-scrollbar px-2.5 sm:px-4 ${activeBottomTab === 'home' ? 'pt-20' : 'pt-3'} pb-18 space-y-3.5 w-full max-w-3xl mx-auto`}>
         {activeBottomTab === 'home' && (
           <>
             {/* Main Balance Card */}

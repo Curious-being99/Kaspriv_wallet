@@ -3,6 +3,7 @@ import Keyboard from 'react-simple-keyboard';
 import 'react-simple-keyboard/build/css/index.css';
 import { motion, AnimatePresence } from 'motion/react';
 import { Clipboard, Trash2, Check, X } from 'lucide-react';
+import { hapticLight, hapticMedium } from '../utils/haptics';
 
 interface KeyboardContextType {
   openKeyboard: (props: {
@@ -109,6 +110,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   const onKeyPress = useCallback((button: string) => {
+    hapticLight();
     if (button === "{shift}") {
       const now = Date.now();
       if (now - lastShiftPress.current < 400) {
@@ -216,7 +218,7 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'tween', duration: 0.2, ease: 'easeOut' }}
-            className="fixed bottom-0 left-0 right-0 z-[9999] bg-[#090D12] border-t border-[#1F2937] pt-1 pb-safe shadow-2xl keyboard-overlay-container"
+            className="fixed bottom-0 left-0 right-0 z-[9999] bg-[#090D12] border-t border-[#1F2937] pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom,0px))] shadow-2xl keyboard-overlay-container"
           >
             <div className="flex items-center justify-between mb-1 px-3">
               <div className="flex items-center gap-1.5">

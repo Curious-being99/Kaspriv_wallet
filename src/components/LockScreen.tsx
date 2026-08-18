@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
-import { Lock, Unlock, ShieldAlert, Eye, EyeOff } from 'lucide-react';
+import { Lock, Unlock, ShieldAlert, Eye, EyeOff, Fingerprint } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { hapticSuccess, hapticError, hapticMedium } from '../utils/haptics';
 
 export const LockScreen: React.FC = () => {
-  const { unlockWallet, setIsLocked, isLocked } = useWallet();
+  const { unlockWallet, setIsLocked, isLocked, isBiometricsEnabled, unlockWithBiometrics } = useWallet();
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
   const [password, setPassword] = useState('');
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const [isAuthenticatingBiometrics, setIsAuthenticatingBiometrics] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -33,6 +35,28 @@ export const LockScreen: React.FC = () => {
 
   if (!isLocked) return null;
 
+  const handleBiometricUnlock = async () => {
+    if (isAuthenticatingBiometrics || isDecrypting) return;
+    hapticMedium();
+    setIsAuthenticatingBiometrics(true);
+    setError(null);
+    try {
+      const success = await unlockWithBiometrics();
+      if (success) {
+        hapticSuccess();
+        setIsLocked(false);
+        closeKeyboard();
+      } else {
+        hapticError();
+      }
+    } catch (err: any) {
+      hapticError();
+      setError(err?.message || 'Biometric authentication failed');
+    } finally {
+      setIsAuthenticatingBiometrics(false);
+    }
+  };
+
   const handleUnlock = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!password) return;
@@ -43,12 +67,15 @@ export const LockScreen: React.FC = () => {
     try {
       const success = await unlockWallet(password);
       if (success) {
+        hapticSuccess();
         setIsLocked(false);
         closeKeyboard();
       } else {
+        hapticError();
         setError('Incorrect password');
       }
     } catch (err) {
+      hapticError();
       setError('An error occurred');
     } finally {
       setIsDecrypting(false);
@@ -58,25 +85,39 @@ export const LockScreen: React.FC = () => {
 
   return (
     <div 
-      className={`fixed inset-0 z-[100] bg-[#05080A] flex flex-col items-center p-6 overflow-hidden transition-all duration-300 ${
-        isKeyboardOpen ? 'justify-start pt-6 sm:pt-12' : 'justify-center'
+      className={`fixed inset-0 z-[100] bg-[#05080A] flex flex-col items-center px-6 overflow-hidden transition-all duration-300 ${
+        isKeyboardOpen ? 'justify-start pt-6 sm:pt-10' : 'justify-center py-6'
       }`}
-      style={{ paddingBottom: isKeyboardOpen ? '220px' : '24px' }}
+      style={{ paddingBottom: isKeyboardOpen ? '230px' : 'max(1.5rem, env(safe-area-inset-bottom, 0px))' }}
     >
       <div className={`w-full max-w-sm flex flex-col items-center transition-all duration-300 ${
-        isKeyboardOpen ? 'gap-3 mb-0' : 'gap-6 mb-24'
+        isKeyboardOpen ? 'gap-3 mb-0' : 'gap-6 mb-0'
       }`}>
         <motion.div
           animate={{ scale: isKeyboardOpen ? 0.8 : 1 }}
           className="relative"
         >
-          <div className={`rounded-3xl bg-gradient-to-br from-[#1C2F42] to-[#0B151E] flex items-center justify-center border border-white/5 shadow-2xl transition-all duration-300 ${
-            isKeyboardOpen ? 'w-12 h-12' : 'w-16 h-16'
-          }`}>
-            <Lock className={`text-[#70C7BA] transition-all duration-300 ${
-              isKeyboardOpen ? 'w-5 h-5' : 'w-7 h-7'
-            }`} />
-          </div>
+          <button
+            type="button"
+            onClick={isBiometricsEnabled ? handleBiometricUnlock : undefined}
+            disabled={!isBiometricsEnabled || isAuthenticatingBiometrics}
+            className={`rounded-3xl bg-gradient-to-br from-[#1C2F42] to-[#0B151E] flex items-center justify-center border border-white/5 shadow-2xl transition-all duration-300 ${
+              isBiometricsEnabled ? 'cursor-pointer hover:border-[#70C7BA]/40 active:scale-95' : 'cursor-default'
+            } ${
+              isKeyboardOpen ? 'w-12 h-12' : 'w-16 h-16'
+            }`}
+            title={isBiometricsEnabled ? 'Tap to unlock with Biometrics' : undefined}
+          >
+            {isBiometricsEnabled ? (
+              <Fingerprint className={`text-[#70C7BA] transition-all duration-300 ${
+                isKeyboardOpen ? 'w-5 h-5' : 'w-7 h-7'
+              }`} />
+            ) : (
+              <Lock className={`text-[#70C7BA] transition-all duration-300 ${
+                isKeyboardOpen ? 'w-5 h-5' : 'w-7 h-7'
+              }`} />
+            )}
+          </button>
         </motion.div>
 
         <div className="text-center space-y-1">
@@ -129,20 +170,52 @@ export const LockScreen: React.FC = () => {
             </AnimatePresence>
           </div>
 
-          <button
-            type="submit"
-            disabled={!password || isDecrypting}
-            className="w-full py-3.5 rounded-xl bg-[#70C7BA] text-[#090D12] font-bold text-sm shadow-lg shadow-[#70C7BA]/10 hover:bg-[#5eb5a8] active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
-          >
-            {isDecrypting ? (
-              <div className="w-5 h-5 border-2 border-[#0B151E]/30 border-t-[#0B151E] rounded-full animate-spin" />
-            ) : (
-              <>
-                <Unlock className="w-4 h-4" />
-                Unlock Wallet
-              </>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={!password || isDecrypting}
+                className="flex-1 py-3.5 rounded-xl bg-[#70C7BA] text-[#090D12] font-bold text-sm shadow-sm hover:bg-[#5eb5a8] active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isDecrypting ? (
+                  <div className="w-5 h-5 border-2 border-[#0B151E]/30 border-t-[#0B151E] rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Unlock className="w-4 h-4" />
+                    <span>Unlock</span>
+                  </>
+                )}
+              </button>
+
+              {isBiometricsEnabled && (
+                <button
+                  type="button"
+                  onClick={handleBiometricUnlock}
+                  disabled={isAuthenticatingBiometrics || isDecrypting}
+                  title="Unlock with Biometrics (Face ID / Fingerprint)"
+                  className="w-13 h-12 rounded-xl bg-[#131924] hover:bg-[#1a2332] border border-[#212B38] hover:border-[#70C7BA]/50 text-slate-300 hover:text-[#70C7BA] flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  {isAuthenticatingBiometrics ? (
+                    <div className="w-4 h-4 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
+                  ) : (
+                    <Fingerprint className="w-5 h-5" />
+                  )}
+                </button>
+              )}
+            </div>
+
+            {isBiometricsEnabled && (
+              <button
+                type="button"
+                onClick={handleBiometricUnlock}
+                disabled={isAuthenticatingBiometrics || isDecrypting}
+                className="w-full flex items-center justify-center gap-1.5 py-1 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <Fingerprint className="w-3.5 h-3.5 text-[#70C7BA]" />
+                <span>Tap to unlock with Biometrics</span>
+              </button>
             )}
-          </button>
+          </div>
         </form>
       </div>
 

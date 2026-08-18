@@ -88,8 +88,7 @@ export const SendModal: React.FC = () => {
 
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
 
-  const [isPasswordDecrypting, setIsPasswordDecrypting] = useState(false);
-  const [isPasswordCorrect, setIsPasswordCorrect] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const handleAddressChange = React.useCallback((val: string) => {
     setToAddress(val);
@@ -105,6 +104,13 @@ export const SendModal: React.FC = () => {
     }
   }, [network]);
 
+  const handlePasswordChange = (val: string) => {
+    setPasswordInput(val);
+    if (passwordError) {
+      setPasswordError(null);
+    }
+  };
+
   // No auto-fill needed from worker; seed is decrypted on-the-fly with password
   useEffect(() => {
     if (isSendOpen && activeWallet) {
@@ -118,77 +124,6 @@ export const SendModal: React.FC = () => {
       }
     }
   }, [isSendOpen, activeWallet, isPasswordEnabled, handleAddressChange]);
-
-  // Handle automatic on-the-fly password verification/decryption
-  const decryptingTaskRef = useRef<number>(0);
-
-  useEffect(() => {
-    let isMounted = true;
-    if (!isSendOpen) {
-      setIsPasswordCorrect(false);
-      decryptingTaskRef.current++;
-      return;
-    }
-
-    if (!isPasswordEnabled) {
-      setIsPasswordCorrect(true);
-      return;
-    }
-
-    if (passwordInput.length < 8) {
-      setIsPasswordCorrect(false);
-      decryptingTaskRef.current++;
-      return;
-    }
-
-    if (password && passwordInput === password) {
-      setIsPasswordCorrect(true);
-      return;
-    }
-
-    const verifyAndDecrypt = async () => {
-      const taskId = ++decryptingTaskRef.current;
-      setIsPasswordDecrypting(true);
-      try {
-        if (activeWallet?.encryptedMnemonic) {
-          const result = await decryptWithPassword(
-            activeWallet.encryptedMnemonic.ciphertext,
-            activeWallet.encryptedMnemonic.salt,
-            activeWallet.encryptedMnemonic.iv,
-            passwordInput,
-            buildAadContext('MNEMONIC', activeWallet.id)
-          );
-          // Only update if this is still the latest task and we are mounted
-          if (isMounted && taskId === decryptingTaskRef.current) {
-            setIsPasswordCorrect(true);
-          }
-        } else {
-          // Fallback if no encrypted fields but password is enabled
-          if (isMounted && taskId === decryptingTaskRef.current) {
-            if (passwordInput === password) {
-              setIsPasswordCorrect(true);
-            } else {
-              setIsPasswordCorrect(false);
-            }
-          }
-        }
-      } catch (err) {
-        if (isMounted && taskId === decryptingTaskRef.current) {
-          setIsPasswordCorrect(false);
-        }
-      } finally {
-        if (isMounted && taskId === decryptingTaskRef.current) {
-          setIsPasswordDecrypting(false);
-        }
-      }
-    };
-
-    const timer = setTimeout(verifyAndDecrypt, 450);
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-    };
-  }, [passwordInput, isPasswordEnabled, isSendOpen, activeWallet?.id, activeWallet?.encryptedMnemonic, password]);
 
   const getMnemonicForSigning = async (): Promise<string | null> => {
     if (activeWallet?.mnemonic) {
@@ -400,13 +335,12 @@ export const SendModal: React.FC = () => {
 
   const handleExecuteSend = async () => {
     closeKeyboard();
+    setPasswordError(null);
+
     if (isPasswordEnabled) {
       if (passwordInput.length < 8) {
-        showToast('Please enter your wallet password', 'error');
-        return;
-      }
-      if (!isPasswordCorrect) {
-        showToast('Incorrect wallet password', 'error');
+        setPasswordError('Please enter your wallet password (min 8 chars)');
+        showToast('Please enter your wallet password (min 8 chars)', 'error');
         return;
       }
     }
@@ -422,7 +356,12 @@ export const SendModal: React.FC = () => {
         passphraseToUse = await getPassphraseForSigning();
 
         if (!mnemonicToUse) {
-          showToast('Wallet key not found. Please unlock or re-import the wallet.', 'error');
+          if (isPasswordEnabled && activeWallet?.encryptedMnemonic) {
+            setPasswordError('Incorrect wallet password. Decryption failed.');
+            showToast('Incorrect wallet password. Decryption failed.', 'error');
+          } else {
+            showToast('Wallet key not found. Please unlock or re-import the wallet.', 'error');
+          }
           setIsSending(false);
           return;
         }
@@ -451,6 +390,9 @@ export const SendModal: React.FC = () => {
           setToAddress('');
           setAmountInput('');
           setNote('');
+          setPasswordInput('');
+          setPassphraseInput('');
+          setPasswordError(null);
         } else {
           showToast(res.error || 'Failed to send Kaspa', 'error');
         }
@@ -463,10 +405,6 @@ export const SendModal: React.FC = () => {
         // --------------------------------------------------------
         mnemonicToUse = null;
         passphraseToUse = undefined;
-        
-        // Clear sensitive UI state
-        setPasswordInput('');
-        setPassphraseInput('');
       }
     }, 50);
   };
@@ -997,10 +935,10 @@ export const SendModal: React.FC = () => {
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter password to sign"
                     value={passwordInput}
-                    onFocus={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
-                    onClick={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
+                    onFocus={() => openKeyboard({ value: passwordInput, onChange: handlePasswordChange })}
+                    onClick={() => openKeyboard({ value: passwordInput, onChange: handlePasswordChange })}
                     inputMode="none" onChange={() => {}}
-                    className="w-full px-3 py-2 rounded-lg bg-[#090D12] focus:border-[#70C7BA] text-sm text-slate-100 outline-none transition-colors pr-10"
+                    className={`w-full px-3 py-2 rounded-lg bg-[#090D12] ${passwordError ? 'border border-rose-500' : 'focus:border-[#70C7BA]'} text-sm text-slate-100 outline-none transition-colors pr-10`}
                   />
                   <button
                     type="button"
@@ -1017,39 +955,39 @@ export const SendModal: React.FC = () => {
             <div
               className={`p-2.5 rounded-xl border text-[10px] font-bold flex flex-col gap-1 ${
                 isPasswordEnabled
-                  ? passwordInput.length < 8
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                    : isPasswordDecrypting
+                  ? isSending
                     ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
-                    : isPasswordCorrect
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                    : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                    : passwordError
+                    ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                    : passwordInput.length < 8
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                   : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
               }`}
             >
               <div className="flex items-center gap-1.5">
                 {isPasswordEnabled ? (
-                  passwordInput.length < 8 ? (
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  ) : isPasswordDecrypting ? (
+                  isSending ? (
                     <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
-                  ) : isPasswordCorrect ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  ) : (
+                  ) : passwordError ? (
                     <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  ) : passwordInput.length < 8 ? (
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   )
                 ) : (
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 )}
                 <span className="leading-snug">
                   {isPasswordEnabled
-                    ? passwordInput.length < 8
-                      ? `Please enter your wallet password (min 8 chars)`
-                      : isPasswordDecrypting
-                      ? 'Decrypting wallet credentials in memory...'
-                      : isPasswordCorrect
-                      ? 'Password verified. Secure keys decrypted in RAM successfully.'
-                      : 'Incorrect password. Decryption failed.'
+                    ? isSending
+                      ? 'Decrypting wallet credentials in RAM & broadcasting...'
+                      : passwordError
+                      ? passwordError
+                      : passwordInput.length < 8
+                      ? 'Please enter your wallet password (min 8 chars)'
+                      : 'Password entered. Click below to sign & broadcast.'
                     : 'Unprotected mode. Secure in-memory keys ready for signing.'}
                 </span>
               </div>
@@ -1060,11 +998,11 @@ export const SendModal: React.FC = () => {
               <button
                 type="button"
                 onClick={handleExecuteSend}
-                disabled={isSending || (isPasswordEnabled && (!isPasswordCorrect || passwordInput.length < 8))}
+                disabled={isSending || (isPasswordEnabled && passwordInput.length < 8)}
                 className={`w-full py-3 px-4 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-2 ${
-                  !isSending && (!isPasswordEnabled || (isPasswordCorrect && passwordInput.length >= 8))
+                  !isSending && (!isPasswordEnabled || passwordInput.length >= 8)
                     ? 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#0B151E] shadow-lg shadow-[#70C7BA]/20 cursor-pointer active:scale-[0.99]'
-                    : 'bg-[#1C2F42]  text-slate-500 cursor-not-allowed shadow-none'
+                    : 'bg-[#1C2F42] text-slate-500 cursor-not-allowed shadow-none'
                 }`}
               >
                 {isSending ? (

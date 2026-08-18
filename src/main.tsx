@@ -3,8 +3,11 @@ import React, { Component, ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import { initGlobalHaptics } from './utils/haptics';
 
 if (typeof window !== 'undefined') {
+  initGlobalHaptics();
+
   (window as any).Buffer = (window as any).Buffer || Buffer;
   (window as any).global = (window as any).global || window;
   (window as any).process = (window as any).process || { env: {} };

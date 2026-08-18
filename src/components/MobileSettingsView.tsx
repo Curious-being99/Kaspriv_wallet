@@ -27,7 +27,9 @@ import {
   Github,
   Flame,
   ShieldAlert,
-  AlertTriangle
+  AlertTriangle,
+  Fingerprint,
+  Vibrate,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -38,6 +40,14 @@ export const MobileSettingsView: React.FC = () => {
     setCurrency,
     isPasswordEnabled,
     isDuressEnabled,
+    isBiometricsSupported,
+    isBiometricsEnabled,
+    enableBiometrics,
+    disableBiometrics,
+    isHapticsSupported,
+    isHapticsEnabled,
+    setIsHapticsEnabled,
+    triggerHaptic,
     password,
     setPassword,
     setDuressPassword,
@@ -52,8 +62,6 @@ export const MobileSettingsView: React.FC = () => {
     apiUrl,
     explorerUrl,
     activeNode,
-    proxyConfig,
-    toggleProxy,
   } = useWallet();
 
   const [passwordForm, setPasswordForm] = useState('');
@@ -76,6 +84,12 @@ export const MobileSettingsView: React.FC = () => {
   const [confirmDuressInput, setConfirmDuressInput] = useState('');
   const [showDuressInput, setShowDuressInput] = useState(false);
 
+  // Biometric authentication state
+  const [bioPasswordInput, setBioPasswordInput] = useState('');
+  const [showBioPassword, setShowBioPassword] = useState(false);
+  const [isBioDropdownOpen, setIsBioDropdownOpen] = useState(false);
+  const [isEnablingBio, setIsEnablingBio] = useState(false);
+
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
 
   // Reset seed state when switching active wallet
@@ -87,8 +101,6 @@ export const MobileSettingsView: React.FC = () => {
   }, [activeWallet?.id]);
 
   useEffect(() => {
-    let isMounted = true;
-
     if (!isPasswordEnabled) {
       // Plaintext available directly if no password is set
       if (activeWallet?.mnemonic) {
@@ -97,65 +109,58 @@ export const MobileSettingsView: React.FC = () => {
       }
       return;
     }
+  }, [isPasswordEnabled, activeWallet]);
 
+  const [seedPasswordError, setSeedPasswordError] = useState<string | null>(null);
+
+  const handleVerifySeedPassword = async () => {
     if (seedPasswordInput.length < 8) {
-      setDecryptedMnemonic(null);
-      setDecryptedPassphrase(null);
+      setSeedPasswordError('Password must be at least 8 characters');
       return;
     }
 
-    const decryptSeed = async () => {
-      setIsDecrypting(true);
-      try {
-        if (activeWallet?.encryptedMnemonic) {
-          const decryptedM = await decryptWithPassword(
-            activeWallet.encryptedMnemonic.ciphertext,
-            activeWallet.encryptedMnemonic.salt,
-            activeWallet.encryptedMnemonic.iv,
+    setSeedPasswordError(null);
+    setIsDecrypting(true);
+
+    try {
+      if (activeWallet?.encryptedMnemonic) {
+        const decryptedM = await decryptWithPassword(
+          activeWallet.encryptedMnemonic.ciphertext,
+          activeWallet.encryptedMnemonic.salt,
+          activeWallet.encryptedMnemonic.iv,
+          seedPasswordInput,
+          buildAadContext('MNEMONIC', activeWallet.id)
+        );
+        
+        let decryptedP = null;
+        if (activeWallet?.encryptedPassphrase) {
+          decryptedP = await decryptWithPassword(
+            activeWallet.encryptedPassphrase.ciphertext,
+            activeWallet.encryptedPassphrase.salt,
+            activeWallet.encryptedPassphrase.iv,
             seedPasswordInput,
-            buildAadContext('MNEMONIC', activeWallet.id)
+            buildAadContext('PASSPHRASE', activeWallet.id)
           );
-          
-          let decryptedP = null;
-          if (activeWallet?.encryptedPassphrase) {
-            decryptedP = await decryptWithPassword(
-              activeWallet.encryptedPassphrase.ciphertext,
-              activeWallet.encryptedPassphrase.salt,
-              activeWallet.encryptedPassphrase.iv,
-              seedPasswordInput,
-              buildAadContext('PASSPHRASE', activeWallet.id)
-            );
-          }
-          
-          if (isMounted) {
-            setDecryptedMnemonic(decryptedM);
-            setDecryptedPassphrase(decryptedP);
-          }
-        } else if (activeWallet?.mnemonic) {
-          // Fallback if not encrypted but password is enabled
-          if (seedPasswordInput === password) {
-            setDecryptedMnemonic(activeWallet.mnemonic);
-            setDecryptedPassphrase(activeWallet.passphrase || null);
-          }
         }
-      } catch (err) {
-        if (isMounted) {
-          setDecryptedMnemonic(null);
-          setDecryptedPassphrase(null);
-        }
-      } finally {
-        if (isMounted) {
-          setIsDecrypting(false);
+        
+        setDecryptedMnemonic(decryptedM);
+        setDecryptedPassphrase(decryptedP);
+      } else if (activeWallet?.mnemonic) {
+        if (seedPasswordInput === password) {
+          setDecryptedMnemonic(activeWallet.mnemonic);
+          setDecryptedPassphrase(activeWallet.passphrase || null);
+        } else {
+          setSeedPasswordError('Incorrect Password. Decryption failed.');
         }
       }
-    };
-
-    const timer = setTimeout(decryptSeed, 150);
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-    };
-  }, [seedPasswordInput, isPasswordEnabled, activeWallet, password]);
+    } catch (err) {
+      setDecryptedMnemonic(null);
+      setDecryptedPassphrase(null);
+      setSeedPasswordError('Incorrect Password. Decryption failed.');
+    } finally {
+      setIsDecrypting(false);
+    }
+  };
 
   const handleCopySeed = () => {
     if (!decryptedMnemonic) return;
@@ -290,35 +295,52 @@ export const MobileSettingsView: React.FC = () => {
                   <p className="text-[10px] text-amber-400">
                     ⚠️ Only reveal your seed in a private place where no cameras or screens can record it.
                   </p>
-                  <div className="relative">
-                    <input
-                      type={showSeedPassword ? "text" : "password"}
-                      placeholder="Enter wallet password"
-                      value={seedPasswordInput}
-                      onFocus={() => openKeyboard({ value: seedPasswordInput, onChange: setSeedPasswordInput })}
-                      onClick={() => openKeyboard({ value: seedPasswordInput, onChange: setSeedPasswordInput })}
-                      inputMode="none" onChange={() => {}}
-                      className="w-full px-3 py-2.5 text-center text-xs rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-slate-100 outline-none transition-colors pr-10 border border-[#212B38]"
-                    />
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <input
+                        type={showSeedPassword ? "text" : "password"}
+                        placeholder="Enter wallet password"
+                        value={seedPasswordInput}
+                        onFocus={() => openKeyboard({ value: seedPasswordInput, onChange: (val) => { setSeedPasswordInput(val); if (seedPasswordError) setSeedPasswordError(null); } })}
+                        onClick={() => openKeyboard({ value: seedPasswordInput, onChange: (val) => { setSeedPasswordInput(val); if (seedPasswordError) setSeedPasswordError(null); } })}
+                        inputMode="none" onChange={() => {}}
+                        className={`w-full px-3 py-2.5 text-center text-xs rounded-xl bg-[#090D12] ${seedPasswordError ? 'border-rose-500' : 'focus:border-[#70C7BA]'} text-slate-100 outline-none transition-colors pr-10 border border-[#212B38]`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSeedPassword(!showSeedPassword)}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                      >
+                        {showSeedPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+
+                    {seedPasswordError && (
+                      <p className="text-[10px] text-rose-400 text-center font-semibold">
+                        {seedPasswordError}
+                      </p>
+                    )}
+
                     <button
                       type="button"
-                      onClick={() => setShowSeedPassword(!showSeedPassword)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                      onClick={handleVerifySeedPassword}
+                      disabled={isDecrypting || seedPasswordInput.length < 8}
+                      className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                        !isDecrypting && seedPasswordInput.length >= 8
+                          ? 'bg-[#70C7BA] text-[#090D12] hover:bg-[#5eead4] shadow-md shadow-[#70C7BA]/20 cursor-pointer active:scale-[0.99]'
+                          : 'bg-[#1A2330] text-slate-500 cursor-not-allowed'
+                      }`}
                     >
-                      {showSeedPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {isDecrypting ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-[#090D12] border-t-transparent rounded-full animate-spin" />
+                          <span>Decrypting Seed...</span>
+                        </>
+                      ) : (
+                        <span>Verify & Unlock Seed</span>
+                      )}
                     </button>
                   </div>
-                  {seedPasswordInput.length >= 8 && !decryptedMnemonic && !isDecrypting && (
-                    <p className="text-[10px] text-rose-400 text-center font-semibold">
-                      Incorrect Password. Decryption failed.
-                    </p>
-                  )}
-                  {isDecrypting && (
-                    <div className="flex items-center justify-center gap-1.5 py-1 text-[10px] text-[#70C7BA]">
-                      <div className="w-3.5 h-3.5 border-2 border-[#70C7BA] border-t-transparent rounded-full animate-spin" />
-                      <span>Decrypting seed phrase...</span>
-                    </div>
-                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -399,7 +421,155 @@ export const MobileSettingsView: React.FC = () => {
         )}
       </div>
 
-      {/* 4. Auto Lock Security */}
+      {/* 4. Native Biometric Authentication (Face ID / Fingerprint) */}
+      <div className="py-3.5 px-4 border-b border-[#212B38]/40 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-[#70C7BA]/10 text-[#70C7BA]">
+              <Fingerprint className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-100">Native Biometric Unlock</h3>
+              <p className="text-[10px] text-slate-400">Touch ID, Face ID & Hardware Enclave</p>
+            </div>
+          </div>
+          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+            isBiometricsEnabled
+              ? 'bg-[#70C7BA]/20 text-[#70C7BA] border border-[#70C7BA]/30'
+              : 'bg-slate-800 text-slate-500'
+          }`}>
+            {isBiometricsEnabled ? 'Active' : isBiometricsSupported ? 'Available' : 'Unsupported'}
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          {!isPasswordEnabled ? (
+            <div className="p-3 rounded-2xl bg-[#090D12] border border-[#212B38]/50 text-[10px] text-amber-400/90 leading-relaxed">
+              ⚠️ Set a wallet master password first to enable biometric hardware encryption.
+            </div>
+          ) : !isBiometricsSupported ? (
+            <div className="p-3 rounded-2xl bg-[#090D12] border border-[#212B38]/50 text-[10px] text-slate-400 leading-relaxed">
+              Platform biometric authenticator (WebAuthn) is not available or supported in this browser context.
+            </div>
+          ) : isBiometricsEnabled ? (
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-[#090D12] border border-[#212B38]/50">
+              <div className="space-y-0.5">
+                <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-[#70C7BA]" />
+                  <span>Biometrics Enabled</span>
+                </div>
+                <div className="text-[9px] text-slate-400">
+                  Unlocking via Face ID / Fingerprint sensor is active
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={disableBiometrics}
+                className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer"
+              >
+                Disable
+              </button>
+            </div>
+          ) : (
+            <div className="border border-[#212B38] rounded-2xl bg-[#090D12] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !isBioDropdownOpen;
+                  setIsBioDropdownOpen(next);
+                  if (next) {
+                    openKeyboard({ value: bioPasswordInput, onChange: (val) => setBioPasswordInput(val) });
+                  } else {
+                    closeKeyboard();
+                  }
+                }}
+                className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-[#0c1421] transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Fingerprint className="w-4 h-4 text-[#70C7BA]" />
+                  <div>
+                    <span className="block text-[11px] font-bold text-slate-200">
+                      Enable Biometric Unlock
+                    </span>
+                    <span className="text-[9px] text-slate-500">
+                      Use Touch ID / Face ID instead of typing your password
+                    </span>
+                  </div>
+                </div>
+                <motion.div
+                  animate={{ rotate: isBioDropdownOpen ? 180 : 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                </motion.div>
+              </button>
+
+              <AnimatePresence initial={false}>
+                {isBioDropdownOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.25, ease: 'easeInOut' }}
+                    className="border-t border-[#212B38]/50 px-4 py-3.5 space-y-3 bg-black/10"
+                  >
+                    <p className="text-[10px] text-slate-300">
+                      Enter your current wallet password to register this device's biometric security chip.
+                    </p>
+                    <div className="relative">
+                      <input
+                        type={showBioPassword ? "text" : "password"}
+                        placeholder="Current Wallet Password"
+                        value={bioPasswordInput}
+                        onFocus={() => openKeyboard({ value: bioPasswordInput, onChange: (val) => setBioPasswordInput(val) })}
+                        onClick={() => openKeyboard({ value: bioPasswordInput, onChange: (val) => setBioPasswordInput(val) })}
+                        onChange={(e) => {
+                          setBioPasswordInput(e.target.value);
+                          openKeyboard({ value: e.target.value, onChange: (val) => setBioPasswordInput(val) });
+                        }}
+                        inputMode="none"
+                        className="w-full px-3 py-2.5 text-xs rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-slate-100 outline-none pr-10 border border-[#212B38]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowBioPassword(!showBioPassword)}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                      >
+                        {showBioPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={bioPasswordInput.length < 8 || isEnablingBio}
+                      onClick={async () => {
+                        setIsEnablingBio(true);
+                        closeKeyboard();
+                        const success = await enableBiometrics(bioPasswordInput);
+                        setIsEnablingBio(false);
+                        if (success) {
+                          setBioPasswordInput('');
+                          setIsBioDropdownOpen(false);
+                        }
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-[#70C7BA] text-[#090D12] text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-[#70C7BA]/20 hover:bg-[#5eb5a8] transition-all disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+                    >
+                      {isEnablingBio ? (
+                        <div className="w-4 h-4 border-2 border-[#090D12]/30 border-t-[#090D12] rounded-full animate-spin" />
+                      ) : (
+                        <Fingerprint className="w-4 h-4" />
+                      )}
+                      <span>{isEnablingBio ? 'Prompting Biometrics...' : 'Register Device Biometrics'}</span>
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 5. Auto Lock Security */}
       <div className="py-3.5 px-4 border-b border-[#212B38]/40 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -463,7 +633,81 @@ export const MobileSettingsView: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
 
+      {/* 6. Haptic Feedback (Vibration) */}
+      <div className="py-3.5 px-4 border-b border-[#212B38]/40 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-[#70C7BA]/10 text-[#70C7BA]">
+              <Vibrate className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-100">Haptic Feedback</h3>
+              <p className="text-[10px] text-slate-400">Tactile button and keyboard vibration</p>
+            </div>
+          </div>
+          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+            isHapticsEnabled
+              ? 'bg-[#70C7BA]/20 text-[#70C7BA] border border-[#70C7BA]/30'
+              : 'bg-slate-800 text-slate-500'
+          }`}>
+            {isHapticsEnabled ? 'Active' : isHapticsSupported ? 'Disabled' : 'Unsupported'}
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-[#090D12] border border-[#212B38]/50">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-200">Button & Key Vibration</span>
+                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+                  isHapticsEnabled ? 'bg-[#70C7BA]/20 text-[#70C7BA]' : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {isHapticsEnabled ? 'On' : 'Off'}
+                </span>
+              </div>
+              <div className="text-[9px] text-slate-500">
+                Provides subtle vibration when tapping buttons, keys, and alerts
+              </div>
+            </div>
+            <button
+              onClick={() => setIsHapticsEnabled(!isHapticsEnabled)}
+              className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer ${
+                isHapticsEnabled ? 'bg-[#70C7BA]' : 'bg-slate-700'
+              }`}
+            >
+              <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${
+                isHapticsEnabled ? 'left-6' : 'left-1'
+              }`} />
+            </button>
+          </div>
+
+          {isHapticsEnabled && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  showToast('Light tap haptic triggered', 'info');
+                }}
+                className="flex-1 py-2 px-3 rounded-xl bg-[#090D12] border border-[#212B38] text-slate-300 hover:text-slate-100 text-[11px] font-bold active:scale-95 transition-all flex items-center justify-center gap-1.5"
+              >
+                <span>Test Light Tap</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('success');
+                  showToast('Success pattern triggered', 'success');
+                }}
+                className="flex-1 py-2 px-3 rounded-xl bg-[#70C7BA]/10 border border-[#70C7BA]/30 text-[#70C7BA] hover:bg-[#70C7BA]/20 text-[11px] font-bold active:scale-95 transition-all flex items-center justify-center gap-1.5"
+              >
+                <span>Test Success Pulse</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 4. Emergency Duress Password / Panic Wipe */}
@@ -695,7 +939,7 @@ export const MobileSettingsView: React.FC = () => {
       </div>
 
       {/* 5. GitHub & Terms */}
-      <div className="py-3.5 px-4 space-y-2 mb-8">
+      <div className="py-3.5 px-4 space-y-2 mb-2">
         <a
           href="https://github.com/Curious-being99/Kaspriv_wallet"
           target="_blank"
