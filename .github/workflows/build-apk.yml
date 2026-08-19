@@ -48,7 +48,6 @@ jobs:
             npx cap add android
           fi
           npx cap sync android
-          keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           node scripts/patch-android-build-gradle.js
           node scripts/copy-android-icons.js
 
