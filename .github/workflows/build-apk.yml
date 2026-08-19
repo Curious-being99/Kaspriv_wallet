@@ -74,7 +74,11 @@ jobs:
       - name: Build Android APK
         run: |
           cd android
-          ./gradlew assembleDebug assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace
+          ./gradlew assembleDebug assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace 2>&1 | tee ../gradle.log || {
+            echo "========== GRADLE ERROR SUMMARY =========="
+            grep -A 20 -B 5 "FAILURE: Build failed with an exception" ../gradle.log || tail -n 80 ../gradle.log
+            exit 1
+          }
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
