@@ -43,7 +43,8 @@ jobs:
 
       - name: Initialize Capacitor Android Project
         run: |
-          if [ ! -d "android" ]; then
+          if [ ! -f "android/gradlew" ]; then
+            rm -rf android
             npx cap add android
           fi
           npx cap sync android
