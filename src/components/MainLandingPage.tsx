@@ -316,7 +316,8 @@ export const MainLandingPage: React.FC = () => {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="w-full px-5 py-4 flex items-center justify-between bg-[#090D12] flex-shrink-0"
+            className="w-full px-5 pb-3 flex items-center justify-between bg-[#090D12] flex-shrink-0"
+            style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 2.5rem)' }}
           >
             <div className="flex items-center cursor-pointer" onClick={() => setActiveTab('home')}>
               <img src="/assets/kas_icon.svg" alt="Kaspriv Logo" className="w-7 h-7 object-contain flex-shrink-0" />

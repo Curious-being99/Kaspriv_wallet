@@ -28,7 +28,10 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="fixed top-0 left-0 w-full px-4 pt-3 pb-1 bg-[#090D12] z-50 flex justify-center">
+    <header 
+      className="fixed top-0 left-0 w-full px-4 pb-2 bg-[#090D12] z-50 flex justify-center"
+      style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 2.25rem)' }}
+    >
       <div className="w-full max-w-3xl flex items-center justify-between relative">
         {/* App Logo & Wallet Dropdown */}
         <div className="relative">
