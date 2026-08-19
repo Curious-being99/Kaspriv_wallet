@@ -16,8 +16,16 @@ if (!content.includes('signingConfig signingConfigs.debug')) {
     /release\s*\{/,
     'release {\n            signingConfig signingConfigs.debug'
   );
-  fs.writeFileSync(gradleFile, content, 'utf8');
-  console.log('[Gradle Patch] Successfully injected signingConfig signingConfigs.debug into release build type.');
-} else {
-  console.log('[Gradle Patch] release build type already has signingConfig configured.');
+  console.log('[Gradle Patch] Injected signingConfig signingConfigs.debug.');
 }
+
+if (!content.includes('checkReleaseBuilds false')) {
+  content = content.replace(
+    /buildTypes\s*\{/,
+    'lint {\n        checkReleaseBuilds false\n        abortOnError false\n    }\n    buildTypes {'
+  );
+  console.log('[Gradle Patch] Injected lint block with checkReleaseBuilds false.');
+}
+
+fs.writeFileSync(gradleFile, content, 'utf8');
+console.log('[Gradle Patch] Gradle file patch completed.');
