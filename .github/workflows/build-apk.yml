@@ -58,9 +58,15 @@ jobs:
 
       - name: Grant Execute Permissions for Gradle
         run: |
-          cd android
+          mkdir -p temp-gradle
+          cd temp-gradle
           gradle wrapper --gradle-version 8.14.3
-          chmod +x gradlew
+          cd ..
+          cp temp-gradle/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/gradle-wrapper.jar
+          cp temp-gradle/gradle/wrapper/gradle-wrapper.properties android/gradle/wrapper/gradle-wrapper.properties
+          cp temp-gradle/gradlew android/gradlew
+          rm -rf temp-gradle
+          chmod +x android/gradlew
 
       - name: Build Android Release APK
         run: |
