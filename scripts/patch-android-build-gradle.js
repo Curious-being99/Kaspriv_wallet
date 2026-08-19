@@ -11,6 +11,14 @@ if (!fs.existsSync(gradleFile)) {
 
 let content = fs.readFileSync(gradleFile, 'utf8');
 
+if (!content.includes('signingConfigs {')) {
+  content = content.replace(
+    /buildTypes\s*\{/,
+    'signingConfigs {\n        debug {\n            storeFile file("${System.getProperty(\'user.home\')}/.android/debug.keystore")\n            storePassword \'android\'\n            keyAlias \'androiddebugkey\'\n            keyPassword \'android\'\n        }\n    }\n    buildTypes {'
+  );
+  console.log('[Gradle Patch] Injected signingConfigs block.');
+}
+
 if (!content.includes('signingConfig signingConfigs.debug')) {
   content = content.replace(
     /release\s*\{/,
