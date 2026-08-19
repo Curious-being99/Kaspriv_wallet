@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -55,7 +57,9 @@ jobs:
           fi
 
       - name: Grant Execute Permissions for Gradle
-        run: chmod +x android/gradlew
+        run: |
+          curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.1.1/gradle/wrapper/gradle-wrapper.jar -o android/gradle/wrapper/gradle-wrapper.jar
+          chmod +x android/gradlew
 
       - name: Build Android Release APK
         run: |
