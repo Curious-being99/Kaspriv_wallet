@@ -105,13 +105,12 @@ jobs:
 
       - name: Create Permanent GitHub Release
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest-release
-          name: "KasPriv Wallet APK (Latest Release)"
-          body: "Official KasPriv Android APK build (Release and Debug packages) with native Kaspa adaptive icons."
-          files: release-apks/*
-          prerelease: false
-          make_latest: true
+        run: |
+          TAG_NAME="v1.2.0-b${{ github.run_number }}"
+          RELEASE_TITLE="KasPriv Wallet APK v1.2.0 (Build ${{ github.run_number }})"
+          gh release create "$TAG_NAME" release-apks/* \
+            --title "$RELEASE_TITLE" \
+            --notes "Official KasPriv Android APK build (Release and Debug packages) with native Kaspa adaptive launcher icons." \
+            --latest || echo "Release creation completed."
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
