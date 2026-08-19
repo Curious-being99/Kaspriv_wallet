@@ -1,7 +1,7 @@
 import React from 'react';
 import { WalletProvider, useWallet } from './context/WalletContext';
 import { KeyboardProvider } from './context/KeyboardContext';
-import { Header } from './components/Header';
+import { Header, HistoryHeader, ContactsHeader, SettingsHeader } from './components/Header';
 import { MainCard } from './components/MainCard';
 import { ExplorerSearch } from './components/ExplorerSearch';
 import { TransactionList } from './components/TransactionList';
@@ -45,16 +45,17 @@ const WalletAppContent: React.FC = () => {
         {isInitializing && <SplashScreen key="app-splash-screen" />}
       </AnimatePresence>
 
-      {/* Mobile Header / App Bar */}
+      {/* Dedicated Fixed Mobile Header / App Bar per Tab */}
       {activeBottomTab === 'home' && <Header />}
+      {activeBottomTab === 'history' && <HistoryHeader />}
+      {activeBottomTab === 'contacts' && <ContactsHeader />}
+      {activeBottomTab === 'settings' && <SettingsHeader />}
 
       {/* Main Viewport Content Area */}
       <main 
-        className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-2.5 sm:px-4 pb-18 space-y-3.5 w-full max-w-3xl mx-auto"
+        className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-2.5 sm:px-4 pb-20 space-y-3.5 w-full max-w-3xl mx-auto"
         style={{
-          paddingTop: activeBottomTab === 'home' 
-            ? 'max(calc(env(safe-area-inset-top, 0px) + 3.75rem), 5rem)' 
-            : 'max(env(safe-area-inset-top, 0px), 1.5rem)'
+          paddingTop: 'max(calc(env(safe-area-inset-top, 0px) + 3.75rem), 4.75rem)'
         }}
       >
         {activeBottomTab === 'home' && (

@@ -151,7 +151,7 @@ export const Header: React.FC = () => {
           {isPasswordEnabled && (
             <button
               onClick={lockWallet}
-              className="p-1.5 text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1.5 text-xs font-medium"
+              className="p-1.5 text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
               title="Lock Wallet"
             >
               <Lock className="w-3.5 h-3.5" />
@@ -163,3 +163,77 @@ export const Header: React.FC = () => {
     </header>
   );
 };
+
+export const HistoryHeader: React.FC = () => {
+  const { transactions, activeWallet } = useWallet();
+
+  return (
+    <header 
+      className="fixed top-0 left-0 w-full px-4 pb-2 bg-[#090D12] z-50 flex justify-center"
+      style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 2.25rem)' }}
+    >
+      <div className="w-full max-w-3xl flex items-center justify-between relative">
+        <div className="flex items-center gap-2 py-1">
+          <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none">
+            Activity & Transactions
+          </h1>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#70C7BA]/10 text-[#70C7BA] font-bold border border-[#70C7BA]/30">
+            {transactions.length}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {activeWallet?.isImportedKpub && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">
+              Watch Only
+            </span>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+};
+
+export const ContactsHeader: React.FC = () => {
+  const { contacts } = useWallet();
+
+  return (
+    <header 
+      className="fixed top-0 left-0 w-full px-4 pb-2 bg-[#090D12] z-50 flex justify-center"
+      style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 2.25rem)' }}
+    >
+      <div className="w-full max-w-3xl flex items-center justify-between relative">
+        <div className="flex items-center gap-2 py-1">
+          <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none">
+            Address Book
+          </h1>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#70C7BA]/10 text-[#70C7BA] font-bold border border-[#70C7BA]/30">
+            {contacts.length}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2" />
+      </div>
+    </header>
+  );
+};
+
+export const SettingsHeader: React.FC = () => {
+  return (
+    <header 
+      className="fixed top-0 left-0 w-full px-4 pb-2 bg-[#090D12] z-50 flex justify-center"
+      style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 2.25rem)' }}
+    >
+      <div className="w-full max-w-3xl flex items-center justify-between relative">
+        <div className="flex items-center gap-2 py-1">
+          <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none">
+            Settings & Security
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-2" />
+      </div>
+    </header>
+  );
+};
+

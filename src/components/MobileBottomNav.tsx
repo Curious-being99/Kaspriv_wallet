@@ -14,7 +14,7 @@ export const MobileBottomNav: React.FC = () => {
   ] as const;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 w-full bg-[#090D12] border-t border-[#1a2330]/60 z-50 px-4 py-1.5 flex justify-center">
+    <nav className="fixed bottom-0 left-0 right-0 w-full bg-[#090D12] z-50 px-4 py-1.5 flex justify-center">
       <div className="w-full max-w-3xl flex items-center justify-around h-13 sm:h-14">
         {navItems.map((item) => {
           const Icon = item.icon;

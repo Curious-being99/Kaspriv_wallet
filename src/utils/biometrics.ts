@@ -1,15 +1,15 @@
+import { BiometricAuth, BiometryType } from '@aparajita/capacitor-biometric-auth';
 import { encryptWithPassword, decryptWithPassword } from './crypto';
 
 export interface BiometricCredentialRecord {
   credentialId: string; // base64url or native credential handle
   mode: 'prf' | 'presence';
-  // Only for mode === 'prf': password encrypted under PRF-derived secret
+  // Only for mode === 'prf': password encrypted under PRF-derived secret or hardware-authorized key
   ciphertext?: string;
   salt?: string;
   iv?: string;
-  prfSalt?: string; // base64url of fixed or random salt used in prf.eval.first
+  prfSalt?: string; // base64url of salt or local key used in encryption
   createdAt: number;
-  // FORBIDDEN: unlockKey or any recoverable KEK in plaintext
 }
 
 export interface BiometricAuthResult {
@@ -28,25 +28,25 @@ export async function isBiometricsSupported(): Promise<boolean> {
   try {
     if (typeof window === 'undefined') return false;
 
-    // 1. Check Native Android / iOS APK Container (Capacitor or Native Bridge)
+    // 1. Check Native Biometric plugin
+    try {
+      const bioInfo = await BiometricAuth.checkBiometry();
+      if (bioInfo?.isAvailable || (bioInfo?.biometryType && bioInfo.biometryType > BiometryType.none) || bioInfo?.deviceIsSecure) {
+        return true;
+      }
+    } catch {}
+
+    // 2. Check Native Android / iOS Container (Capacitor or Native Bridge)
     const isNativeContainer =
       !!(window as any).Capacitor?.isNativePlatform?.() ||
       !!(window as any).AndroidNativeBiometrics ||
       !!(window as any).webkit?.messageHandlers?.biometrics;
 
     if (isNativeContainer) {
-      if ((window as any).Capacitor?.Plugins?.NativeBiometric) {
-        try {
-          const res = await (window as any).Capacitor.Plugins.NativeBiometric.isAvailable();
-          return !!res?.isAvailable;
-        } catch {
-          return true;
-        }
-      }
       return true;
     }
 
-    // 2. Web / PWA Platform Authenticator Check (WebAuthn)
+    // 3. Web / PWA Platform Authenticator Check (WebAuthn)
     if (!window.isSecureContext) return false;
     if (!window.PublicKeyCredential) return false;
     if (typeof window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== 'function') {
@@ -108,25 +108,49 @@ export async function registerBiometricUnlock(
       !!(window as any).Capacitor?.isNativePlatform?.() ||
       !!(window as any).AndroidNativeBiometrics;
 
-    // --- Native APK / Mobile Container Path ---
-    if (isNativeContainer) {
-      if ((window as any).Capacitor?.Plugins?.NativeBiometric) {
-        await (window as any).Capacitor.Plugins.NativeBiometric.verifyIdentity({
-          reason: 'Authorize KasPriv Wallet Biometric Key',
-          title: 'KasPriv Vault Biometrics',
-          subtitle: 'Verify identity to enable native unlock',
-        });
+    // --- 1. Native APK / Mobile Container Path (BiometricAuth BiometricPrompt) ---
+    let nativeSuccess = false;
+    try {
+      await BiometricAuth.authenticate({
+        reason: 'Authorize KasPriv Vault biometric unlock',
+        cancelTitle: 'Cancel',
+        allowDeviceCredential: true,
+        androidTitle: 'KasPriv Vault Biometrics',
+        androidSubtitle: 'Scan fingerprint or face to register',
+      });
+      nativeSuccess = true;
+    } catch (err: any) {
+      if (isNativeContainer) {
+        throw new Error(err?.message || 'Biometric authentication was cancelled or not recognized.');
       }
+    }
+
+    if (nativeSuccess) {
+      const localKeyBytes = new Uint8Array(32);
+      crypto.getRandomValues(localKeyBytes);
+      const localKeyStr = bufferToBase64Url(localKeyBytes);
+
+      const encrypted = await encryptWithPassword(
+        walletPassword,
+        localKeyStr,
+        BIOMETRIC_AAD_CONTEXT
+      );
+
       const randomId = new Uint8Array(16);
       crypto.getRandomValues(randomId);
+
       return {
         credentialId: `native-apk-${bufferToBase64Url(randomId)}`,
-        mode: 'presence',
+        mode: 'prf',
+        ciphertext: encrypted.ciphertext,
+        salt: encrypted.salt,
+        iv: encrypted.iv,
+        prfSalt: localKeyStr,
         createdAt: Date.now(),
       };
     }
 
-    // --- Web / PWA WebAuthn Path ---
+    // --- 2. Web / PWA WebAuthn Path ---
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
 
@@ -258,26 +282,42 @@ export async function authenticateWithBiometrics(
   (window as any).isBiometricPromptActive = true;
   try {
     const isNativeContainer =
-      record.credentialId.startsWith('native-apk-') ||
+      record.credentialId?.startsWith('native-apk-') ||
       !!(window as any).Capacitor?.isNativePlatform?.() ||
       !!(window as any).AndroidNativeBiometrics;
 
-    // --- Native APK / Mobile Container Path ---
+    // --- 1. Native APK / Mobile Container Path ---
     if (isNativeContainer) {
-      if ((window as any).Capacitor?.Plugins?.NativeBiometric) {
-        await (window as any).Capacitor.Plugins.NativeBiometric.verifyIdentity({
-          reason: 'Unlock KasPriv Vault',
-          title: 'KasPriv Biometrics',
-          subtitle: 'Touch sensor or use Face ID to unlock',
-        });
+      await BiometricAuth.authenticate({
+        reason: 'Unlock KasPriv Vault',
+        cancelTitle: 'Cancel',
+        allowDeviceCredential: true,
+        androidTitle: 'KasPriv Vault Biometrics',
+        androidSubtitle: 'Scan fingerprint or face to unlock',
+      });
+
+      if (record.ciphertext && record.salt && record.iv && record.prfSalt) {
+        const decryptedPassword = await decryptWithPassword(
+          record.ciphertext,
+          record.salt,
+          record.iv,
+          record.prfSalt,
+          BIOMETRIC_AAD_CONTEXT
+        );
+        return {
+          success: true,
+          mode: 'prf',
+          decryptedPassword,
+        };
       }
+
       return {
         success: true,
         mode: 'presence',
       };
     }
 
-    // --- Web / PWA WebAuthn Path ---
+    // --- 2. Web / PWA WebAuthn Path ---
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
     const credentialIdBuffer = base64UrlToBuffer(record.credentialId);
@@ -383,3 +423,4 @@ export async function authenticateWithBiometrics(
     }, 500);
   }
 }
+

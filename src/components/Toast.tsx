@@ -12,11 +12,12 @@ export const Toast: React.FC<ToastProps> = ({ toast, onDismiss }) => {
     <AnimatePresence>
       {toast && (
         <motion.div
-          initial={{ opacity: 0, y: -50, scale: 0.9 }}
+          initial={{ opacity: 0, y: -40, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -20, scale: 0.95 }}
+          exit={{ opacity: 0, y: -15, scale: 0.95 }}
           transition={{ type: 'spring', stiffness: 450, damping: 26 }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] pointer-events-auto max-w-[85vw] sm:max-w-sm w-auto flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0F1722]/95 border border-[#213248]/80 shadow-[0_12px_40px_rgba(0,0,0,0.7)] text-slate-200 text-[11px] sm:text-xs font-semibold backdrop-blur-xl ring-1 ring-white/5"
+          style={{ top: 'max(calc(env(safe-area-inset-top, 0px) + 0.5rem), 1rem)' }}
+          className="fixed left-1/2 -translate-x-1/2 z-[99999] pointer-events-auto max-w-[88vw] sm:max-w-sm w-auto flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0F1722]/95 border border-[#213248]/90 shadow-[0_12px_36px_rgba(0,0,0,0.8)] text-slate-200 text-[10px] sm:text-[11px] font-bold backdrop-blur-xl ring-1 ring-white/10"
         >
           {toast.type === 'success' && (
             <div className="p-1 rounded-lg bg-[#70C7BA]/20 text-[#70C7BA] border border-[#70C7BA]/30 flex-shrink-0">
@@ -33,11 +34,11 @@ export const Toast: React.FC<ToastProps> = ({ toast, onDismiss }) => {
               <Info className="w-3.5 h-3.5" />
             </div>
           )}
-          <span className="leading-tight pr-1 select-none">{toast.message}</span>
+          <span className="leading-snug pr-1 select-none">{toast.message}</span>
           {onDismiss && (
             <button
               onClick={onDismiss}
-              className="ml-auto p-0.5 text-slate-400 hover:text-slate-100 transition-colors rounded-md hover:bg-slate-800/50"
+              className="ml-auto p-0.5 text-slate-400 hover:text-slate-100 transition-colors rounded-md hover:bg-slate-800/50 cursor-pointer"
             >
               <X className="w-3 h-3" />
             </button>

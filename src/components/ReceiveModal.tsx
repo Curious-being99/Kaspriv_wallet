@@ -93,7 +93,7 @@ export const ReceiveModal: React.FC = () => {
         className="w-full max-w-lg bg-[#0F151C] rounded-2xl border border-[#212B38] p-6 text-slate-100 relative max-h-[90vh] overflow-y-auto no-scrollbar flex flex-col gap-5"
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-[#212B38]">
+        <div className="sticky top-0 bg-[#0F151C] z-30 pb-3 -mt-6 -mx-6 px-6 pt-6 flex items-center justify-between border-b border-[#212B38]">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-[#70C7BA]/20 border border-[#70C7BA]/40 flex items-center justify-center text-[#70C7BA]">
               <ArrowDownLeft className="w-5 h-5 stroke-[2.5]" />

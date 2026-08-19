@@ -72,6 +72,7 @@ export const PrivacyShield: React.FC = () => {
       <div 
         onClick={() => setIsShieldActive(false)}
         className="fixed inset-0 z-[99999] bg-[#090D12]/98 backdrop-blur-3xl flex flex-col items-center justify-center p-6 text-center select-none cursor-pointer"
+        style={{ paddingTop: 'max(calc(env(safe-area-inset-top, 0px) + 2.5rem), 3.5rem)' }}
       >
         <div className="w-16 h-16 rounded-3xl bg-[#131924] border border-[#212B38] flex items-center justify-center mb-4 shadow-2xl">
           <EyeOff className="w-8 h-8 text-[#70C7BA]" />

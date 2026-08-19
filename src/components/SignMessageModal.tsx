@@ -112,7 +112,7 @@ export const SignMessageModal: React.FC = () => {
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         className="w-full    bg-[#090D12]   p-6 text-slate-100 relative overflow-y-auto no-scrollbar"
       >
-        <div className="flex items-center justify-between pb-4 border-b border-[#273E54]">
+        <div className="sticky top-0 bg-[#090D12] z-30 pb-4 -mt-6 -mx-6 px-6 pt-6 flex items-center justify-between border-b border-[#273E54]">
           <div className="flex items-center gap-2">
             <FileCode className="w-5 h-5 text-[#70C7BA]" />
             <h3 className="text-lg font-bold">Sign Message</h3>

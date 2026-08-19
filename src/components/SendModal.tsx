@@ -420,6 +420,14 @@ export const SendModal: React.FC = () => {
             showToast(err.message || 'Biometric authorization failed', 'error');
           } finally {
             setIsSending(false);
+            // --------------------------------------------------------
+            // ZERO-TRUST MEMORY WIPE: Zeroize sensitive key references
+            // --------------------------------------------------------
+            mnemonicToUse = null;
+            passphraseToUse = undefined;
+            if (authRes) {
+              authRes.decryptedPassword = undefined;
+            }
           }
         }, 100);
 
@@ -517,11 +525,14 @@ export const SendModal: React.FC = () => {
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="w-full max-w-3xl mx-auto h-full flex flex-col p-6 overflow-y-auto no-scrollbar pt-safe pb-safe"
-        style={{ paddingBottom: isKeyboardOpen ? '220px' : '' }}
+        className="w-full max-w-3xl mx-auto h-full flex flex-col px-4 sm:px-6 py-4 overflow-y-auto no-scrollbar"
+        style={{ 
+          paddingTop: 'max(calc(env(safe-area-inset-top, 0px) + 0.75rem), 1.25rem)',
+          paddingBottom: isKeyboardOpen ? '220px' : 'max(1.5rem, env(safe-area-inset-bottom, 0px))' 
+        }}
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between pb-2.5 border-b border-[#212B38]">
+        <div className="pb-3 mb-4 flex items-center justify-between border-b border-[#212B38]">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-[#70C7BA]/20 border border-[#70C7BA]/40 flex items-center justify-center text-[#70C7BA]">
               {successTx ? (

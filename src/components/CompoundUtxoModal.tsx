@@ -50,7 +50,7 @@ export const CompoundUtxoModal: React.FC = () => {
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         className="w-full max-w-md bg-[#090D12] border border-[#212B38] rounded-3xl p-6 text-slate-100 relative overflow-y-auto no-scrollbar shadow-2xl"
       >
-        <div className="flex items-center justify-between pb-4 border-b border-[#212B38]">
+        <div className="sticky top-0 bg-[#090D12] z-30 pb-4 -mt-6 -mx-6 px-6 pt-6 flex items-center justify-between border-b border-[#212B38]">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
               <Zap className="w-5 h-5 fill-current" />

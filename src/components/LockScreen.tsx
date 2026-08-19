@@ -85,10 +85,11 @@ export const LockScreen: React.FC = () => {
 
   return (
     <div 
-      className={`fixed inset-0 z-[100] bg-[#05080A] flex flex-col items-center px-6 overflow-hidden transition-all duration-300 ${
-        isKeyboardOpen ? 'justify-start pt-6 sm:pt-10' : 'justify-center py-6'
-      }`}
-      style={{ paddingBottom: isKeyboardOpen ? '230px' : 'max(1.5rem, env(safe-area-inset-bottom, 0px))' }}
+      className="fixed inset-0 z-[100] bg-[#05080A] flex flex-col items-center px-6 overflow-hidden transition-all duration-300 justify-center"
+      style={{ 
+        paddingTop: 'max(calc(env(safe-area-inset-top, 0px) + 2.5rem), 3.5rem)',
+        paddingBottom: isKeyboardOpen ? '230px' : 'max(2rem, env(safe-area-inset-bottom, 0px))'
+      }}
     >
       <div className={`w-full max-w-sm flex flex-col items-center transition-all duration-300 ${
         isKeyboardOpen ? 'gap-3 mb-0' : 'gap-6 mb-0'

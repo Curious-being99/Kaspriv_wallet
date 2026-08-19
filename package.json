@@ -13,6 +13,7 @@
     "cap:sync": "cap sync && node scripts/patch-android-build-gradle.js && node scripts/copy-android-icons.js"
   },
   "dependencies": {
+    "@aparajita/capacitor-biometric-auth": "^10.0.0",
     "@capacitor/android": "^8.5.0",
     "@capacitor/core": "^8.5.0",
     "@kaspa/core-lib": "1.6.5",
