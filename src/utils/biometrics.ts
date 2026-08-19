@@ -111,59 +111,79 @@ export async function registerBiometricUnlock(
       !!(window as any).Capacitor?.isNativePlatform?.() ||
       !!(window as any).AndroidNativeBiometrics;
 
-    // --- 1. Native APK / Mobile Container Path (BiometricAuth BiometricPrompt) ---
-    let nativeSuccess = false;
-    try {
-      await BiometricAuth.authenticate({
-        reason: 'Authorize KasPriv Vault biometric unlock',
-        cancelTitle: 'Cancel',
-        allowDeviceCredential: false,
-        androidTitle: 'KasPriv Vault Biometrics',
-        androidSubtitle: 'Scan fingerprint or face to register',
-      });
-      nativeSuccess = true;
-    } catch (err: any) {
-      if (isNativeContainer) {
-        throw new Error(err?.message || 'Biometric authentication was cancelled or not recognized.');
+    // --- 1. Native APK / Mobile Container Path (HardwareVault BiometricPrompt) ---
+    if (isNativeContainer) {
+      try {
+        const alias = 'kaspriv_vault_v1';
+        await HardwareVault.createBiometricKey({ alias, requireStrongBox: false });
+
+        const master = new Uint8Array(32);
+        crypto.getRandomValues(master);
+        
+        let binary = '';
+        for (let i = 0; i < master.byteLength; i++) {
+          binary += String.fromCharCode(master[i]);
+        }
+        const secretBase64 = btoa(binary);
+
+        const { wrappedBase64, ivBase64 } = await HardwareVault.wrapSecret({
+          alias,
+          secretBase64,
+        });
+
+        const encrypted = await encryptWithPassword(
+          walletPassword,
+          secretBase64,
+          BIOMETRIC_AAD_CONTEXT
+        );
+
+        master.fill(0);
+
+        return {
+          credentialId: `keystore:${alias}`,
+          mode: 'keystore',
+          ciphertext: encrypted.ciphertext,
+          salt: encrypted.salt,
+          iv: encrypted.iv,
+          createdAt: Date.now(),
+          alias,
+          wrappedMaster: { ciphertext: wrappedBase64, iv: ivBase64 }
+        };
+      } catch (err: any) {
+        console.warn('HardwareVault registration failed, falling back to legacy APK prf:', err);
+        
+        // Fallback to legacy APK prf path (requires standard BiometricAuth)
+        await BiometricAuth.authenticate({
+          reason: 'Authorize KasPriv Vault biometric unlock',
+          cancelTitle: 'Cancel',
+          allowDeviceCredential: false,
+          androidTitle: 'KasPriv Vault Biometrics',
+          androidSubtitle: 'Scan fingerprint or face to register',
+        });
+
+        const localKeyBytes = new Uint8Array(32);
+        crypto.getRandomValues(localKeyBytes);
+        const localKeyStr = bufferToBase64Url(localKeyBytes);
+
+        const encrypted = await encryptWithPassword(
+          walletPassword,
+          localKeyStr,
+          BIOMETRIC_AAD_CONTEXT
+        );
+
+        const randomId = new Uint8Array(16);
+        crypto.getRandomValues(randomId);
+
+        return {
+          credentialId: `native-apk-strongbox-${bufferToBase64Url(randomId)}`,
+          mode: 'prf',
+          ciphertext: encrypted.ciphertext,
+          salt: encrypted.salt,
+          iv: encrypted.iv,
+          prfSalt: localKeyStr,
+          createdAt: Date.now(),
+        };
       }
-    }
-
-    if (nativeSuccess) {
-      const alias = 'kaspriv_vault_v1';
-      await HardwareVault.createBiometricKey({ alias, requireStrongBox: false });
-
-      const master = new Uint8Array(32);
-      crypto.getRandomValues(master);
-      
-      let binary = '';
-      for (let i = 0; i < master.byteLength; i++) {
-        binary += String.fromCharCode(master[i]);
-      }
-      const secretBase64 = btoa(binary);
-
-      const { wrappedBase64, ivBase64 } = await HardwareVault.wrapSecret({
-        alias,
-        secretBase64,
-      });
-
-      const encrypted = await encryptWithPassword(
-        walletPassword,
-        secretBase64,
-        BIOMETRIC_AAD_CONTEXT
-      );
-
-      master.fill(0);
-
-      return {
-        credentialId: `keystore:${alias}`,
-        mode: 'prf',
-        ciphertext: encrypted.ciphertext,
-        salt: encrypted.salt,
-        iv: encrypted.iv,
-        createdAt: Date.now(),
-        alias,
-        wrappedMaster: { ciphertext: wrappedBase64, iv: ivBase64 }
-      };
     }
 
     // --- 2. Web / PWA WebAuthn Path ---
@@ -321,7 +341,7 @@ export async function authenticateWithBiometrics(
 
         return {
           success: true,
-          mode: 'prf',
+          mode: 'keystore' as any,
           decryptedPassword,
         };
       }
