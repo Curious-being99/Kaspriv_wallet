@@ -11,6 +11,9 @@ on:
       - master
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     name: Build Android APK
@@ -80,9 +83,35 @@ jobs:
             exit 1
           }
 
+      - name: Stage APK Files
+        run: |
+          mkdir -p release-apks
+          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk release-apks/KasPriv-Wallet-Release.apk
+          elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk release-apks/KasPriv-Wallet-Release.apk
+          fi
+          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+            cp android/app/build/outputs/apk/debug/app-debug.apk release-apks/KasPriv-Wallet-Debug.apk
+          fi
+          ls -lh release-apks/
+
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: KasPriv-Wallet-APK
-          path: android/app/build/outputs/apk/**/*.apk
+          path: release-apks/*
           if-no-files-found: error
+
+      - name: Create Permanent GitHub Release
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-release
+          name: "KasPriv Wallet APK (Latest Release)"
+          body: "Official KasPriv Android APK build (Release and Debug packages) with native Kaspa adaptive icons."
+          files: release-apks/*
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
