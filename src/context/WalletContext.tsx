@@ -1668,7 +1668,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       } catch (e) {}
 
       if (password) {
-        await setPassword(password);
+        await setPassword(password, [newW]);
         setIsLocked(true);
         setPasswordState(null);
       }
@@ -2061,7 +2061,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       } catch (e) {}
 
       if (password) {
-        await setPassword(password);
+        await setPassword(password, [newW]);
         setIsLocked(true);
         setPasswordState(null);
       }
@@ -2156,7 +2156,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     } catch (e) {}
 
     if (password) {
-      await setPassword(password);
+      await setPassword(password, [newW]);
       setIsLocked(true);
       setPasswordState(null);
     }
@@ -2780,7 +2780,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const setPassword = async (password: string | null) => {
+  const setPassword = async (password: string | null, customWalletsList?: Wallet[]) => {
     if (password) {
       setIsPasswordEnabled(true);
       setPasswordState(password);
@@ -2794,7 +2794,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
       
       try {
-        const updatedWallets = await Promise.all(wallets.map(async (w) => {
+        const walletsToEncrypt = customWalletsList || wallets;
+        const updatedWallets = await Promise.all(walletsToEncrypt.map(async (w) => {
           let encryptedMnemonic = w.encryptedMnemonic;
           let encryptedPassphrase = w.encryptedPassphrase;
           
@@ -2808,13 +2809,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
           }
           
-          return {
+          const updatedW = {
             ...w,
             mnemonic: undefined,
             passphrase: undefined,
             encryptedMnemonic,
             encryptedPassphrase
           };
+
+          try {
+            await saveWalletToDB(updatedW);
+          } catch (e) {
+            console.error('Failed to persist encrypted wallet to DB:', e);
+          }
+
+          return updatedW;
         }));
         setWallets(updatedWallets);
         showToast('Password security enabled & wallets encrypted', 'success');
@@ -2853,21 +2862,36 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             }
           }
           
-          return {
+          const updatedW = {
             ...w,
             mnemonic: decryptedMnemonic,
             passphrase: decryptedPassphrase,
             encryptedMnemonic: undefined,
             encryptedPassphrase: undefined
           };
+
+          try {
+            await saveWalletToDB(updatedW);
+          } catch (e) {
+            console.error('Failed to persist decrypted wallet to DB:', e);
+          }
+
+          return updatedW;
         }));
         setWallets(updatedWallets);
       } else {
-        setWallets(prev => prev.map(w => ({
-          ...w,
-          encryptedPassphrase: undefined,
-          encryptedMnemonic: undefined
-        })));
+        const updatedWallets = wallets.map(w => {
+          const updatedW = {
+            ...w,
+            encryptedPassphrase: undefined,
+            encryptedMnemonic: undefined
+          };
+          try {
+            saveWalletToDB(updatedW);
+          } catch (e) {}
+          return updatedW;
+        });
+        setWallets(updatedWallets);
       }
       showToast('Password security disabled', 'info');
     }
