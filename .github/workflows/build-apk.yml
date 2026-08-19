@@ -54,16 +54,14 @@ jobs:
       - name: Grant Execute Permissions for Gradle
         run: chmod +x android/gradlew
 
-      - name: Build Android Debug and Release APKs
+      - name: Build Android Release APK
         run: |
           cd android
-          ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Upload APK Artifacts
+      - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: KasPriv-Wallet-APKs
-          path: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/release/*.apk
+          name: KasPriv-Wallet-Release-APK
+          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error

@@ -39,7 +39,11 @@ mipmapFolders.forEach((folder) => {
 
   fs.copyFileSync(sourceIcon, launcherPath);
   fs.copyFileSync(sourceIcon, launcherRoundPath);
-  fs.copyFileSync(sourceIcon, launcherForegroundPath);
+
+  // Clean up any conflicting png foreground file to prevent AAPT2 XML duplicate conflicts
+  if (fs.existsSync(launcherForegroundPath)) {
+    fs.unlinkSync(launcherForegroundPath);
+  }
 
   console.log(`[Icon Sync] Copied logo to ${folder}`);
 });
