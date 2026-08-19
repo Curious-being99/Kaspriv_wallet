@@ -72,7 +72,6 @@ jobs:
       - name: Build Android Release APK
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon
           ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload Release APK Artifact
