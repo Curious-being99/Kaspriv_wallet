@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Setup Java JDK 17
@@ -36,7 +36,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Dependencies
-        run: npm ci || npm install --legacy-peer-deps
+        run: npm install --legacy-peer-deps
 
       - name: Build Web Assets
         run: npm run build
