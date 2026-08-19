@@ -84,115 +84,126 @@ export async function signTransactionWithPrivateKeyBytes(
   txData: any,
   privateKeyBytes: Uint8Array | { [path: string]: Uint8Array }
 ): Promise<any> {
-  // Manual signing logic for non-WASM data types
-  const SIGHASH_KEY = new TextEncoder().encode("TransactionSigningHash");
-  const hashBlake2bKeyed = (data: Uint8Array) => blake2b(data, { key: SIGHASH_KEY, dkLen: 32 });
-  const writeUint16LE = (val: number) => { const b = new Uint8Array(2); b[0] = val & 0xff; b[1] = (val >> 8) & 0xff; return b; };
-  const writeUint32LE = (val: number) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, val, true); return b; };
-  const writeUint64LE = (val: bigint) => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(val), true); return b; };
-  const hexToBytes = (hex: string) => {
-    const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
-    const matches = clean.match(/.{1,2}/g);
-    return matches ? new Uint8Array(matches.map(b => parseInt(b, 16))) : new Uint8Array(0);
-  };
+  try {
+    // Manual signing logic for non-WASM data types
+    const SIGHASH_KEY = new TextEncoder().encode("TransactionSigningHash");
+    const hashBlake2bKeyed = (data: Uint8Array) => blake2b(data, { key: SIGHASH_KEY, dkLen: 32 });
+    const writeUint16LE = (val: number) => { const b = new Uint8Array(2); b[0] = val & 0xff; b[1] = (val >> 8) & 0xff; return b; };
+    const writeUint32LE = (val: number) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, val, true); return b; };
+    const writeUint64LE = (val: bigint) => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(val), true); return b; };
+    const hexToBytes = (hex: string) => {
+      const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+      const matches = clean.match(/.{1,2}/g);
+      return matches ? new Uint8Array(matches.map(b => parseInt(b, 16))) : new Uint8Array(0);
+    };
 
-  const outpointParts: Uint8Array[] = [];
-  const seqParts: Uint8Array[] = [];
-  const sigOpCountParts: Uint8Array[] = [];
-  txData.inputs.forEach((input: any) => {
-    outpointParts.push(hexToBytes(input.previousOutpoint.transactionId));
-    outpointParts.push(writeUint32LE(input.previousOutpoint.index));
-    seqParts.push(writeUint64LE(0n));
-    sigOpCountParts.push(new Uint8Array([1]));
-  });
+    const outpointParts: Uint8Array[] = [];
+    const seqParts: Uint8Array[] = [];
+    const sigOpCountParts: Uint8Array[] = [];
+    txData.inputs.forEach((input: any) => {
+      outpointParts.push(hexToBytes(input.previousOutpoint.transactionId));
+      outpointParts.push(writeUint32LE(input.previousOutpoint.index));
+      seqParts.push(writeUint64LE(0n));
+      sigOpCountParts.push(new Uint8Array([1]));
+    });
 
-  const previousOutpointsHash = hashBlake2bKeyed(concatBytes(...outpointParts));
-  const sequencesHash = hashBlake2bKeyed(concatBytes(...seqParts));
-  const sigOpCountsHash = hashBlake2bKeyed(concatBytes(...sigOpCountParts));
+    const previousOutpointsHash = hashBlake2bKeyed(concatBytes(...outpointParts));
+    const sequencesHash = hashBlake2bKeyed(concatBytes(...seqParts));
+    const sigOpCountsHash = hashBlake2bKeyed(concatBytes(...sigOpCountParts));
 
-  const outputParts: Uint8Array[] = [];
-  txData.outputs.forEach((out: any) => {
-    const amt = BigInt(out.amount);
-    const spkBytes = hexToBytes(out.scriptPublicKey.scriptPublicKey);
-    outputParts.push(writeUint64LE(amt));
-    outputParts.push(writeUint16LE(0));
-    outputParts.push(writeUint64LE(BigInt(spkBytes.length)));
-    outputParts.push(spkBytes);
-  });
-  const outputsHash = hashBlake2bKeyed(concatBytes(...outputParts));
-  const payloadHash = new Uint8Array(32);
-  const subnetworkIdBytes = new Uint8Array(20);
+    const outputParts: Uint8Array[] = [];
+    txData.outputs.forEach((out: any) => {
+      const amt = BigInt(out.amount);
+      const spkBytes = hexToBytes(out.scriptPublicKey.scriptPublicKey);
+      outputParts.push(writeUint64LE(amt));
+      outputParts.push(writeUint16LE(0));
+      outputParts.push(writeUint64LE(BigInt(spkBytes.length)));
+      outputParts.push(spkBytes);
+    });
+    const outputsHash = hashBlake2bKeyed(concatBytes(...outputParts));
+    const payloadHash = new Uint8Array(32);
+    const subnetworkIdBytes = new Uint8Array(20);
 
-  txData.inputs.forEach((input: any, i: number) => {
-    const u = input.utxo;
-    const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
-    const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || u.scriptPublicKey || addressToScriptPublicKey(u.address);
-    const scriptForSighashBytes = hexToBytes(spkHex);
+    txData.inputs.forEach((input: any, i: number) => {
+      const u = input.utxo;
+      const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
+      const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || u.scriptPublicKey || addressToScriptPublicKey(u.address);
+      const scriptForSighashBytes = hexToBytes(spkHex);
 
-    let activeKeyBytes: Uint8Array;
+      let activeKeyBytes: Uint8Array;
+      if (privateKeyBytes instanceof Uint8Array) {
+        activeKeyBytes = privateKeyBytes;
+      } else {
+        const path = u.derivationPath || u.path || "m/44'/111111'/0'/0/0";
+        activeKeyBytes = privateKeyBytes[path] || Object.values(privateKeyBytes)[0];
+      }
+
+      const pubKeyBytes = secp.schnorr.getPublicKey(activeKeyBytes);
+      const pubKeyHex = Buffer.from(pubKeyBytes).toString('hex');
+
+      const preimage = concatBytes(
+        writeUint16LE(0),
+        previousOutpointsHash,
+        sequencesHash,
+        sigOpCountsHash,
+        hexToBytes(input.previousOutpoint.transactionId),
+        writeUint32LE(input.previousOutpoint.index),
+        writeUint16LE(0),
+        writeUint64LE(BigInt(scriptForSighashBytes.length)),
+        scriptForSighashBytes,
+        writeUint64LE(amt),
+        writeUint64LE(0n),
+        new Uint8Array([1]),
+        outputsHash,
+        writeUint64LE(BigInt(txData.lockTime || 0)),
+        subnetworkIdBytes,
+        writeUint64LE(0n),
+        payloadHash,
+        new Uint8Array([0x01])
+      );
+
+      const sigHash = hashBlake2bKeyed(preimage);
+      const rawSig = secp.schnorr.sign(sigHash, activeKeyBytes);
+      const sigWithSighash = `${Buffer.from(rawSig).toString('hex')}01`;
+
+      const isInputP2SH = txData.addressType === 'P2SH' || Boolean(u.address && u.address.includes(':p')) || Boolean(spkHex && spkHex.startsWith('aa20'));
+
+      if (isInputP2SH) {
+        const inputRedeemScript = txData.redeemScriptHex || createP2SHRedeemScript(pubKeyHex).redeemScriptHex;
+        const pushRedeemScript = (()=>{
+          const bytes = hexToBytes(inputRedeemScript);
+          if (bytes.length <= 75) return `${bytes.length.toString(16).padStart(2, '0')}${inputRedeemScript}`;
+          if (bytes.length <= 255) return `4c${bytes.length.toString(16).padStart(2, '0')}${inputRedeemScript}`;
+          return `4d${Buffer.from(writeUint16LE(bytes.length)).toString('hex')}${inputRedeemScript}`;
+        })();
+        input.signatureScript = `41${sigWithSighash}${pushRedeemScript}`;
+      } else {
+        input.signatureScript = `41${sigWithSighash}`;
+      }
+    });
+
+    return {
+      version: 0,
+      inputs: txData.inputs.map((inpt: any) => ({
+        previousOutpoint: inpt.previousOutpoint,
+        signatureScript: inpt.signatureScript,
+        sequence: inpt.sequence,
+        sigOpCount: inpt.sigOpCount
+      })),
+      outputs: txData.outputs,
+      lockTime: txData.lockTime,
+      subnetworkId: '0000000000000000000000000000000000000000'
+    };
+  } finally {
+    // Deterministic memory zeroing immediately after transaction signing
     if (privateKeyBytes instanceof Uint8Array) {
-      activeKeyBytes = privateKeyBytes;
-    } else {
-      const path = u.derivationPath || u.path || "m/44'/111111'/0'/0/0";
-      activeKeyBytes = privateKeyBytes[path] || Object.values(privateKeyBytes)[0];
+      wipe(privateKeyBytes);
+    } else if (privateKeyBytes && typeof privateKeyBytes === 'object') {
+      Object.values(privateKeyBytes).forEach(k => {
+        if (k instanceof Uint8Array) wipe(k);
+      });
     }
-
-    const pubKeyBytes = secp.schnorr.getPublicKey(activeKeyBytes);
-    const pubKeyHex = Buffer.from(pubKeyBytes).toString('hex');
-
-    const preimage = concatBytes(
-      writeUint16LE(0),
-      previousOutpointsHash,
-      sequencesHash,
-      sigOpCountsHash,
-      hexToBytes(input.previousOutpoint.transactionId),
-      writeUint32LE(input.previousOutpoint.index),
-      writeUint16LE(0),
-      writeUint64LE(BigInt(scriptForSighashBytes.length)),
-      scriptForSighashBytes,
-      writeUint64LE(amt),
-      writeUint64LE(0n),
-      new Uint8Array([1]),
-      outputsHash,
-      writeUint64LE(BigInt(txData.lockTime || 0)),
-      subnetworkIdBytes,
-      writeUint64LE(0n),
-      payloadHash,
-      new Uint8Array([0x01])
-    );
-
-    const sigHash = hashBlake2bKeyed(preimage);
-    const rawSig = secp.schnorr.sign(sigHash, activeKeyBytes);
-    const sigWithSighash = `${Buffer.from(rawSig).toString('hex')}01`;
-
-    const isInputP2SH = txData.addressType === 'P2SH' || Boolean(u.address && u.address.includes(':p')) || Boolean(spkHex && spkHex.startsWith('aa20'));
-
-    if (isInputP2SH) {
-      const inputRedeemScript = txData.redeemScriptHex || createP2SHRedeemScript(pubKeyHex).redeemScriptHex;
-      const pushRedeemScript = (()=>{
-        const bytes = hexToBytes(inputRedeemScript);
-        if (bytes.length <= 75) return `${bytes.length.toString(16).padStart(2, '0')}${inputRedeemScript}`;
-        if (bytes.length <= 255) return `4c${bytes.length.toString(16).padStart(2, '0')}${inputRedeemScript}`;
-        return `4d${Buffer.from(writeUint16LE(bytes.length)).toString('hex')}${inputRedeemScript}`;
-      })();
-      input.signatureScript = `41${sigWithSighash}${pushRedeemScript}`;
-    } else {
-      input.signatureScript = `41${sigWithSighash}`;
-    }
-  });
-
-  return {
-    version: 0,
-    inputs: txData.inputs.map((inpt: any) => ({
-      previousOutpoint: inpt.previousOutpoint,
-      signatureScript: inpt.signatureScript,
-      sequence: inpt.sequence,
-      sigOpCount: inpt.sigOpCount
-    })),
-    outputs: txData.outputs,
-    lockTime: txData.lockTime,
-    subnetworkId: '0000000000000000000000000000000000000000'
-  };
+  }
 }
 
 export async function createSignedTransaction(

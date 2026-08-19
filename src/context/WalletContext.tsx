@@ -1343,14 +1343,19 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         }
         if (isMounted) {
-          setUtxos(cachedUtxos || []);
+          if (cachedUtxos && cachedUtxos.length > 0) {
+            setUtxos(cachedUtxos);
+          } else {
+            // Keep existing in-memory UTXOs if set during scan/import, preventing wipeout
+            setUtxos((prevUtxos) => (prevUtxos && prevUtxos.length > 0 ? prevUtxos : []));
+          }
         }
       } catch (e) {
         console.warn('Failed to load cached UTXOs from IndexedDB:', e);
-        if (isMounted) setUtxos([]);
       }
       // Trigger fresh network synchronization as long as wallet is unlocked
       if (!isLocked) {
+        isRefreshingBalance.current = false;
         refreshBalance();
       }
     })();
@@ -1654,6 +1659,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         addressBalances: initialBalances,
       };
 
+      setWallets((prev) => [...prev, newW]);
+      setActiveWalletIdState(newW.id);
+      setIsLoggedOut(false);
+      try {
+        await saveWalletToDB(newW);
+        await saveSetting('kaspa_is_logged_out', false);
+      } catch (e) {}
+
       if (password) {
         await setPassword(password);
         setIsLocked(true);
@@ -1664,13 +1677,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await setDuressPassword(duressPassword);
       }
 
-      setWallets((prev) => [...prev, newW]);
-      setActiveWalletIdState(newW.id);
-      setIsLoggedOut(false);
-      try {
-        await saveSetting('kaspa_is_logged_out', false);
-      } catch (e) {}
+      isRefreshingBalance.current = false;
       showToast(`Created wallet '${newW.name}'`, 'success');
+      setTimeout(() => { refreshBalance(); }, 100);
       return newW;
     } finally {
       // Wipe mnemonic string from memory
@@ -2015,16 +2024,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         addressBalances: initialBalances,
       };
 
-      if (password) {
-        await setPassword(password);
-        setIsLocked(true);
-        setPasswordState(null);
-      }
-
-      if (duressPassword) {
-        await setDuressPassword(duressPassword);
-      }
-
       // Parse UTXOs
       const parsedUtxos: UTXO[] = (scanRes.allUtxos || []).map((u: any, idx: number) => ({
         id: `utxo-${u.outpoint?.transactionId || u.transactionId || u.txid || idx}-${u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)}-${idx}`,
@@ -2057,9 +2056,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setActiveWalletIdState(newW.id);
       setIsLoggedOut(false);
       try {
+        await saveWalletToDB(newW);
         await saveSetting('kaspa_is_logged_out', false);
       } catch (e) {}
+
+      if (password) {
+        await setPassword(password);
+        setIsLocked(true);
+        setPasswordState(null);
+      }
+
+      if (duressPassword) {
+        await setDuressPassword(duressPassword);
+      }
       
+      isRefreshingBalance.current = false;
       showToast(`Restored Kaspa Wallet '${newW.name}'! Found ${formatKas(scanRes.totalBalanceSompi)} KAS on chain index.`, 'success');
       setTimeout(() => { refreshBalance(); }, 100);
       return newW;
@@ -2128,7 +2139,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       balanceSompi: finalBal,
       createdAt: Date.now(),
       addressType,
+      discoveredAddresses: [targetAddress],
+      addressPaths: { [targetAddress]: "m/44'/111111'/0'/0/0" },
+      addressBalances: { [targetAddress]: finalBal.toString() },
     };
+
+    setUtxos(initialUtxos);
+    setWallets((prev) => [...prev, newW]);
+    setActiveWalletIdState(newW.id);
+    setIsLoggedOut(false);
+
+    try {
+      await saveUtxosToDB(newW.id, initialUtxos);
+      await saveWalletToDB(newW);
+      await saveSetting('kaspa_is_logged_out', false);
+    } catch (e) {}
 
     if (password) {
       await setPassword(password);
@@ -2139,18 +2164,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       await setDuressPassword(duressPassword);
     }
 
-    setUtxos(initialUtxos);
-    try {
-      await saveUtxosToDB(newW.id, initialUtxos);
-    } catch (e) {}
-
-    setWallets((prev) => [...prev, newW]);
-    setActiveWalletIdState(newW.id);
-    setIsLoggedOut(false);
-    try {
-      await saveWalletToDB(newW);
-      await saveSetting('kaspa_is_logged_out', false);
-    } catch (e) {}
+    isRefreshingBalance.current = false;
     showToast(`Imported Watch-Only Kaspa Address / Kpub`, 'success');
     setTimeout(() => { refreshBalance(); }, 100);
     return newW;

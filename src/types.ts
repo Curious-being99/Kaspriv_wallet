@@ -100,4 +100,14 @@ export interface FeeRates {
   lowSompiPerGram: number;      // Low priority
 }
 
+declare global {
+  interface Window {
+    AndroidSecurityEnvironment?: {
+      isDeviceRooted(): boolean;
+      isFridaOrHooked(): boolean;
+      getCompromisedDetails(): string;
+    };
+  }
+}
+
 

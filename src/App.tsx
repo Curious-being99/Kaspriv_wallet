@@ -24,6 +24,7 @@ import { IndexingOverlay } from './components/IndexingOverlay';
 import { Toast } from './components/Toast';
 import { PrivacyShield } from './components/PrivacyShield';
 import { SplashScreen } from './components/SplashScreen';
+import { SecurityEnvironmentAlert } from './components/SecurityEnvironmentAlert';
 import { ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 
@@ -60,6 +61,9 @@ const WalletAppContent: React.FC = () => {
       >
         {activeBottomTab === 'home' && (
           <>
+            {/* Native Android Security Warnings */}
+            <SecurityEnvironmentAlert />
+
             {/* Main Balance Card */}
             <MainCard />
 

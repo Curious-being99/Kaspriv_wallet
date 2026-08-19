@@ -140,7 +140,7 @@ export async function registerBiometricUnlock(
       crypto.getRandomValues(randomId);
 
       return {
-        credentialId: `native-apk-${bufferToBase64Url(randomId)}`,
+        credentialId: `native-apk-strongbox-${bufferToBase64Url(randomId)}`,
         mode: 'prf',
         ciphertext: encrypted.ciphertext,
         salt: encrypted.salt,

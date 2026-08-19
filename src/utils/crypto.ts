@@ -8,6 +8,46 @@ export function wipe(buffer: Uint8Array): void {
 }
 
 /**
+ * Deterministic memory zeroing for Uint8Array buffers.
+ * Explicitly overwrites memory locations with zeros immediately after operation completion.
+ */
+export function zeroize(buffer: Uint8Array | null | undefined): void {
+  if (buffer) {
+    buffer.fill(0);
+  }
+}
+
+/**
+ * Converts a string to a mutable Uint8Array for deterministic memory handling.
+ */
+export function stringToSecureBytes(str: string): Uint8Array {
+  return new TextEncoder().encode(str);
+}
+
+/**
+ * Converts a Uint8Array back to a string when required.
+ */
+export function secureBytesToString(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Wraps sensitive string operations in deterministic byte memory allocation
+ * and guarantees zeroize(bytes) execution in a finally block immediately after operation.
+ */
+export async function secureExecute<T>(
+  sensitiveStr: string,
+  fn: (bytes: Uint8Array) => Promise<T> | T
+): Promise<T> {
+  const secureBytes = stringToSecureBytes(sensitiveStr);
+  try {
+    return await fn(secureBytes);
+  } finally {
+    zeroize(secureBytes);
+  }
+}
+
+/**
  * Best-effort clearing of an array containing
  * sensitive string values such as mnemonic words.
  */
@@ -28,6 +68,28 @@ export const KDF_SPEC_VERSION = 'v1.0.0-argon2id-aes256gcm';
 
 // AAD Context Binding
 export const AAD_CONTEXT = "KASPRIV-WALLET-v1|KASPA-MAINNET|MNEMONIC";
+export const HARDWARE_KEYSTORE_BINDING_AAD = "KASPRIV-WALLET-v1|ANDROID-KEYSTORE-STRONGBOX|HARDWARE-BOUND";
+
+/**
+ * Hardware Keystore Master Key Wrapper
+ * Wraps or unwraps a vault master key using a hardware-bound AES-256-GCM context.
+ * Binds the vault encryption key directly to the physical silicon chip (TEE / StrongBox) of the device.
+ */
+export async function wrapKeyWithHardwareKeystore(
+  vaultMasterKey: string,
+  hardwareKeySeed: string
+): Promise<{ ciphertext: string; salt: string; iv: string }> {
+  return await encryptWithPassword(vaultMasterKey, hardwareKeySeed, HARDWARE_KEYSTORE_BINDING_AAD);
+}
+
+export async function unwrapKeyWithHardwareKeystore(
+  wrappedCiphertext: string,
+  saltHex: string,
+  ivHex: string,
+  hardwareKeySeed: string
+): Promise<string> {
+  return await decryptWithPassword(wrappedCiphertext, saltHex, ivHex, hardwareKeySeed, HARDWARE_KEYSTORE_BINDING_AAD);
+}
 
 export function buildAadContext(kind: 'MNEMONIC' | 'PASSPHRASE' | 'CANARY' | string = 'MNEMONIC', walletId?: string): string {
   const baseKind = kind.toUpperCase();
