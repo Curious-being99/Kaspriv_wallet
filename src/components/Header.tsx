@@ -34,11 +34,9 @@ export const Header: React.FC = () => {
         <div className="relative">
           <button
             onClick={() => setIsWalletMenuOpen(!isWalletMenuOpen)}
-            className="flex items-center gap-2.5 py-1 text-left transition-all group"
+            className="flex items-center gap-2 py-1 text-left transition-all group"
           >
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0">
-              <img src="/assets/kas_icon.svg" alt="Kaspriv Logo" className="w-6 h-6" />
-            </div>
+            <img src="/assets/kas_icon.svg" alt="Kaspriv Logo" className="w-6 h-6 object-contain flex-shrink-0" />
             <div>
               <div className="flex items-center gap-1.5 min-w-0">
                 <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none max-w-[180px] sm:max-w-xs truncate">

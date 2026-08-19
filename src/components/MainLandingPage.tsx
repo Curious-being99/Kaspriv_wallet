@@ -318,10 +318,8 @@ export const MainLandingPage: React.FC = () => {
             exit={{ opacity: 0, y: -20 }}
             className="w-full px-5 py-4 flex items-center justify-between bg-[#090D12] flex-shrink-0"
           >
-            <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab('home')}>
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0">
-                <img src="/assets/kas_icon.svg" alt="Kaspriv Logo" className="w-6 h-6" />
-              </div>
+            <div className="flex items-center cursor-pointer" onClick={() => setActiveTab('home')}>
+              <img src="/assets/kas_icon.svg" alt="Kaspriv Logo" className="w-7 h-7 object-contain flex-shrink-0" />
             </div>
           </motion.header>
         )}
