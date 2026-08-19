@@ -835,8 +835,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 derivationPath: devPath,
               });
             });
-          } else if (!hasValidUtxoResponse) {
-            // Preserve cached UTXOs for this address if UTXO network call failed
+          } else {
+            // Preserve cached UTXOs for this address if UTXO network call failed/returned null
             const existingAddressUtxos = utxosRef.current.filter(u => u.address === address);
             allMergedUtxos.push(...existingAddressUtxos);
           }
@@ -2284,6 +2284,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               derivationPath: devPath,
             });
           });
+        } else {
+          // Fall back to cached UTXOs for this address if network query failed
+          const cachedAddressUtxos = utxosRef.current.filter(u => u.address === address);
+          cachedAddressUtxos.forEach((cu) => {
+            utxosResponse.push({
+              txid: cu.txid,
+              vout: cu.vout,
+              amount: cu.amountSompi.toString(),
+              address: cu.address,
+              blockDaaScore: cu.blockDaaScore,
+              derivationPath: cu.derivationPath,
+              outpoint: { transactionId: cu.txid, index: cu.vout },
+              utxoEntry: { amount: cu.amountSompi.toString(), blockDaaScore: cu.blockDaaScore },
+            });
+          });
         }
       });
 
@@ -2614,6 +2629,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               ...u,
               address,
               derivationPath: devPath,
+            });
+          });
+        } else {
+          // Fall back to cached UTXOs for this address if network query failed
+          const cachedAddressUtxos = utxosRef.current.filter(u => u.address === address);
+          cachedAddressUtxos.forEach((cu) => {
+            utxosResponse.push({
+              txid: cu.txid,
+              vout: cu.vout,
+              amount: cu.amountSompi.toString(),
+              address: cu.address,
+              blockDaaScore: cu.blockDaaScore,
+              derivationPath: cu.derivationPath,
+              outpoint: { transactionId: cu.txid, index: cu.vout },
+              utxoEntry: { amount: cu.amountSompi.toString(), blockDaaScore: cu.blockDaaScore },
             });
           });
         }
