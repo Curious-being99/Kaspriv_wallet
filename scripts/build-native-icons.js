@@ -15,6 +15,14 @@ const svgWithWhiteBg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512
 </svg>
 `;
 
+const svgPureVector = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <g fill="#70C7BA">
+    <path d="M86 100H166L286 256L166 412H86L206 256L86 100Z" />
+    <path d="M226 100H306L426 256L306 412H226L346 256L226 100Z" />
+  </g>
+</svg>
+`;
+
 function renderSvgToPng(svgStr, targetPath, width = 512, height = 512) {
   const resvg = new Resvg(svgStr, {
     fitTo: { mode: 'width', value: width },
@@ -38,7 +46,7 @@ renderSvgToPng(svgWithWhiteBg, path.join(publicAssetsDir, 'kas_icon_192.png'), 1
 renderSvgToPng(svgWithWhiteBg, path.join(publicAssetsDir, 'kas_icon.png'), 512, 512);
 renderSvgToPng(svgWithWhiteBg, path.join(ROOT_DIR, 'public', 'asset_logo.png'), 512, 512);
 
-console.log('[Icon Sync] Rendered crisp pixel-perfect PWA & Web PNG icons from SVG.');
+console.log('[Native Icon Builder] Rendered crisp pixel-perfect PWA & Web PNG icons from SVG.');
 
 // 2. Synchronize to Android Native Resources
 const resDir = path.join(ROOT_DIR, 'android', 'app', 'src', 'main', 'res');
@@ -126,5 +134,5 @@ if (fs.existsSync(resDir)) {
     renderSvgToPng(svgWithWhiteBg, path.join(targetDir, 'ic_launcher_foreground.png'), size, size);
   });
 
-  console.log('[Icon Sync] Android launcher and install icons updated with exact Kaspa PWA vector logo across all density buckets!');
+  console.log('[Native Icon Builder] Android launcher and install icons updated with exact Kaspa PWA vector logo across all density buckets!');
 }
