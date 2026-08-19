@@ -19,7 +19,7 @@ The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side
 
 ### 2. Memory-Hard Key Derivation (Argon2id)
 * Uses **Argon2id** (via `hash-wasm`), the RFC 9106 recommended memory-hard key derivation function, providing robust resistance against GPU/ASIC hardware brute-force attacks.
-* **Parameters (`v1.0.0-argon2id-aes256gcm`):** 10 iterations, 128 MiB memory cost, 1 parallelism thread, versioned for future upgrades.
+* **Parameters (`v1.0.0-argon2id-aes256gcm`):** 6 iterations, 128 MiB memory cost (131,072 KiB), 1 parallelism thread, versioned for future upgrades.
 
 ### 3. Authenticated Encryption (AES-256-GCM + AAD)
 * **Native Web Crypto:** Encrypts sensitive payloads using browser-native C++ implementations (`window.crypto.subtle`).

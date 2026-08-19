@@ -33,6 +33,7 @@ import {
   decryptWithPassword, 
   buildAadContext,
 } from '../utils/crypto';
+import { App as CapacitorApp } from '@capacitor/app';
 import {
   isBiometricsSupported as checkBiometricsSupported,
   registerBiometricUnlock,
@@ -471,8 +472,17 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart'];
     const handleActivity = () => resetTimer();
 
+    let capAppListener: any = null;
+
     if (lockOnExit) {
       document.addEventListener('visibilitychange', handleVisibilityChange);
+      CapacitorApp.addListener('appStateChange', (state) => {
+        if (!state.isActive) {
+          lockWalletRef.current();
+        }
+      }).then((handle) => {
+        capAppListener = handle;
+      }).catch(() => {});
     }
 
     activityEvents.forEach(event => {
@@ -487,6 +497,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         window.removeEventListener(event, handleActivity);
       });
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (capAppListener) {
+        capAppListener.remove();
+      }
     };
   }, [isPasswordEnabled, autoLockDuration, lockOnExit, isLocked]);
 

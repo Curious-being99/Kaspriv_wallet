@@ -114,7 +114,7 @@ export async function registerBiometricUnlock(
       await BiometricAuth.authenticate({
         reason: 'Authorize KasPriv Vault biometric unlock',
         cancelTitle: 'Cancel',
-        allowDeviceCredential: true,
+        allowDeviceCredential: false,
         androidTitle: 'KasPriv Vault Biometrics',
         androidSubtitle: 'Scan fingerprint or face to register',
       });
@@ -291,7 +291,7 @@ export async function authenticateWithBiometrics(
       await BiometricAuth.authenticate({
         reason: 'Unlock KasPriv Vault',
         cancelTitle: 'Cancel',
-        allowDeviceCredential: true,
+        allowDeviceCredential: false,
         androidTitle: 'KasPriv Vault Biometrics',
         androidSubtitle: 'Scan fingerprint or face to unlock',
       });

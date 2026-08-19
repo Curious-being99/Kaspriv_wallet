@@ -23,6 +23,24 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (project.hasProperty('RELEASE_STORE_FILE') && file(project.property('RELEASE_STORE_FILE')).exists()) {
+                storeFile file(project.property('RELEASE_STORE_FILE'))
+                storePassword project.property('RELEASE_STORE_PASSWORD')
+                keyAlias project.property('RELEASE_KEY_ALIAS')
+                keyPassword project.property('RELEASE_KEY_PASSWORD')
+            } else if (System.getenv('RELEASE_STORE_FILE') != null && file(System.getenv('RELEASE_STORE_FILE')).exists()) {
+                storeFile file(System.getenv('RELEASE_STORE_FILE'))
+                storePassword System.getenv('RELEASE_STORE_PASSWORD')
+                keyAlias System.getenv('RELEASE_KEY_ALIAS')
+                keyPassword System.getenv('RELEASE_KEY_PASSWORD')
+            } else {
+                storeFile file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
     }
     lint {
         checkReleaseBuilds false
@@ -33,7 +51,7 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

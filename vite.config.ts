@@ -2,10 +2,17 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import wasm from 'vite-plugin-wasm';
+import path from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
   base: './',
+  resolve: {
+    alias: {
+      'react': path.resolve(__dirname, './node_modules/react'),
+      'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
+    },
+  },
   plugins: [
     react(),
     wasm(),
@@ -20,7 +27,7 @@ export default defineConfig({
     })
   ],
   optimizeDeps: {
-    include: ['@kaspa/core-lib', 'kaspa-wasm'],
+    include: ['react', 'react-dom', '@kaspa/core-lib', 'kaspa-wasm'],
   },
   assetsInclude: ['**/*.wasm'],
   server: {

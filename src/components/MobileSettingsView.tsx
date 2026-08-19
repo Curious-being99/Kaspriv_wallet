@@ -514,7 +514,10 @@ export const MobileSettingsView: React.FC = () => {
                     className="border-t border-[#212B38]/50 px-4 py-3.5 space-y-3 bg-black/10"
                   >
                     <p className="text-[10px] text-slate-300">
-                      Enter your current wallet password to register this device's biometric security chip.
+                      Enter your current wallet password to register this device's biometric sensor.
+                    </p>
+                    <p className="text-[9px] text-slate-400 leading-relaxed bg-[#090D12] p-2 rounded-lg border border-[#212B38]">
+                      🔒 <strong>Convenience Lock Architecture:</strong> Biometric unlock gates access to your master encryption key stored locally in app storage.
                     </p>
                     <div className="relative">
                       <input
