@@ -58,8 +58,9 @@ jobs:
 
       - name: Grant Execute Permissions for Gradle
         run: |
-          curl -sL https://raw.githubusercontent.com/gradle/gradle/v8.1.1/gradle/wrapper/gradle-wrapper.jar -o android/gradle/wrapper/gradle-wrapper.jar
-          chmod +x android/gradlew
+          cd android
+          gradle wrapper --gradle-version 8.14.3
+          chmod +x gradlew
 
       - name: Build Android Release APK
         run: |
