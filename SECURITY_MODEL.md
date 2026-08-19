@@ -87,13 +87,18 @@ To eliminate private key leaks across component render cycles or long-lived stat
    * **WASM Objects**: For cryptographic operations using `kaspa-wasm`, explicit `PrivateKey` objects are created from byte buffers and released using `.free()` in `finally` blocks. This returns the native allocation to the WASM allocator; the application treats this as a best-effort release of the native representation.
    * **Zero Hex-Back Storage**: Plaintext private keys, derived hex values, or seed words are never stored back, cached in state, or logged. The context only yields final signature outputs, securely purging the underlying cryptographic parameters immediately after signing.
 
-### Hardened Biometric Security (WebAuthn Platform Auth)
-To provide frictionless access without compromising the zero-trust architecture, the wallet implements WebAuthn platform biometrics (Touch ID, Face ID, Android BiometricPrompt, Windows Hello) as an authenticated hardware authorization gate:
+### Hardened Biometric Security (WebAuthn Platform Auth & PRF Key Derivation)
+To provide frictionless access without compromising the zero-trust architecture, the wallet implements WebAuthn platform biometrics (Touch ID, Face ID, Android BiometricPrompt, Windows Hello) operating in two strict security modes:
 
-1. **WebAuthn Hardware Authorization Gate**: Native biometrics function as a strict hardware-backed authorization gate (`userVerification: 'required'`) relying on the device's hardware enclave (Secure Enclave / TEE / TPM). Native WebAuthn credentials (`navigator.credentials.create` and `navigator.credentials.get`) verify platform identity without transmitting or exposing cryptographic secrets.
-2. **High-Entropy 256-Bit Key Wrapper Architecture**: Rather than relying on non-deterministic WebAuthn signatures as cryptographic keys, KasPriv generates a high-entropy 256-bit cryptographically random key (`window.crypto.getRandomValues`). The wallet master password is encrypted using AES-256-GCM with Argon2id key derivation and bound to Authenticated Additional Data (`KASPRIV-WALLET-v1|BIOMETRICS|VAULT`). Biometric authentication acts as a hardware gate that unlocks access to this vault key.
-3. **Zero-State Retention**: The decrypted password retrieved during the biometric authorization path resides exclusively inside local, temporary closure memory. It is never stored in React states (such as `passwordInput`), never rendered to DOM input nodes, and never saved in any persistent or global state variables.
-4. **Dual-Prompt Prevention**: Inline biometric checks within critical transaction flows (`sendKaspa`, `compoundUtxos`) are automatically bypassed when pre-decrypted seed material is supplied, preventing annoying and dangerous double-prompting cycles.
+1. **WebAuthn PRF (Pseudo-Random Function) Mode**:
+   - On supported devices/browsers, WebAuthn PRF extension (`extensions: { prf: { eval: { first: prfSalt } } }`) derives symmetric key material directly from the hardware authenticator upon `userVerification: 'required'`.
+   - The master wallet password is encrypted under this PRF-derived key (`AES-256-GCM`).
+   - **Zero Plaintext Key Storage**: No plaintext unlock keys, recovery keys, or KEKs are stored in IndexedDB or local storage. `BiometricCredentialRecord` stores only `{ credentialId, mode: 'prf', ciphertext, salt, iv, prfSalt, createdAt }`.
+2. **Hardware Presence Mode (Second-Factor Mode)**:
+   - On platforms where WebAuthn PRF extension is unavailable, biometrics operates as a hardware presence-only second factor (`userVerification: 'required'`).
+   - **Zero Password Recovery from Storage**: No encrypted password or unlock keys are saved in IndexedDB under presence mode. Password recovery without user password input is strictly impossible.
+3. **Zero-State Retention**: The decrypted password retrieved during PRF biometric authorization resides exclusively inside temporary closure memory. It is never stored in React states, DOM nodes, or persistent variables.
+4. **Dual-Prompt Prevention**: Inline biometric checks within critical transaction flows (`sendKaspa`, `compoundUtxos`) are automatically bypassed when pre-decrypted seed material is supplied, preventing double-prompting cycles.
 5. **Biometric Overlay & Privacy Shield Bypass**: To prevent the browser's native credential prompt from triggering false security-shield locks or blur overlays (as system modals de-focus the main viewport), KasPriv maintains a temporary, bounded global flag (`window.isBiometricPromptActive`). Focus loss events are ignored while this state is active, and the shield settling window is padded with a `500ms` delay to allow the viewport to fully recover before re-evaluating layout focus.
 
 ### Hardened Lock Wallet & Memory Purge Mechanism

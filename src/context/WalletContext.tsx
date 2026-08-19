@@ -3020,7 +3020,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       await saveSetting('wallet_biometric_credential', bioRecord);
       await saveSetting('wallet_biometrics_enabled', true);
       setIsBiometricsEnabled(true);
-      showToast('Native Biometric Authentication enabled!', 'success');
+      if (bioRecord.mode === 'prf') {
+        showToast('Native Biometric Authentication enabled (Hardware PRF Mode)!', 'success');
+      } else {
+        showToast('Native Biometric Authentication enabled (Hardware Presence Mode)!', 'success');
+      }
       return true;
     } catch (err: any) {
       console.error('Biometric registration error:', err);
@@ -3049,9 +3053,28 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return false;
       }
 
-      const decryptedPassword = await authenticateWithBiometrics(bioRecord);
-      if (decryptedPassword) {
-        return await unlockWallet(decryptedPassword);
+      const authRes = await authenticateWithBiometrics(bioRecord);
+      if (!authRes.success) {
+        return false;
+      }
+
+      if (authRes.decryptedPassword) {
+        const ok = await unlockWallet(authRes.decryptedPassword);
+        if (ok && authRes.isLegacyRecord) {
+          try {
+            const upgradedRecord = await registerBiometricUnlock(authRes.decryptedPassword);
+            await saveSetting('wallet_biometric_credential', upgradedRecord);
+          } catch {
+            // Legacy migration retry deferred
+          }
+        }
+        return ok;
+      } else if (authRes.mode === 'presence') {
+        if (password) {
+          return await unlockWallet(password);
+        }
+        showToast('Biometrics verified (Presence mode). Please enter password to complete unlock.', 'info');
+        return false;
       }
       return false;
     } catch (err: any) {
@@ -3081,11 +3104,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (!bioRecord) {
         return { success: false, error: 'Biometric credentials not configured on this device.' };
       }
-      const decryptedPassword = await authenticateWithBiometrics(bioRecord);
-      if (!decryptedPassword) {
-        return { success: false, error: 'Biometric authentication cancelled or failed.' };
+      const authRes = await authenticateWithBiometrics(bioRecord);
+      if (!authRes.success) {
+        return { success: false, error: authRes.error || 'Biometric authentication failed or was cancelled.' };
       }
-      return { success: true, decryptedPassword };
+
+      if (authRes.decryptedPassword) {
+        return { success: true, decryptedPassword: authRes.decryptedPassword };
+      }
+
+      return { success: true, decryptedPassword: password || undefined };
     } catch (err: any) {
       const isExpectedCancellation =
         err?.name === 'NotAllowedError' ||
