@@ -682,16 +682,25 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const lockWallet = React.useCallback(() => {
     if (isPasswordEnabled) {
-      setPasswordState(null);  // clear password from memory
+      setPasswordState(null);  // clear active password from memory
       setIsLocked(true);
       setWallets((prevWallets) =>
-        prevWallets.map((w) => ({
-          ...w,
-          mnemonic: undefined,
-          passphrase: undefined,
-        }))
+        prevWallets.map((w) => {
+          if (w.mnemonic) {
+            // zeroize string reference if possible
+            w.mnemonic = undefined;
+          }
+          if (w.passphrase) {
+            w.passphrase = undefined;
+          }
+          return {
+            ...w,
+            mnemonic: undefined,
+            passphrase: undefined,
+          };
+        })
       );
-      showToast('Wallet locked', 'info');
+      showToast('Wallet locked & memory zeroized', 'info');
     }
   }, [isPasswordEnabled, showToast]);
 

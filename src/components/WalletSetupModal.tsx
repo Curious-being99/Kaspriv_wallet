@@ -6,6 +6,7 @@ import { checkPassphraseStrength } from '../utils/strength';
 import { X, Plus, Key, Eye, EyeOff, Copy, Check, ShieldCheck, Lock, ChevronLeft, ArrowRight, ChevronDown, Flame, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { wipeStringArray } from '../utils/crypto';
+import { hapticSelection, hapticMedium } from '../utils/haptics';
 
 export const WalletSetupModal: React.FC = () => {
   const {
@@ -80,6 +81,7 @@ export const WalletSetupModal: React.FC = () => {
   };
 
   const handleFinishCreate = async () => {
+    hapticSelection();
     if (!savedBackup) {
       showToast('Please confirm you have saved your 24-word seed phrase!', 'error');
       return;
@@ -90,6 +92,7 @@ export const WalletSetupModal: React.FC = () => {
   };
 
   const handleFinishImportSeed = async () => {
+    hapticSelection();
     const cleaned = cleanMnemonic(importWordsText);
     const words = cleaned ? cleaned.split(' ') : [];
 
@@ -103,6 +106,7 @@ export const WalletSetupModal: React.FC = () => {
   };
 
   const handleFinishImportKpub = async () => {
+    hapticSelection();
     if (!kpubInput.trim()) {
       showToast('Please enter a valid Kaspa Extended Public Key (kpub)', 'error');
       return;
@@ -113,6 +117,7 @@ export const WalletSetupModal: React.FC = () => {
   };
 
   const handleFinishImportAddress = async () => {
+    hapticSelection();
     const addr = addressInput.trim();
     if (!addr.includes(':')) {
       showToast('Please enter a valid Kaspa address with network prefix (e.g. kaspa:)', 'error');

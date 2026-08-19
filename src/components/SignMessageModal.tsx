@@ -94,6 +94,8 @@ export const SignMessageModal: React.FC = () => {
       // --------------------------------------------------------
       seedToUse = null;
       passphraseToUse = null;
+      activePassword = '';
+      setPasswordInput('');
     }
   };
 

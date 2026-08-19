@@ -682,31 +682,6 @@ export const MobileSettingsView: React.FC = () => {
               }`} />
             </button>
           </div>
-
-          {isHapticsEnabled && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  showToast('Light tap haptic triggered', 'info');
-                }}
-                className="flex-1 py-2 px-3 rounded-xl bg-[#090D12] border border-[#212B38] text-slate-300 hover:text-slate-100 text-[11px] font-bold active:scale-95 transition-all flex items-center justify-center gap-1.5"
-              >
-                <span>Test Light Tap</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('success');
-                  showToast('Success pattern triggered', 'success');
-                }}
-                className="flex-1 py-2 px-3 rounded-xl bg-[#70C7BA]/10 border border-[#70C7BA]/30 text-[#70C7BA] hover:bg-[#70C7BA]/20 text-[11px] font-bold active:scale-95 transition-all flex items-center justify-center gap-1.5"
-              >
-                <span>Test Success Pulse</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
@@ -897,7 +872,7 @@ export const MobileSettingsView: React.FC = () => {
       <div className="py-3.5 px-4 border-b border-[#212B38]/40 space-y-2">
         <button
           onClick={() => setIsSignMessageOpen(true)}
-          className="w-full flex items-center justify-between p-3 rounded-2xl bg-[#090D12]  hover:border-[#70C7BA] text-xs text-slate-200 transition-all group"
+          className="w-full flex items-center justify-between p-3 rounded-2xl bg-[#090D12] hover:border-[#70C7BA] text-xs text-slate-200 transition-all group"
         >
           <div className="flex items-center gap-3">
             <FileCode className="w-4 h-4 text-[#70C7BA]" />
@@ -905,29 +880,6 @@ export const MobileSettingsView: React.FC = () => {
           </div>
           <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-200" />
         </button>
-
-        <button
-          onClick={() => setShowSecurityVerifier(!showSecurityVerifier)}
-          className="w-full flex items-center justify-between p-3 rounded-2xl bg-[#090D12] hover:border-[#70C7BA] text-xs text-slate-200 transition-all group"
-        >
-          <div className="flex items-center gap-3">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 group-hover:animate-pulse" />
-            <div className="text-left">
-              <span className="font-semibold block text-emerald-300">Zero-Trust & Wipe Verifier</span>
-            </div>
-          </div>
-          {showSecurityVerifier ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-        </button>
-
-        {showSecurityVerifier && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="pt-1.5 pb-2 overflow-hidden"
-          >
-            <SecurityVerifier />
-          </motion.div>
-        )}
 
         <button
           onClick={openLogoutConfirm}
