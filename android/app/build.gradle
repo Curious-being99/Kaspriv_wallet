@@ -16,10 +16,6 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    lint {
-        checkReleaseBuilds false
-        abortOnError false
-    }
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -27,6 +23,10 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+    }
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
     }
     buildTypes {
         release {
