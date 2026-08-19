@@ -9,8 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "postinstall": "node patch-kaspa-wasm.js",
-    "cap:build": "vite build && cap sync && node scripts/copy-android-icons.js",
-    "cap:sync": "cap sync && node scripts/copy-android-icons.js"
+    "cap:build": "vite build && cap sync && node scripts/patch-android-build-gradle.js && node scripts/copy-android-icons.js",
+    "cap:sync": "cap sync && node scripts/patch-android-build-gradle.js && node scripts/copy-android-icons.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",

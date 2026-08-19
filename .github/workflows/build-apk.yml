@@ -48,6 +48,7 @@ jobs:
             npx cap add android
           fi
           npx cap sync android
+          node scripts/patch-android-build-gradle.js
           node scripts/copy-android-icons.js
 
       - name: Grant Execute Permissions for Gradle
