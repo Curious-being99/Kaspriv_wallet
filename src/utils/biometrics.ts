@@ -341,7 +341,7 @@ export async function authenticateWithBiometrics(
 
         return {
           success: true,
-          mode: 'keystore' as any,
+          mode: 'keystore',
           decryptedPassword,
         };
       }
