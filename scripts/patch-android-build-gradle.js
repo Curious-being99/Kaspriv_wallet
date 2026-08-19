@@ -9,15 +9,15 @@ const variablesFile = path.join(ROOT_DIR, 'android', 'variables.gradle');
 if (fs.existsSync(variablesFile)) {
   let varContent = fs.readFileSync(variablesFile, 'utf8');
   if (varContent.includes('compileSdkVersion = 36') || varContent.includes('targetSdkVersion = 36')) {
-    varContent = varContent.replace(/compileSdkVersion = 36/g, 'compileSdkVersion = 34');
-    varContent = varContent.replace(/targetSdkVersion = 36/g, 'targetSdkVersion = 34');
-    varContent = varContent.replace(/androidxCoreVersion = '1.17.0'/g, "androidxCoreVersion = '1.12.0'");
-    varContent = varContent.replace(/androidxActivityVersion = '1.11.0'/g, "androidxActivityVersion = '1.8.2'");
-    varContent = varContent.replace(/androidxFragmentVersion = '1.8.9'/g, "androidxFragmentVersion = '1.6.2'");
-    varContent = varContent.replace(/androidxAppCompatVersion = '1.7.1'/g, "androidxAppCompatVersion = '1.6.1'");
-    varContent = varContent.replace(/androidxWebkitVersion = '1.14.0'/g, "androidxWebkitVersion = '1.11.0'");
+    varContent = varContent.replace(/compileSdkVersion = 36/g, 'compileSdkVersion = 35');
+    varContent = varContent.replace(/targetSdkVersion = 36/g, 'targetSdkVersion = 35');
+    varContent = varContent.replace(/androidxCoreVersion = '1.17.0'/g, "androidxCoreVersion = '1.13.0'");
+    varContent = varContent.replace(/androidxActivityVersion = '1.11.0'/g, "androidxActivityVersion = '1.9.0'");
+    varContent = varContent.replace(/androidxFragmentVersion = '1.8.9'/g, "androidxFragmentVersion = '1.7.0'");
+    varContent = varContent.replace(/androidxAppCompatVersion = '1.7.1'/g, "androidxAppCompatVersion = '1.7.0'");
+    varContent = varContent.replace(/androidxWebkitVersion = '1.14.0'/g, "androidxWebkitVersion = '1.12.0'");
     fs.writeFileSync(variablesFile, varContent, 'utf8');
-    console.log('[Gradle Patch] Patched variables.gradle to SDK 34 and compatible AndroidX versions.');
+    console.log('[Gradle Patch] Patched variables.gradle to SDK 35 and compatible AndroidX versions.');
   }
 } else {
   console.log('[Gradle Patch] android/variables.gradle not found.');
