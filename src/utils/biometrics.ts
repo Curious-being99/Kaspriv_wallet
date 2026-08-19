@@ -4,7 +4,7 @@ import { HardwareVault } from '../plugins/HardwareVault';
 
 export interface BiometricCredentialRecord {
   credentialId: string; // base64url or native credential handle
-  mode: 'prf' | 'presence';
+  mode: 'prf' | 'presence' | 'keystore';
   // Only for mode === 'prf': password encrypted under PRF-derived secret or hardware-authorized key
   ciphertext?: string;
   salt?: string;
@@ -17,7 +17,7 @@ export interface BiometricCredentialRecord {
 
 export interface BiometricAuthResult {
   success: boolean;
-  mode: 'prf' | 'presence';
+  mode: 'prf' | 'presence' | 'keystore';
   decryptedPassword?: string;
   error?: string;
   isLegacyRecord?: boolean;
@@ -175,7 +175,7 @@ export async function registerBiometricUnlock(
         crypto.getRandomValues(randomId);
 
         return {
-          credentialId: `native-apk-strongbox-${bufferToBase64Url(randomId)}`,
+          credentialId: `native-apk-fallback-${bufferToBase64Url(randomId)}`,
           mode: 'prf',
           ciphertext: encrypted.ciphertext,
           salt: encrypted.salt,
