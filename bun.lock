@@ -18,6 +18,7 @@
         "clsx": "2.1.1",
         "express": "5.2.1",
         "hash-wasm": "4.12.0",
+        "html5-qrcode": "^2.3.8",
         "http-proxy-agent": "9.1.0",
         "idb": "8.0.3",
         "kaspa-wasm": "0.13.0",
@@ -69,6 +70,8 @@
     "elliptic": "^6.6.1",
     "esbuild": "^0.25.0",
     "nanoid": "^3.3.18",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "uuid": "^11.1.1",
   },
   "packages": {
@@ -777,6 +780,8 @@
     "hasown": ["hasown@2.0.4", "", { "dependencies": { "function-bind": "^1.1.2" } }, ""],
 
     "hmac-drbg": ["hmac-drbg@1.0.1", "", { "dependencies": { "hash.js": "^1.0.3", "minimalistic-assert": "^1.0.0", "minimalistic-crypto-utils": "^1.0.1" } }, "sha512-Tti3gMqLdZfhOQY1Mzf/AanLiqh1WTiJgEj26ZuYQ9fbkLomzGchCws4FyrSd4VkpBfiNhaE1On+lOz894jvXg=="],
+
+    "html5-qrcode": ["html5-qrcode@2.3.8", "", {}, "sha512-jsr4vafJhwoLVEDW3n1KvPnCCXWaQfRng0/EEYk1vNcQGcG/htAdhJX0be8YyqMoSz7+hZvOZSTAepsabiuhiQ=="],
 
     "http-errors": ["http-errors@2.0.1", "", { "dependencies": { "depd": "~2.0.0", "inherits": "~2.0.4", "setprototypeof": "~1.2.0", "statuses": "~2.0.2", "toidentifier": "~1.0.1" } }, "sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ=="],
 

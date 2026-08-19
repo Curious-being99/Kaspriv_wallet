@@ -10,6 +10,7 @@ import { ContactsView } from './components/ContactsView';
 import { MobileSettingsView } from './components/MobileSettingsView';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { SendModal } from './components/SendModal';
+import { ScanModal } from './components/ScanModal';
 import { ReceiveModal } from './components/ReceiveModal';
 import { LockScreen } from './components/LockScreen';
 import { WalletSetupModal } from './components/WalletSetupModal';
@@ -25,7 +26,7 @@ import { Toast } from './components/Toast';
 import { PrivacyShield } from './components/PrivacyShield';
 import { SplashScreen } from './components/SplashScreen';
 import { SecurityEnvironmentAlert } from './components/SecurityEnvironmentAlert';
-import { ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Scan } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 
 const WalletAppContent: React.FC = () => {
@@ -35,6 +36,7 @@ const WalletAppContent: React.FC = () => {
     dismissToast,
     activeBottomTab,
     setIsSendOpen,
+    setIsScanOpen,
     setIsReceiveOpen,
     setIsCompoundOpen,
     activeWallet,
@@ -68,7 +70,7 @@ const WalletAppContent: React.FC = () => {
             <MainCard />
 
             {/* Quick Mobile Action Shortcuts */}
-            <div className="w-full px-4 flex items-center justify-center gap-8 py-2">
+            <div className="w-full px-4 flex items-center justify-center gap-6 py-2">
               {!(activeWallet?.isWatchOnly || activeWallet?.isImportedKpub) && (
                 <button
                   onClick={() => setIsSendOpen(true)}
@@ -78,6 +80,14 @@ const WalletAppContent: React.FC = () => {
                   <span>Send</span>
                 </button>
               )}
+
+              <button
+                onClick={() => setIsScanOpen(true)}
+                className="flex items-center gap-2 py-2 px-3 text-slate-100 hover:text-[#70C7BA] font-extrabold text-sm transition-all active:scale-95 cursor-pointer group"
+              >
+                <Scan className="w-5 h-5 text-[#70C7BA] group-hover:text-white transition-colors stroke-[2.5]" />
+                <span>Scan</span>
+              </button>
 
               <button
                 onClick={() => setIsReceiveOpen(true)}
@@ -106,6 +116,7 @@ const WalletAppContent: React.FC = () => {
       {/* Modals & Overlays */}
       <MainLandingPage />
       <SendModal />
+      <ScanModal />
       <ReceiveModal />
       <LockScreen />
       <WalletSetupModal />

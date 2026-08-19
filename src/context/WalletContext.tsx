@@ -167,6 +167,8 @@ interface WalletContextType {
   // UI Modal States
   isSendOpen: boolean;
   setIsSendOpen: (open: boolean) => void;
+  isScanOpen: boolean;
+  setIsScanOpen: (open: boolean) => void;
   isReceiveOpen: boolean;
   setIsReceiveOpen: (open: boolean) => void;
   isWalletSetupOpen: boolean;
@@ -535,6 +537,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const confirmLogout = async () => {
     setIsSendOpen(false);
+    setIsScanOpen(false);
     setIsReceiveOpen(false);
     setIsWalletSetupOpen(false);
     setIsCompoundOpen(false);
@@ -562,6 +565,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // Modals
   const [isSendOpen, setIsSendOpen] = useState(false);
+  const [isScanOpen, setIsScanOpen] = useState(false);
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [isWalletSetupOpen, setIsWalletSetupOpen] = useState(false);
   const [isCompoundOpen, setIsCompoundOpen] = useState(false);
@@ -2977,6 +2981,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setPanicWipeTriggered(true);
 
     setIsSendOpen(false);
+    setIsScanOpen(false);
     setIsReceiveOpen(false);
     setIsWalletSetupOpen(false);
     setIsCompoundOpen(false);
@@ -3386,6 +3391,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         triggerHaptic,
         isSendOpen,
         setIsSendOpen,
+        isScanOpen,
+        setIsScanOpen,
         isReceiveOpen,
         setIsReceiveOpen,
         isWalletSetupOpen,

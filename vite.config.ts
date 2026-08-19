@@ -9,8 +9,8 @@ export default defineConfig({
   base: './',
   resolve: {
     alias: {
-      'react': path.resolve(__dirname, './node_modules/react'),
-      'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
+      'react': path.resolve(process.cwd(), './node_modules/react'),
+      'react-dom': path.resolve(process.cwd(), './node_modules/react-dom'),
     },
   },
   plugins: [
@@ -27,7 +27,7 @@ export default defineConfig({
     })
   ],
   optimizeDeps: {
-    include: ['react', 'react-dom', '@kaspa/core-lib', 'kaspa-wasm'],
+    include: ['react', 'react-dom', 'react-simple-keyboard', 'qrcode.react', 'html5-qrcode', '@kaspa/core-lib', 'kaspa-wasm'],
   },
   assetsInclude: ['**/*.wasm'],
   server: {
