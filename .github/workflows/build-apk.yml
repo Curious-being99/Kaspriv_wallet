@@ -36,6 +36,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0 platform-tools'
 
       - name: Install Dependencies
         run: npm install --legacy-peer-deps
@@ -69,14 +71,14 @@ jobs:
           rm -rf temp-gradle
           chmod +x android/gradlew
 
-      - name: Build Android Release APK
+      - name: Build Android APK
         run: |
           cd android
-          ./gradlew assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace
+          ./gradlew assembleDebug assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace
 
-      - name: Upload Release APK Artifact
+      - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: KasPriv-Wallet-Release-APK
-          path: android/app/build/outputs/apk/release/*.apk
+          name: KasPriv-Wallet-APK
+          path: android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
