@@ -1,5 +1,6 @@
 import { BiometricAuth, BiometryType } from '@aparajita/capacitor-biometric-auth';
 import { encryptWithPassword, decryptWithPassword } from './crypto';
+import { HardwareVault } from '../plugins/HardwareVault';
 
 export interface BiometricCredentialRecord {
   credentialId: string; // base64url or native credential handle
@@ -10,6 +11,8 @@ export interface BiometricCredentialRecord {
   iv?: string;
   prfSalt?: string; // base64url of salt or local key used in encryption
   createdAt: number;
+  wrappedMaster?: { ciphertext: string; iv: string };
+  alias?: string;
 }
 
 export interface BiometricAuthResult {
@@ -126,27 +129,40 @@ export async function registerBiometricUnlock(
     }
 
     if (nativeSuccess) {
-      const localKeyBytes = new Uint8Array(32);
-      crypto.getRandomValues(localKeyBytes);
-      const localKeyStr = bufferToBase64Url(localKeyBytes);
+      const alias = 'kaspriv_vault_v1';
+      await HardwareVault.createBiometricKey({ alias, requireStrongBox: false });
+
+      const master = new Uint8Array(32);
+      crypto.getRandomValues(master);
+      
+      let binary = '';
+      for (let i = 0; i < master.byteLength; i++) {
+        binary += String.fromCharCode(master[i]);
+      }
+      const secretBase64 = btoa(binary);
+
+      const { wrappedBase64, ivBase64 } = await HardwareVault.wrapSecret({
+        alias,
+        secretBase64,
+      });
 
       const encrypted = await encryptWithPassword(
         walletPassword,
-        localKeyStr,
+        secretBase64,
         BIOMETRIC_AAD_CONTEXT
       );
 
-      const randomId = new Uint8Array(16);
-      crypto.getRandomValues(randomId);
+      master.fill(0);
 
       return {
-        credentialId: `native-apk-strongbox-${bufferToBase64Url(randomId)}`,
+        credentialId: `keystore:${alias}`,
         mode: 'prf',
         ciphertext: encrypted.ciphertext,
         salt: encrypted.salt,
         iv: encrypted.iv,
-        prfSalt: localKeyStr,
         createdAt: Date.now(),
+        alias,
+        wrappedMaster: { ciphertext: wrappedBase64, iv: ivBase64 }
       };
     }
 
@@ -288,6 +304,28 @@ export async function authenticateWithBiometrics(
 
     // --- 1. Native APK / Mobile Container Path ---
     if (isNativeContainer) {
+      if (record.credentialId?.startsWith('keystore:') && record.alias && record.wrappedMaster && record.ciphertext && record.salt && record.iv) {
+        const { secretBase64 } = await HardwareVault.unwrapSecret({
+          alias: record.alias,
+          wrappedBase64: record.wrappedMaster.ciphertext,
+          ivBase64: record.wrappedMaster.iv,
+        });
+
+        const decryptedPassword = await decryptWithPassword(
+          record.ciphertext,
+          record.salt,
+          record.iv,
+          secretBase64,
+          BIOMETRIC_AAD_CONTEXT
+        );
+
+        return {
+          success: true,
+          mode: 'prf',
+          decryptedPassword,
+        };
+      }
+
       await BiometricAuth.authenticate({
         reason: 'Unlock KasPriv Vault',
         cancelTitle: 'Cancel',
