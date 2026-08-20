@@ -7,7 +7,7 @@
 
 ## Overview
 
-The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side web application designed to provide users with a secure, responsive, and robust interface for managing Kaspa (KAS) assets and smart covenants. Kaspriv depends on `kaspa-wasm` (and `@kaspa/core-lib`), patches it for the browser, and configures Vite for WASM. Transaction, address, and fee logic are written to follow Kaspa protocol rules, with `@noble` / `@scure` used for signing and HD derivation in the current runtime path, guaranteeing absolute self-custody with zero server-side private key storage and strict in-memory execution boundaries.
+The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side web application designed to provide users with a secure, responsive, and robust interface for managing Kaspa (KAS) assets. Kaspriv depends on `kaspa-wasm` (and `@kaspa/core-lib`), patches it for the browser, and configures Vite for WASM. Transaction, address, and fee logic are written to follow Kaspa protocol rules, with `@noble` / `@scure` used for signing and HD derivation in the current runtime path, guaranteeing absolute self-custody with zero server-side private key storage and strict in-memory execution boundaries.
 
 ---
 
