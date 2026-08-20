@@ -7,7 +7,7 @@
 
 ## Overview
 
-The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side web application designed to provide users with a secure, responsive, and robust interface for managing Kaspa (KAS) assets and smart covenants. Built with modern web standards and WebAssembly (`kaspa-wasm`), Kaspriv guarantees absolute self-custody with zero server-side private key storage and strict in-memory execution boundaries.
+The **Kaspriv Mobile/ Web Wallet** is a high-security, non-custodial, client-side web/mobile application designed to provide users with a secure, responsive, and robust interface for managing Kaspa (KAS) assets. Built with modern web standards, Kaspriv guarantees absolute self-custody with zero server-side private key storage and strict in-memory execution boundaries.
 
 ---
 
