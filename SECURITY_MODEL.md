@@ -20,7 +20,7 @@ An internal security assessment confirms the following zero-trust constraints ac
 - **Zero LocalStorage / SessionStorage Dependency**: Standard browser `localStorage` and `sessionStorage` are completely eliminated. All local application data resides strictly within IndexedDB (`idb`).
 - **IndexedDB Zero-Trust Storage Guard**: The database persistence layer (`saveWalletToDB`) explicitly strips unencrypted `mnemonic` and `passphrase` credentials prior to saving any record to IndexedDB.
 - **Isolated Memory Lifecycle**: Derived private-key material is kept within transient application execution scopes and is not intentionally retained in React state, global state, or persistent storage.
-- **Best-Effort Memory Sanitization**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes and WASM-side objects are released via `.free()` in `finally` blocks as a best-effort memory-sanitization measure.
+- **Best-Effort Memory Sanitization**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes as a best-effort memory-sanitization measure.
 - **Pre-Execution Intent Verification**: Transactions pass through independent intent validation before key decryption or derivation begins.
 
 ---
@@ -84,14 +84,13 @@ To eliminate private key leaks across component render cycles or long-lived stat
 
 1. **Transient Execution**: Key derivation, address re-generation, and Schnorr signing execute inside isolated helper routines (`IsolatedSigner.signTransactionIsolated` & `IsolatedSigner.signMessageIsolated`).
 2. **Transient Scope Guard**: Derived private-key material is kept within transient application execution scopes and is not intentionally retained in React state, global state, or persistent storage.
-3. **Strict Memory Sanitization & Wiping (`wipe()` and `.free()`)**:
+3. **Strict Memory Sanitization & Wiping (`wipe()`)**:
    ```typescript
    function wipe(buffer: Uint8Array) {
      if (buffer) buffer.fill(0);
    }
    ```
    * **Byte Buffers & Wiping**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes in `finally` blocks as a best-effort memory-sanitization measure. All components involved in transaction creation and signing actively scrub private buffers, leaving absolutely no plaintext hex residuals in storage or browser memory.
-   * **WASM Objects**: For cryptographic operations using `kaspa-wasm`, explicit `PrivateKey` objects are created from byte buffers and released using `.free()` in `finally` blocks. This returns the native allocation to the WASM allocator; the application treats this as a best-effort release of the native representation.
    * **Zero Hex-Back Storage**: Plaintext private keys, derived hex values, or seed words are never stored back, cached in state, or logged. The context only yields final signature outputs, securely purging the underlying cryptographic parameters immediately after signing.
 
 ### Hardened Biometric Security (WebAuthn Platform Auth & PRF Key Derivation)
@@ -124,17 +123,15 @@ Before password verification, seed decryption, or private key derivation occurs,
 
 ---
 
-## 4. Environment, WASM, & Elliptic Dependency Security
+## 4. Environment, WASM, & Cryptographic Runtime Security
 
-* **WebAssembly Sandboxing**: High-performance cryptographic operations (Argon2id and Kaspa core transaction operations via `kaspa-wasm`) execute in WASM execution sandboxes.
+* **WebAssembly & Tooling Architecture**: Kaspriv depends on `kaspa-wasm` (and `@kaspa/core-lib`), patches it for the browser, and configures Vite for WASM.
+* **Protocol & Signing Runtime**: Transaction, address, and fee logic are written to follow Kaspa protocol rules, with `@noble` / `@scure` used for signing and HD derivation in the current runtime path.
 * **Native Web Crypto**: AES-256-GCM encryption/decryption is performed by browser-native C++ implementations via `window.crypto.subtle`.
 * **kaspa-wasm Postinstall Patch & Upstream Monitoring**:
   * **Patch Mechanism**: `package.json` includes a `postinstall` script (`sed -i ...`) that rewrites Node-centric `util` destructuring (`TextDecoder`, `TextEncoder`) in `node_modules/kaspa-wasm/kaspa_wasm.js` to use `globalThis.TextDecoder` and `globalThis.TextEncoder`.
   * **Fragility Note**: This string-substitution patch is inherently fragile—it depends on exact line patterns in `kaspa_wasm.js` and GNU `sed` CLI availability.
   * **Upstream Strategy**: Monitor `kaspa-wasm` upstream releases for native Web/ESM environment support, and verify postinstall execution integrity whenever updating `kaspa-wasm` or toolchain packages.
-* **Elliptic / Supply-Chain Posture**:
-  * Kaspriv does not use `elliptic` for transaction signing. Kaspa Schnorr signing is performed through the Kaspa WASM/Rust implementation. Therefore, the application's signing path does not depend on `elliptic`'s ECDSA implementation.
-  * The transitive dependency should nevertheless be removed, upgraded, or isolated where practical to reduce supply-chain attack surface.
 
 ---
 

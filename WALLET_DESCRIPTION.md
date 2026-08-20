@@ -11,15 +11,15 @@ The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side
     * **AES-256-GCM with AAD:** All wallet seeds and private keys are encrypted using native Web Crypto API (`window.crypto.subtle`) AES-256-GCM with 12-byte single-use random IVs and Context-Bound Additional Authenticated Data (AAD) (`KASPRIV-WALLET-v1|...`).
 * **Isolated Signing Environment & Instant Memory Sanitization:**
     * **Isolated Signing (`IsolatedSigner`):** Key derivation and signature generation execute in isolated transient scopes.
-    * **Cryptographic Wiping:** Secret buffers are explicitly zeroized using byte-overwriting (`wipe()`) and WASM-side objects are released via `.free()` in `finally` blocks to return native memory as a best-effort release of the native representation.
+    * **Cryptographic Wiping:** Secret buffers are explicitly zeroized using byte-overwriting (`wipe()`) in `finally` blocks.
 * **Independent Transaction Intent Verification:**
     * Before deriving keys or signing, `verifyTransactionIntent` independently validates recipient address prefix/network match, positive output amounts, fee parameters, and input UTXO sufficiency.
-* **Native Kaspa Network Integration:** Powered by `kaspa-wasm` and `@kaspa/core-lib`, providing native-level transaction construction, Schnorr signatures, P2PKH/P2SH address derivation, and covenant handling directly in the browser.
+* **Kaspa Protocol Integration & Tooling:** Kaspriv depends on `kaspa-wasm` (and `@kaspa/core-lib`), patches it for the browser, and configures Vite for WASM. Transaction, address, and fee logic are written to follow Kaspa protocol rules, with `@noble` / `@scure` used for signing and HD derivation in the current runtime path.
 * **Modern Mobile-First UI:** Built with React 18, TypeScript, and Tailwind CSS, featuring an intuitive touch-friendly interface, real-time balance tracking, virtual keyboard option, covenant creator, and full dev console monitoring.
 
 ## Technical Stack
 * **Frontend Framework:** React 18, TypeScript, Vite
 * **Styling:** Tailwind CSS, Lucide React (Icons), Motion (Animations)
-* **Cryptography:** Web Crypto API (`window.crypto.subtle`), `hash-wasm` (Argon2id), `@noble/secp256k1`
-* **Kaspa Core Tooling:** `kaspa-wasm`, `@kaspa/core-lib`
+* **Cryptography:** Web Crypto API (`window.crypto.subtle`), `hash-wasm` (Argon2id), `@noble/secp256k1`, `@scure/bip32`, `@scure/bip39`
+* **Kaspa Core & Tooling:** Kaspriv depends on `kaspa-wasm` (and `@kaspa/core-lib`), patches it for the browser, and configures Vite for WASM. Transaction, address, and fee logic are written to follow Kaspa protocol rules, with `@noble` / `@scure` used for signing and HD derivation in the current runtime path.
 
