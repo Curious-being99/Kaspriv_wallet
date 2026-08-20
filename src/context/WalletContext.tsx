@@ -348,7 +348,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             !INITIAL_NODES.some(inNode => inNode.id === cn.id) &&
             cn.id !== 'node-kaspagov' &&
             cn.id !== 'node-aspectron' &&
-            (!cn.apiUrl || (!cn.apiUrl.includes('api.kaspagov.org') && !cn.apiUrl.includes('api.kaspa.aspectron.org')))
+            (!cn.apiUrl || !cn.apiUrl.includes('api.kaspagov.org'))
           );
           mergedNodes = [...customList, ...INITIAL_NODES];
         }
@@ -367,7 +367,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const activeLoadedNode = mergedNodes.find(n => n.selected) || mergedNodes[0];
 
         let savedApiUrl = await getSetting<string>('kaspa_api_url') || activeLoadedNode?.apiUrl;
-        if (!savedApiUrl || savedApiUrl.includes('api.kaspagov.org') || savedApiUrl.includes('api.kaspa.aspectron.org') || savedApiUrl.includes('testnet') || savedApiUrl.includes('devnet')) {
+        if (!savedApiUrl || savedApiUrl.includes('api.kaspagov.org') || savedApiUrl.includes('testnet') || savedApiUrl.includes('devnet')) {
           savedApiUrl = 'https://api.kaspa.org';
         }
         if (savedApiUrl) {

@@ -17,6 +17,9 @@
 			"launchShowDuration": 1500,
 			"launchAutoHide": true,
 			"backgroundColor": "#090D12"
+		},
+		"CapacitorHttp": {
+			"enabled": true
 		}
 	}
 }
