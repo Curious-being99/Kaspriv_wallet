@@ -441,22 +441,37 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const triggerNativeNotification = React.useCallback(async (title: string, body: string) => {
     if (!isNotificationsEnabledRef.current) return;
     try {
-      if (!(window as any).Capacitor?.isNativePlatform?.()) return;
-      const hasPerm = await LocalNotifications.checkPermissions();
-      if (hasPerm.display === 'granted') {
-        await LocalNotifications.schedule({
-          notifications: [
-            {
-              title,
-              body,
-              id: Math.floor(Math.random() * 1000000),
-              sound: 'beep.wav',
+      if ((window as any).Capacitor?.isNativePlatform?.()) {
+        const hasPerm = await LocalNotifications.checkPermissions();
+        if (hasPerm.display === 'granted') {
+          await LocalNotifications.schedule({
+            notifications: [
+              {
+                title,
+                body,
+                id: Math.floor(Math.random() * 1000000),
+                sound: 'beep.wav',
+              }
+            ]
+          });
+        } else {
+          await LocalNotifications.requestPermissions();
+        }
+      } else {
+        // Web / PWA browser notification support when out of app / backgrounded
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+          if (Notification.permission === 'granted') {
+            new Notification(title, { body, icon: '/favicon.ico' });
+          } else if (Notification.permission !== 'denied') {
+            const perm = await Notification.requestPermission();
+            if (perm === 'granted') {
+              new Notification(title, { body, icon: '/favicon.ico' });
             }
-          ]
-        });
+          }
+        }
       }
     } catch (err) {
-      // Suppress web platform notification errors
+      console.warn('Failed to trigger notification:', err);
     }
   }, []);
 
@@ -1516,39 +1531,61 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   useEffect(() => {
     refreshBalanceRef.current();
-    // Background polling interval removed for balance as per user request
-    // But we keep price polling for real-time asset value updates
-    const priceInterval = setInterval(() => refreshPrice(), 30000); // 30s price refresh
-    return () => clearInterval(priceInterval);
-  }, [refreshPrice]);
-
-  // Native Notifications Background Listener & Polling service
-  useEffect(() => {
-    const handleStateChange = (state: { isActive: boolean }) => {
-      isAppActiveRef.current = state.isActive;
-      console.log('[Native Notifications Service] Active State changed:', state.isActive);
-      if (!state.isActive) {
-        // Run an instant check as the user exits the app to catch any quick final updates
-        if (!isLocked && activeWalletId) {
-          isRefreshingBalance.current = false;
-          refreshBalanceRef.current();
-        }
-      }
-    };
-
-    const listenerPromise = CapacitorApp.addListener('appStateChange', handleStateChange);
-
-    // Run background polling every 15 seconds to check for new incoming/outgoing transactions
-    const bgPollInterval = setInterval(() => {
-      if (!isAppActiveRef.current && !isLocked && activeWalletId) {
-        console.log('[Native Notifications Service] Background poll checking for transactions...');
+    // Active polling interval every 10s for real-time balance & transaction sync when app is active
+    const activePollInterval = setInterval(() => {
+      if (isAppActiveRef.current && !isLocked && activeWalletId) {
         isRefreshingBalance.current = false;
         refreshBalanceRef.current();
       }
-    }, 15000); // Check every 15s when backgrounded
+    }, 10000);
+
+    const priceInterval = setInterval(() => refreshPrice(), 30000); // 30s price refresh
+    return () => {
+      clearInterval(activePollInterval);
+      clearInterval(priceInterval);
+    };
+  }, [refreshPrice, isLocked, activeWalletId]);
+
+  // Native & Web Notifications Background Listener & Polling service
+  useEffect(() => {
+    const handleStateChange = (state: { isActive: boolean }) => {
+      isAppActiveRef.current = state.isActive;
+      console.log('[Notifications Service] Active State changed:', state.isActive);
+      if (!isLocked && activeWalletId) {
+        isRefreshingBalance.current = false;
+        refreshBalanceRef.current();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      const active = !document.hidden;
+      isAppActiveRef.current = active;
+      if (active && !isLocked && activeWalletId) {
+        isRefreshingBalance.current = false;
+        refreshBalanceRef.current();
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    const listenerPromise = CapacitorApp.addListener('appStateChange', handleStateChange);
+
+    // Run background polling every 10 seconds to check for new incoming transactions even when out of the app
+    const bgPollInterval = setInterval(() => {
+      if ((!isAppActiveRef.current || (typeof document !== 'undefined' && document.hidden)) && !isLocked && activeWalletId) {
+        console.log('[Notifications Service] Background poll checking for transactions...');
+        isRefreshingBalance.current = false;
+        refreshBalanceRef.current();
+      }
+    }, 10000); // Check every 10s when out of app
 
     return () => {
       listenerPromise.then(h => h.remove()).catch(() => {});
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
       clearInterval(bgPollInterval);
     };
   }, [isLocked, activeWalletId]);
