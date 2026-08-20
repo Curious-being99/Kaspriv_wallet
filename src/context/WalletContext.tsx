@@ -34,6 +34,7 @@ import {
   buildAadContext,
 } from '../utils/crypto';
 import { App as CapacitorApp } from '@capacitor/app';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import {
   isBiometricsSupported as checkBiometricsSupported,
   registerBiometricUnlock,
@@ -214,8 +215,10 @@ interface WalletContextType {
   explorerUrl: string;
   setExplorerUrl: (url: string) => void;
 
-  // Notification Toast
-  showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  // Notifications
+  isNotificationsEnabled: boolean;
+  setIsNotificationsEnabled: (enabled: boolean) => void;
+
   dismissToast: () => void;
   toast: { message: string; type: 'success' | 'error' | 'info' } | null;
 }
@@ -273,6 +276,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await ensureKaspaRuntime();
 
         await runDatabaseMigrations();
+
+        // Request local notification permissions on app startup if native
+        try {
+          if ((window as any).Capacitor?.isNativePlatform?.()) {
+            const permStatus = await LocalNotifications.checkPermissions();
+            if (permStatus.display !== 'granted') {
+              await LocalNotifications.requestPermissions();
+            }
+          }
+        } catch (e) {
+          // Ignore web platform notification unsupported errors
+        }
         
         const savedWallets = await getWalletsFromDB();
         const cleanedWallets = savedWallets.map(w => {
@@ -320,6 +335,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         const savedLockOnExit = await getSetting<boolean>('lock_on_exit');
         if (savedLockOnExit !== undefined) setLockOnExit(savedLockOnExit);
+
+        const savedNotifications = await getSetting<boolean>('kaspa_notifications_enabled');
+        if (savedNotifications !== undefined) setIsNotificationsEnabledState(savedNotifications);
 
         const savedCustomNodes = await getSetting<KaspaNode[]>('kaspa_custom_nodes');
         const savedSelectedNodeId = await getSetting<string>('kaspa_selected_node_id');
@@ -415,6 +433,32 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   useEffect(() => {
     transactionsRef.current = transactions;
   }, [transactions]);
+
+  const knownTxidsRef = React.useRef<Record<string, Set<string>>>({});
+  const walletFirstFetchDone = React.useRef<Record<string, boolean>>({});
+  const isAppActiveRef = React.useRef(true);
+
+  const triggerNativeNotification = React.useCallback(async (title: string, body: string) => {
+    if (!isNotificationsEnabledRef.current) return;
+    try {
+      if (!(window as any).Capacitor?.isNativePlatform?.()) return;
+      const hasPerm = await LocalNotifications.checkPermissions();
+      if (hasPerm.display === 'granted') {
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              title,
+              body,
+              id: Math.floor(Math.random() * 1000000),
+              sound: 'beep.wav',
+            }
+          ]
+        });
+      }
+    } catch (err) {
+      // Suppress web platform notification errors
+    }
+  }, []);
 
   const [utxos, setUtxos] = useState<UTXO[]>([]);
   const utxosRef = React.useRef(utxos);
@@ -578,6 +622,30 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // Haptic feedback state
   const [isHapticsSupported] = useState<boolean>(() => checkHapticsSupported());
   const [isHapticsEnabledState, setIsHapticsEnabledState] = useState<boolean>(() => getHapticsEnabled());
+
+  // Notifications state
+  const [isNotificationsEnabledState, setIsNotificationsEnabledState] = useState<boolean>(() => {
+    try {
+      const val = localStorage.getItem('kaspa_notifications_enabled');
+      return val !== null ? JSON.parse(val) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const isNotificationsEnabledRef = React.useRef(isNotificationsEnabledState);
+  useEffect(() => {
+    isNotificationsEnabledRef.current = isNotificationsEnabledState;
+  }, [isNotificationsEnabledState]);
+
+  const setIsNotificationsEnabled = React.useCallback((enabled: boolean) => {
+    setIsNotificationsEnabledState(enabled);
+    try {
+      localStorage.setItem('kaspa_notifications_enabled', JSON.stringify(enabled));
+    } catch {}
+    saveSetting('kaspa_notifications_enabled', enabled).catch(() => {});
+  }, []);
+
 
   const setIsHapticsEnabled = React.useCallback((enabled: boolean) => {
     setIsHapticsEnabledState(enabled);
@@ -1035,6 +1103,54 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         combinedTxs.sort((a, b) => b.timestamp - a.timestamp);
 
         setTransactions(combinedTxs);
+
+        // Check for new incoming or outgoing transactions and trigger native notifications
+        if (wallet && wallet.id) {
+          const walletId = wallet.id;
+          if (!knownTxidsRef.current[walletId]) {
+            knownTxidsRef.current[walletId] = new Set();
+          }
+
+          const existingSet = knownTxidsRef.current[walletId];
+          const isFirstFetchForWallet = !walletFirstFetchDone.current[walletId];
+
+          if (isFirstFetchForWallet) {
+            // First live fetch for this wallet (e.g. fresh wallet or import)
+            // Just populate the known transaction IDs without notifications so we don't spam history
+            allMergedTxs.forEach((tx) => {
+              if (tx && tx.txid) {
+                existingSet.add(tx.txid);
+              }
+            });
+            walletFirstFetchDone.current[walletId] = true;
+          } else {
+            // Subsequent fetches: any transaction not in existingSet is NEW!
+            allMergedTxs.forEach((tx) => {
+              if (tx && tx.txid && !existingSet.has(tx.txid)) {
+                existingSet.add(tx.txid);
+
+                // Format amount
+                const formattedAmt = sompiToKas(tx.amountSompi).toLocaleString(undefined, {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 8,
+                });
+
+                if (tx.type === 'receive') {
+                  triggerNativeNotification(
+                    'Received Kaspa 🟢',
+                    `+${formattedAmt} KAS received in your wallet`
+                  );
+                } else if (tx.type === 'send') {
+                  triggerNativeNotification(
+                    'Sent Kaspa 🔴',
+                    `-${formattedAmt} KAS sent from your wallet`
+                  );
+                }
+              }
+            });
+          }
+        }
+
         try {
           saveTransactionsToDB(wallet.id, combinedTxs);
           if (typeof window !== 'undefined' && window.localStorage) {
@@ -1289,7 +1405,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     } finally {
       isRefreshingBalance.current = false;
     }
-  }, [refreshDaaScore, password]);
+  }, [refreshDaaScore, password, triggerNativeNotification]);
 
   // Clear pending states and load cached transactions/UTXOs from IndexedDB instantly when switching wallets or unlocking
   useEffect(() => {
@@ -1322,6 +1438,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
         if (isMounted) {
           setTransactions(cachedTxs || []);
+          if (cachedTxs && cachedTxs.length > 0) {
+            if (!knownTxidsRef.current[activeWalletId]) {
+              knownTxidsRef.current[activeWalletId] = new Set(cachedTxs.map(tx => tx.txid));
+              walletFirstFetchDone.current[activeWalletId] = true;
+            }
+          }
         }
       } catch (e) {
         console.warn('Failed to load cached transactions from IndexedDB:', e);
@@ -1399,6 +1521,37 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const priceInterval = setInterval(() => refreshPrice(), 30000); // 30s price refresh
     return () => clearInterval(priceInterval);
   }, [refreshPrice]);
+
+  // Native Notifications Background Listener & Polling service
+  useEffect(() => {
+    const handleStateChange = (state: { isActive: boolean }) => {
+      isAppActiveRef.current = state.isActive;
+      console.log('[Native Notifications Service] Active State changed:', state.isActive);
+      if (!state.isActive) {
+        // Run an instant check as the user exits the app to catch any quick final updates
+        if (!isLocked && activeWalletId) {
+          isRefreshingBalance.current = false;
+          refreshBalanceRef.current();
+        }
+      }
+    };
+
+    const listenerPromise = CapacitorApp.addListener('appStateChange', handleStateChange);
+
+    // Run background polling every 15 seconds to check for new incoming/outgoing transactions
+    const bgPollInterval = setInterval(() => {
+      if (!isAppActiveRef.current && !isLocked && activeWalletId) {
+        console.log('[Native Notifications Service] Background poll checking for transactions...');
+        isRefreshingBalance.current = false;
+        refreshBalanceRef.current();
+      }
+    }, 15000); // Check every 15s when backgrounded
+
+    return () => {
+      listenerPromise.then(h => h.remove()).catch(() => {});
+      clearInterval(bgPollInterval);
+    };
+  }, [isLocked, activeWalletId]);
 
   // Auto-sync wallet state logic removed as it's no longer necessary with persistent IndexedDB
 
@@ -3389,6 +3542,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isHapticsEnabled: isHapticsEnabledState,
         setIsHapticsEnabled,
         triggerHaptic,
+        isNotificationsEnabled: isNotificationsEnabledState,
+        setIsNotificationsEnabled,
         isSendOpen,
         setIsSendOpen,
         isScanOpen,
