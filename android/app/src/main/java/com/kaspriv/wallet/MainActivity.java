@@ -125,6 +125,9 @@ public class MainActivity extends BridgeActivity {
             // Ignore if window flags cannot be applied
         }
 
+        // Register custom local Capacitor plugins
+        registerPlugin(HardwareVaultPlugin.class);
+
         super.onCreate(savedInstanceState);
         
         // Tapjacking & Overlay Obstruction Defense
