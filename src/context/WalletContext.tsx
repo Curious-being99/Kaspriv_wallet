@@ -65,6 +65,8 @@ import {
   fetchKaspaPrice,
   fetchKaspaAddressBalance,
   fetchKaspaAddressUtxos,
+  fetchKaspaAddressesBalances,
+  fetchKaspaAddressesUtxos,
   fetchKaspaAddressTransactions,
   fetchKaspaFeeEstimate,
   fetchKaspaCurrentDaaScore,
@@ -195,7 +197,7 @@ interface WalletContextType {
 
   currentDaaScore: number;
   refreshDaaScore: () => Promise<void>;
-  refreshBalance: () => Promise<void>;
+  refreshBalance: (options?: { force?: boolean }) => Promise<void>;
   scanWalletChainIndex: () => Promise<void>;
   generateNewReceiveAddress: () => Promise<string | null>;
   switchReceiveAddress: (addr: string) => void;
@@ -860,10 +862,31 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // Poll CoinGecko & Kaspa REST API for market data and live address balance
   const isRefreshingBalance = useRef(false);
+  const consecutiveFailuresRef = useRef(0);
+  const lastRefreshTimeRef = useRef(0);
 
-  const refreshBalance = React.useCallback(async () => {
+  const scheduleJitteredPostTxRefreshes = React.useCallback((refreshFn: (options?: { force?: boolean }) => Promise<void>) => {
+    // Jittered post-transaction refresh delays to avoid API rate limiting bursts
+    const delays = [
+      2000 + Math.random() * 1000,   // ~2.0s - 3.0s
+      7000 + Math.random() * 2000,   // ~7.0s - 9.0s
+      18000 + Math.random() * 4000,  // ~18.0s - 22.0s
+    ];
+    delays.forEach(delay => {
+      setTimeout(() => {
+        refreshFn({ force: true });
+      }, Math.round(delay));
+    });
+  }, []);
+
+  const refreshBalance = React.useCallback(async (options?: { force?: boolean }) => {
+    const now = Date.now();
     if (isRefreshingBalance.current) return;
+    // Throttle non-forced calls if triggered within 2000ms
+    if (!options?.force && now - lastRefreshTimeRef.current < 2000) return;
+
     isRefreshingBalance.current = true;
+    lastRefreshTimeRef.current = now;
 
     try {
       // Fetch live DAA Score
@@ -887,21 +910,132 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           ? wallet.discoveredAddresses
           : [wallet.receiveAddress];
 
-        // 1. Fetch live balances and UTXOs in parallel for all addresses
-        const [balances, utxosResults, txResults] = await Promise.all([
-          Promise.all(addressesToFetch.map(addr => fetchKaspaAddressBalance(addr))),
-          Promise.all(addressesToFetch.map(addr => fetchKaspaAddressUtxos(addr))),
-          Promise.all(addressesToFetch.map(addr => fetchKaspaAddressTransactions(addr))),
-        ]);
+        // 1. Fetch live balances, UTXOs and transactions
+        let balances: (bigint | null)[] = [];
+        let utxosResults: (KaspaUtxo[] | null)[] = [];
+        let txResults: (any[] | null)[] = [];
+        let bulkSuccess = false;
+
+        try {
+          const bulkBalances: { [address: string]: bigint } = {};
+          const bulkUtxos: KaspaUtxo[] = [];
+          
+          // Query in batches of 30 addresses to avoid oversized POST payloads
+          const bulkChunkSize = 30;
+          let failedBulk = false;
+
+          for (let i = 0; i < addressesToFetch.length; i += bulkChunkSize) {
+            const chunk = addressesToFetch.slice(i, i + bulkChunkSize);
+            const [chunkBalances, chunkUtxos] = await Promise.all([
+              fetchKaspaAddressesBalances(chunk),
+              fetchKaspaAddressesUtxos(chunk),
+            ]);
+
+            if (chunkBalances === null || chunkUtxos === null) {
+              failedBulk = true;
+              break;
+            }
+
+            // Merge balances
+            Object.assign(bulkBalances, chunkBalances);
+            // Merge UTXOs
+            bulkUtxos.push(...chunkUtxos);
+          }
+
+          if (!failedBulk) {
+            // Bulk calls succeeded! Map results 1-to-1 with addressesToFetch
+            balances = addressesToFetch.map(addr => bulkBalances[addr] !== undefined ? bulkBalances[addr] : 0n);
+
+            const utxosByAddress: { [address: string]: KaspaUtxo[] } = {};
+            addressesToFetch.forEach(addr => { utxosByAddress[addr] = []; });
+            bulkUtxos.forEach(u => {
+              if (u.address && utxosByAddress[u.address] !== undefined) {
+                utxosByAddress[u.address].push(u);
+              }
+            });
+            utxosResults = addressesToFetch.map(addr => utxosByAddress[addr]);
+
+            // Fetch transaction records for primary or active addresses in sequential/batched chunks to respect rate limits
+            txResults = [];
+            const txBatchSize = 2;
+            for (let i = 0; i < addressesToFetch.length; i += txBatchSize) {
+              const chunk = addressesToFetch.slice(i, i + txBatchSize);
+              const chunkIdxs = Array.from({ length: chunk.length }, (_, k) => i + k);
+
+              const chunkTxs = await Promise.all(
+                chunk.map((addr, idx) => {
+                  const globalIdx = chunkIdxs[idx];
+                  const isPrimary = addr === wallet.receiveAddress;
+                  const hasBal = balances[globalIdx] !== null && balances[globalIdx]! > 0n;
+                  const hasUtxos = utxosResults[globalIdx] !== null && Array.isArray(utxosResults[globalIdx]) && utxosResults[globalIdx]!.length > 0;
+                  if (isPrimary || hasBal || hasUtxos) {
+                    return fetchKaspaAddressTransactions(addr);
+                  }
+                  return Promise.resolve([]);
+                })
+              );
+              txResults.push(...chunkTxs);
+
+              if (i + txBatchSize < addressesToFetch.length) {
+                await new Promise(r => setTimeout(r, 150));
+              }
+            }
+
+            bulkSuccess = true;
+          }
+        } catch (err) {
+          console.warn('[refreshBalance] Bulk fetch failed, falling back to sequential polling:', err);
+        }
+
+        // 2. Fallback to individual sequential/batched chunks if bulk POST failed/unsupported
+        if (!bulkSuccess) {
+          const batchSize = 2;
+          balances = [];
+          utxosResults = [];
+          txResults = [];
+
+          for (let i = 0; i < addressesToFetch.length; i += batchSize) {
+            const chunk = addressesToFetch.slice(i, i + batchSize);
+            const [chunkBalances, chunkUtxos] = await Promise.all([
+              Promise.all(chunk.map(addr => fetchKaspaAddressBalance(addr))),
+              Promise.all(chunk.map(addr => fetchKaspaAddressUtxos(addr))),
+            ]);
+
+            // Fetch heavy transaction records for primary receive address or addresses with active balance/UTXOs
+            const chunkTxs = await Promise.all(
+              chunk.map((addr, idx) => {
+                const isPrimary = addr === wallet.receiveAddress;
+                const hasBal = chunkBalances[idx] !== null && chunkBalances[idx]! > 0n;
+                const hasUtxos = chunkUtxos[idx] !== null && Array.isArray(chunkUtxos[idx]) && chunkUtxos[idx]!.length > 0;
+                if (isPrimary || hasBal || hasUtxos) {
+                  return fetchKaspaAddressTransactions(addr);
+                }
+                return Promise.resolve([]);
+              })
+            );
+
+            balances.push(...chunkBalances);
+            utxosResults.push(...chunkUtxos);
+            txResults.push(...chunkTxs);
+
+            // 150ms delay between chunks to respect rate limits
+            if (i + batchSize < addressesToFetch.length) {
+              await new Promise(r => setTimeout(r, 150));
+            }
+          }
+        }
 
         const hasValidUtxoResponse = utxosResults.some(res => Array.isArray(res));
         const hasValidBalanceResponse = (balances as (bigint | null)[]).some(bal => bal !== null);
 
-        // If all network calls failed (e.g. offline or API down), retain existing cached UTXOs and balance
+        // If all network calls failed (e.g. offline, rate limited or API down), retain existing cached UTXOs and balance
         if (!hasValidUtxoResponse && !hasValidBalanceResponse) {
-          console.warn('[refreshBalance] All node requests failed; preserving cached UTXOs and balance.');
+          consecutiveFailuresRef.current += 1;
+          console.warn(`[refreshBalance] All node requests failed (failure #${consecutiveFailuresRef.current}); preserving cached UTXOs and balance.`);
           return;
         }
+
+        consecutiveFailuresRef.current = 0;
 
         const totalLiveBalance = (balances as (bigint | null)[]).reduce<bigint>((sum, bal) => sum + (bal !== null && bal !== undefined ? bal : 0n), 0n);
 
@@ -1529,31 +1663,61 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   }, []);
 
+  // Unified Jittered Polling Manager with exponential backoff on node errors
   useEffect(() => {
-    refreshBalanceRef.current();
-    // Active polling interval every 10s for real-time balance & transaction sync when app is active
-    const activePollInterval = setInterval(() => {
-      if (isAppActiveRef.current && !isLocked && activeWalletId) {
-        isRefreshingBalance.current = false;
-        refreshBalanceRef.current();
-      }
-    }, 10000);
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let isMounted = true;
 
-    const priceInterval = setInterval(() => refreshPrice(), 30000); // 30s price refresh
+    const scheduleNextPoll = () => {
+      if (!isMounted) return;
+
+      // Base polling interval: 25 seconds when active foreground, 60 seconds when backgrounded
+      const isForeground = isAppActiveRef.current && (typeof document === 'undefined' || !document.hidden);
+      const baseIntervalMs = isForeground ? 25000 : 60000;
+
+      // Exponential backoff if consecutive node errors occur (up to 4x multiplier)
+      const failures = consecutiveFailuresRef.current;
+      const backoffMultiplier = failures > 0 ? Math.min(Math.pow(1.5, failures), 4) : 1;
+
+      // ±25% randomized jitter to reduce server request synchronization and rate-limit bursts
+      const targetInterval = baseIntervalMs * backoffMultiplier;
+      const jitterAmount = (Math.random() * 2 - 1) * (targetInterval * 0.25);
+      const delayMs = Math.max(5000, Math.round(targetInterval + jitterAmount));
+
+      timerId = setTimeout(async () => {
+        if (isMounted && !isLocked && activeWalletId) {
+          isRefreshingBalance.current = false;
+          await refreshBalanceRef.current();
+        }
+        scheduleNextPoll();
+      }, delayMs);
+    };
+
+    if (!isLocked && activeWalletId) {
+      refreshBalanceRef.current();
+    }
+
+    scheduleNextPoll();
+
+    const priceInterval = setInterval(() => refreshPrice(), 45000); // 45s price refresh
     return () => {
-      clearInterval(activePollInterval);
+      isMounted = false;
+      if (timerId) clearTimeout(timerId);
       clearInterval(priceInterval);
     };
   }, [refreshPrice, isLocked, activeWalletId]);
 
-  // Native & Web Notifications Background Listener & Polling service
+  // Native & Web Notifications Background Listener
   useEffect(() => {
     const handleStateChange = (state: { isActive: boolean }) => {
       isAppActiveRef.current = state.isActive;
       console.log('[Notifications Service] Active State changed:', state.isActive);
       if (!isLocked && activeWalletId) {
-        isRefreshingBalance.current = false;
-        refreshBalanceRef.current();
+        // Throttled refresh on state change (minimum 4 seconds since last refresh)
+        if (Date.now() - lastRefreshTimeRef.current >= 4000) {
+          isRefreshingBalance.current = false;
+          refreshBalanceRef.current();
+        }
       }
     };
 
@@ -1561,8 +1725,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const active = !document.hidden;
       isAppActiveRef.current = active;
       if (active && !isLocked && activeWalletId) {
-        isRefreshingBalance.current = false;
-        refreshBalanceRef.current();
+        if (Date.now() - lastRefreshTimeRef.current >= 4000) {
+          isRefreshingBalance.current = false;
+          refreshBalanceRef.current();
+        }
       }
     };
 
@@ -1572,21 +1738,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const listenerPromise = CapacitorApp.addListener('appStateChange', handleStateChange);
 
-    // Run background polling every 10 seconds to check for new incoming transactions even when out of the app
-    const bgPollInterval = setInterval(() => {
-      if ((!isAppActiveRef.current || (typeof document !== 'undefined' && document.hidden)) && !isLocked && activeWalletId) {
-        console.log('[Notifications Service] Background poll checking for transactions...');
-        isRefreshingBalance.current = false;
-        refreshBalanceRef.current();
-      }
-    }, 10000); // Check every 10s when out of app
-
     return () => {
       listenerPromise.then(h => h.remove()).catch(() => {});
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
-      clearInterval(bgPollInterval);
     };
   }, [isLocked, activeWalletId]);
 
@@ -2448,13 +2604,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       }
 
-      // 1. Fetch real UTXOs for all discovered addresses
+      // 1. Fetch real UTXOs for all discovered addresses in batches
       const addressesToFetch = activeWallet.discoveredAddresses && activeWallet.discoveredAddresses.length > 0
         ? activeWallet.discoveredAddresses
         : [activeWallet.receiveAddress];
       
-      const utxoPromises = addressesToFetch.map(addr => fetchKaspaAddressUtxos(addr));
-      const utxosResults = await Promise.all(utxoPromises);
+      const utxosResults: (KaspaUtxo[] | null)[] = [];
+      const batchSize = 4;
+      for (let i = 0; i < addressesToFetch.length; i += batchSize) {
+        const chunk = addressesToFetch.slice(i, i + batchSize);
+        const chunkResults = await Promise.all(chunk.map(addr => fetchKaspaAddressUtxos(addr)));
+        utxosResults.push(...chunkResults);
+        if (i + batchSize < addressesToFetch.length) {
+          await new Promise(r => setTimeout(r, 50));
+        }
+      }
       
       const utxosResponse: any[] = [];
       utxosResults.forEach((liveUtxosData, addrIdx) => {
@@ -2725,11 +2889,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             return unspent;
           });
 
-          // Refresh balance after short delay, and multiple polls in case API indices take a few seconds
-          setTimeout(refreshBalance, 1500);
-          setTimeout(refreshBalance, 4000);
-          setTimeout(refreshBalance, 8000);
-          setTimeout(refreshBalance, 15000);
+          // Schedule jittered post-transaction refreshes to avoid rate-limit bursts while indexing on-chain
+          scheduleJitteredPostTxRefreshes(refreshBalance);
           
           return { success: true, txid: broadcastResult.txId, inputs: selectedUtxos };
         } else {
@@ -2805,13 +2966,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
 
     try {
-      // 1. Fetch real UTXOs for all discovered addresses
+      // 1. Fetch real UTXOs for all discovered addresses in batches
       const addressesToFetch = activeWallet.discoveredAddresses && activeWallet.discoveredAddresses.length > 0
         ? activeWallet.discoveredAddresses
         : [activeWallet.receiveAddress];
 
-      const utxoPromises = addressesToFetch.map(addr => fetchKaspaAddressUtxos(addr));
-      const utxosResults = await Promise.all(utxoPromises);
+      const utxosResults: (KaspaUtxo[] | null)[] = [];
+      const batchSize = 4;
+      for (let i = 0; i < addressesToFetch.length; i += batchSize) {
+        const chunk = addressesToFetch.slice(i, i + batchSize);
+        const chunkResults = await Promise.all(chunk.map(addr => fetchKaspaAddressUtxos(addr)));
+        utxosResults.push(...chunkResults);
+        if (i + batchSize < addressesToFetch.length) {
+          await new Promise(r => setTimeout(r, 50));
+        }
+      }
       
       const utxosResponse: any[] = [];
       utxosResults.forEach((liveUtxosData, addrIdx) => {
@@ -2979,11 +3148,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             return unspent;
           });
 
-          // Refresh balance after short delay, and multiple polls in case API indices take a few seconds
-          setTimeout(refreshBalance, 1500);
-          setTimeout(refreshBalance, 4000);
-          setTimeout(refreshBalance, 8000);
-          setTimeout(refreshBalance, 15000);
+          // Schedule jittered post-transaction refreshes to avoid rate-limit bursts while indexing on-chain
+          scheduleJitteredPostTxRefreshes(refreshBalance);
           
           return { success: true, txid: broadcastResult.txId, countMerged: utxosToCompound.length };
         } else {

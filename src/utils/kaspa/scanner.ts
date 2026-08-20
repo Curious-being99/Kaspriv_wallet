@@ -35,7 +35,7 @@ export async function scanKaspaWalletChain(
   passphrase?: string,
   prefix: string = 'kaspa',
   addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
-  gapLimit: number = 20,
+  gapLimit: number = 30,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<ScannedWalletChainResult> {
   const seedArray = mnemonicToSeedSync(mnemonic, passphrase || '');
@@ -124,7 +124,7 @@ export async function scanKaspaWalletChain(
     for (const coinType of coinTypes) {
       for (const isChange of [false, true]) {
         const changeVal = isChange ? 1 : 0;
-        const batchSize = 5;
+        const batchSize = 3;
         let consecutiveEmptyBatches = 0;
 
         for (let i = 0; i < gapLimit; i += batchSize) {
@@ -237,15 +237,15 @@ export async function scanKaspaWalletChain(
             onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
           }
 
-          // Yield execution briefly to keep mobile UI responsive during scanning
-          await new Promise((r) => setTimeout(r, 10));
+          // Delay between batches to prevent rate limiting node REST endpoints
+          await new Promise((r) => setTimeout(r, 100));
 
           if (batchHasActivity) {
             consecutiveEmptyBatches = 0;
           } else {
             consecutiveEmptyBatches++;
-            // Stop scanning this subchain early only after 6 consecutive empty batches (30 addresses) past index 25
-            if (consecutiveEmptyBatches >= 6 && i >= 25) {
+            // Only stop scanning subchain early if we have at least 10 consecutive empty batches (30 empty addresses) AND reached index >= 30
+            if (consecutiveEmptyBatches >= 10 && i >= 30) {
               break;
             }
           }
