@@ -150,39 +150,8 @@ export async function registerBiometricUnlock(
           wrappedMaster: { ciphertext: wrappedBase64, iv: ivBase64 }
         };
       } catch (err: any) {
-        console.warn('HardwareVault registration failed, falling back to legacy APK prf:', err);
-        
-        // Fallback to legacy APK prf path (requires standard BiometricAuth)
-        await BiometricAuth.authenticate({
-          reason: 'Authorize KasPriv Vault biometric unlock',
-          cancelTitle: 'Cancel',
-          allowDeviceCredential: false,
-          androidTitle: 'KasPriv Vault Biometrics',
-          androidSubtitle: 'Scan fingerprint or face to register',
-        });
-
-        const localKeyBytes = new Uint8Array(32);
-        crypto.getRandomValues(localKeyBytes);
-        const localKeyStr = bufferToBase64Url(localKeyBytes);
-
-        const encrypted = await encryptWithPassword(
-          walletPassword,
-          localKeyStr,
-          BIOMETRIC_AAD_CONTEXT
-        );
-
-        const randomId = new Uint8Array(16);
-        crypto.getRandomValues(randomId);
-
-        return {
-          credentialId: `native-apk-fallback-${bufferToBase64Url(randomId)}`,
-          mode: 'prf',
-          ciphertext: encrypted.ciphertext,
-          salt: encrypted.salt,
-          iv: encrypted.iv,
-          prfSalt: localKeyStr,
-          createdAt: Date.now(),
-        };
+        console.error('Secure Biometric Keystore registration failed:', err);
+        throw new Error('Biometric registration failed: Your device secure hardware enclave (Android Keystore / StrongBox) is not available or rejected the request.');
       }
     }
 
@@ -346,55 +315,13 @@ export async function authenticateWithBiometrics(
         };
       }
 
-      await BiometricAuth.authenticate({
-        reason: 'Unlock KasPriv Vault',
-        cancelTitle: 'Cancel',
-        allowDeviceCredential: false,
-        androidTitle: 'KasPriv Vault Biometrics',
-        androidSubtitle: 'Scan fingerprint or face to unlock',
-      });
-
-      if (record.ciphertext && record.salt && record.iv && record.prfSalt) {
-        const decryptedPassword = await decryptWithPassword(
-          record.ciphertext,
-          record.salt,
-          record.iv,
-          record.prfSalt,
-          BIOMETRIC_AAD_CONTEXT
-        );
-        return {
-          success: true,
-          mode: 'prf',
-          decryptedPassword,
-        };
-      }
-
-      return {
-        success: true,
-        mode: 'presence',
-      };
+      throw new Error('Insecure fallback biometric records are not allowed. Please re-register biometrics.');
     }
 
     // --- 2. Web / PWA WebAuthn Path ---
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
     const credentialIdBuffer = base64UrlToBuffer(record.credentialId);
-
-    if (!record.mode && (record as any).unlockKey && record.ciphertext && record.salt && record.iv) {
-      const decryptedPassword = await decryptWithPassword(
-        record.ciphertext,
-        record.salt,
-        record.iv,
-        (record as any).unlockKey,
-        BIOMETRIC_AAD_CONTEXT
-      );
-      return {
-        success: true,
-        mode: 'prf',
-        decryptedPassword,
-        isLegacyRecord: true,
-      };
-    }
 
     if (record.mode === 'prf' && record.prfSalt && record.ciphertext && record.salt && record.iv) {
       const prfSaltBytes = base64UrlToBuffer(record.prfSalt);

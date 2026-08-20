@@ -91,10 +91,19 @@ export async function signTransactionWithPrivateKeyBytes(
     const writeUint16LE = (val: number) => { const b = new Uint8Array(2); b[0] = val & 0xff; b[1] = (val >> 8) & 0xff; return b; };
     const writeUint32LE = (val: number) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, val, true); return b; };
     const writeUint64LE = (val: bigint) => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(val), true); return b; };
-    const hexToBytes = (hex: string) => {
+    const hexToBytes = (hex: string): Uint8Array => {
       const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
-      const matches = clean.match(/.{1,2}/g);
-      return matches ? new Uint8Array(matches.map(b => parseInt(b, 16))) : new Uint8Array(0);
+      if (!/^[0-9a-fA-F]*$/.test(clean)) {
+        throw new Error('Invalid hex string: contains non-hexadecimal characters');
+      }
+      if (clean.length % 2 !== 0) {
+        throw new Error('Invalid hex string: must have an even length');
+      }
+      const bytes = new Uint8Array(clean.length / 2);
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+      }
+      return bytes;
     };
 
     const outpointParts: Uint8Array[] = [];

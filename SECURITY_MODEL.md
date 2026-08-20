@@ -4,6 +4,13 @@ This document outlines the zero-trust security architecture, cryptographic primi
 
 ---
 
+## 🔒 Security Audit & Hardening Notice
+A comprehensive cryptographic and software-level security audit was successfully completed in August 2026. Special thanks and credits are extended to **[@KodinglsFun](https://x.com/KodinglsFun)** for their detailed code review and collaborative validation of critical security findings. 
+
+All identified items—including hardware-bound biometric enforcements, canonical bit-alignment validations, strict address parsing constraints, exact transaction fee/change math, and deep clone-and-freeze protections—have been successfully resolved and tested. Please refer to **[AUDIT.md](./AUDIT.md)** for the complete vulnerability disclosure, technical details, and mitigation logs.
+
+---
+
 ## Executive Summary & Security Assessment
 
 > **Overall Architecture Assessment:**

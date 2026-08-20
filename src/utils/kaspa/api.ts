@@ -151,6 +151,91 @@ export async function fetchKaspaAddressBalance(address: string): Promise<bigint 
   return null;
 }
 
+export interface KaspaUtxo {
+  address?: string;
+  transactionId?: string;
+  index?: number;
+  amount?: string | number;
+  scriptPublicKey?: string | { scriptPublicKey: string; version?: number };
+  outpoint?: {
+    transactionId: string;
+    index: number;
+  };
+  utxoEntry?: {
+    amount: string | number;
+    scriptPublicKey: {
+      scriptPublicKey: string;
+      version?: number;
+    };
+    blockDaaScore?: string | number;
+    isCoinbase?: boolean;
+  };
+}
+
+export function validateAndCleanUtxo(raw: any): KaspaUtxo | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  // 1. Resolve Transaction ID
+  let txId = raw.transactionId || raw.outpoint?.transactionId;
+  if (typeof txId !== 'string' || !/^[0-9a-fA-F]{64}$/.test(txId)) {
+    return null; // Invalid or missing TXID
+  }
+
+  // 2. Resolve Index
+  let idxVal = raw.index !== undefined ? raw.index : raw.outpoint?.index;
+  if (idxVal === undefined) return null;
+  let idx = Number(idxVal);
+  if (isNaN(idx) || idx < 0 || !Number.isInteger(idx)) {
+    return null; // Invalid outpoint index
+  }
+
+  // 3. Resolve Amount
+  let amountVal = raw.amount !== undefined ? raw.amount : raw.utxoEntry?.amount;
+  if (amountVal === undefined) return null;
+  let amountStr = String(amountVal);
+  if (!/^\d+$/.test(amountStr)) {
+    return null; // Amount must be a valid non-negative integer string
+  }
+  try {
+    BigInt(amountStr);
+  } catch {
+    return null; // Failed BigInt conversion
+  }
+
+  // 4. Resolve ScriptPubKey Hex
+  let spkHex = raw.scriptPublicKey || raw.utxoEntry?.scriptPublicKey?.scriptPublicKey || raw.utxoEntry?.scriptPublicKey;
+  if (typeof spkHex === 'object' && spkHex !== null && typeof spkHex.scriptPublicKey === 'string') {
+    spkHex = spkHex.scriptPublicKey;
+  }
+  if (typeof spkHex !== 'string' || !/^[0-9a-fA-F]+$/.test(spkHex)) {
+    return null; // Invalid script public key hex representation
+  }
+
+  // Construct a sanitized, secure internal UTXO representation matching our exact expectations
+  const cleanUtxo: KaspaUtxo = {
+    address: typeof raw.address === 'string' ? raw.address.trim() : undefined,
+    transactionId: txId.toLowerCase(),
+    index: idx,
+    amount: amountStr,
+    scriptPublicKey: spkHex.toLowerCase(),
+    outpoint: {
+      transactionId: txId.toLowerCase(),
+      index: idx
+    },
+    utxoEntry: {
+      amount: amountStr,
+      scriptPublicKey: {
+        scriptPublicKey: spkHex.toLowerCase(),
+        version: raw.utxoEntry?.scriptPublicKey?.version !== undefined ? Number(raw.utxoEntry.scriptPublicKey.version) : 0
+      },
+      blockDaaScore: raw.utxoEntry?.blockDaaScore !== undefined ? String(raw.utxoEntry.blockDaaScore) : undefined,
+      isCoinbase: Boolean(raw.utxoEntry?.isCoinbase)
+    }
+  };
+
+  return cleanUtxo;
+}
+
 export async function fetchKaspaAddressUtxos(address: string): Promise<any[] | null> {
   if (!address) return null;
   const endpoints = getKaspaApiEndpoints();
@@ -160,7 +245,13 @@ export async function fetchKaspaAddressUtxos(address: string): Promise<any[] | n
       const res = await fetchWithTimeout(`${ep}/addresses/${encodeURIComponent(address.trim())}/utxos`, {}, 8000);
       if (!res.ok) continue;
       const data = await res.json();
-      if (Array.isArray(data)) return data;
+      if (Array.isArray(data)) {
+        // Sanitize & validate every single UTXO
+        const validUtxos = data
+          .map(validateAndCleanUtxo)
+          .filter((u): u is KaspaUtxo => u !== null);
+        return validUtxos;
+      }
     } catch (err) {
       // try next endpoint
     }

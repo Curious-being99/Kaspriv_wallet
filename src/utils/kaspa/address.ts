@@ -24,6 +24,14 @@ export function convertBits(data: Uint8Array | number[], from: number, to: numbe
     if (bits > 0) {
       res.push((acc << (to - bits)) & maxv);
     }
+  } else {
+    // Bech32 canonical bit alignment rules
+    if (bits >= from) {
+      throw new Error('Invalid padding in convertBits: excess alignment bits');
+    }
+    if ((acc & ((1 << bits) - 1)) !== 0) {
+      throw new Error('Non-zero padding bits in convertBits: non-canonical address encoding');
+    }
   }
   return res;
 }
@@ -98,31 +106,25 @@ export function validateKaspaAddress(address: string, network: NetworkType = 'ma
     return { isValid: false, error: 'Address is required' };
   }
 
-  let trimmed = address.trim();
+  const trimmed = address.trim();
 
-  let expectedPrefix = 'kaspa:';
-  if (network === 'testnet-10') expectedPrefix = 'kaspatest:';
-  if (network === 'devnet') expectedPrefix = 'kaspadev:';
-
-  if (!trimmed.includes(':')) {
-    trimmed = `${expectedPrefix}${trimmed}`;
-  }
-
-  const lower = trimmed.toLowerCase();
-  const validPrefixes = ['kaspa:', 'kaspatest:', 'kaspadev:'];
-  const hasValidPrefix = validPrefixes.some(p => lower.startsWith(p));
-
-  if (!hasValidPrefix) {
-    return { isValid: false, error: `Address must start with 'kaspa:', 'kaspatest:', or 'kaspadev:'` };
-  }
-
+  // Strict: Address must contain exactly one colon
   const parts = trimmed.split(':');
-  if (parts.length < 2 || !parts[1] || parts[1].length < 35 || parts[1].length > 100) {
-    return { isValid: false, error: 'Invalid Kaspa address length' };
+  if (parts.length !== 2) {
+    return { isValid: false, error: 'Address must contain exactly one colon' };
   }
 
   const hrpActual = parts[0].toLowerCase();
   const payload = parts[1];
+
+  let expectedPrefix = 'kaspa';
+  if (network === 'testnet-10' || network === 'testnet-11') expectedPrefix = 'kaspatest';
+  if (network === 'devnet') expectedPrefix = 'kaspadev';
+
+  if (hrpActual !== expectedPrefix) {
+    return { isValid: false, error: `Invalid network prefix. Expected ${expectedPrefix}, got ${hrpActual}` };
+  }
+
   const firstChar = payload[0].toLowerCase();
   if (!['q', 'p', 'z'].includes(firstChar)) {
     return { isValid: false, error: "Invalid Kaspa address format (must start with 'q' or 'p')" };
@@ -157,7 +159,14 @@ export function validateKaspaAddress(address: string, network: NetworkType = 'ma
 
   // Verify version byte and payload size
   const dataWords = words.slice(0, words.length - 8);
-  const bytes = convertBits(dataWords, 5, 8, false);
+  
+  let bytes: number[];
+  try {
+    bytes = convertBits(dataWords, 5, 8, false);
+  } catch (err: any) {
+    return { isValid: false, error: err.message || 'Invalid bits conversion' };
+  }
+
   if (bytes.length === 0) {
     return { isValid: false, error: 'Invalid address data encoding' };
   }
@@ -220,18 +229,22 @@ export function parseKaspaUri(uriString: string): { address: string; amountKas?:
 /**
  * Helper to convert a Kaspa address into a scriptPublicKey bytes
  */
-export function addressToScriptPublicKeyBytes(address: string): Uint8Array {
+export function addressToScriptPublicKeyBytes(address: string, network: NetworkType = 'mainnet'): Uint8Array {
   if (!address) return new Uint8Array(0);
   const trimmed = address.trim();
 
-  // If already hex
-  if (/^[0-9a-fA-F]{64,80}$/.test(trimmed)) {
+  // If already hex scriptPublicKey
+  if (/^[0-9a-fA-F]+$/.test(trimmed) && (trimmed.length === 68 || trimmed.length === 70)) {
     return Buffer.from(trimmed, 'hex');
   }
 
-  // Extract payload after prefix
+  const validation = validateKaspaAddress(trimmed, network);
+  if (!validation.isValid) {
+    throw new Error(`Invalid address or network mismatch: ${validation.error || 'validation failed'}`);
+  }
+
   const parts = trimmed.split(':');
-  const payloadStr = parts.length > 1 ? parts[1] : parts[0];
+  const payloadStr = parts[1];
 
   const words: number[] = [];
   for (let i = 0; i < payloadStr.length; i++) {
@@ -239,12 +252,9 @@ export function addressToScriptPublicKeyBytes(address: string): Uint8Array {
     if (idx !== -1) words.push(idx);
   }
 
-  if (words.length < 8) return new Uint8Array(0);
-  // Remove 8 checksum words
   const dataWords = words.slice(0, words.length - 8);
   const bytes = convertBits(dataWords, 5, 8, false);
 
-  if (bytes.length < 33) return new Uint8Array(0);
   const version = bytes[0];
   const payload = bytes.slice(1);
 
@@ -276,8 +286,8 @@ export function addressToScriptPublicKeyBytes(address: string): Uint8Array {
 /**
  * Helper to convert a Kaspa address into a scriptPublicKey hex string
  */
-export function addressToScriptPublicKey(address: string): string {
-  return Buffer.from(addressToScriptPublicKeyBytes(address)).toString('hex');
+export function addressToScriptPublicKey(address: string, network: NetworkType = 'mainnet'): string {
+  return Buffer.from(addressToScriptPublicKeyBytes(address, network)).toString('hex');
 }
 
 /**

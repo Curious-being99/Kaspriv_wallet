@@ -10,6 +10,41 @@ import {
 } from './kaspa';
 import { NetworkType } from '../types';
 
+export function deepCloneAndFreeze<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  // Handle BigInt explicitly
+  if (typeof obj === 'bigint') {
+    return obj;
+  }
+
+  // Handle Array
+  if (Array.isArray(obj)) {
+    const copy = obj.map(item => deepCloneAndFreeze(item)) as any;
+    return Object.freeze(copy) as any;
+  }
+
+  // Handle Uint8Array or other TypedArrays
+  if (obj instanceof Uint8Array) {
+    const copy = new Uint8Array(obj);
+    return Object.freeze(copy) as any;
+  }
+
+  // Handle Date
+  if (obj instanceof Date) {
+    return Object.freeze(new Date(obj.getTime())) as any;
+  }
+
+  // Handle Object
+  const copy = {} as any;
+  for (const key of Object.keys(obj)) {
+    copy[key] = deepCloneAndFreeze((obj as any)[key]);
+  }
+  return Object.freeze(copy);
+}
+
 export interface UnsignedTxIntent {
   network: NetworkType;
   toAddress: string;
@@ -226,8 +261,11 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
       throw new Error(`Security failure: Signed transaction self-send combined output (${combinedAmount}) exceeds expected (${expectedCombined}).`);
     }
     const feeDiscrepancy = expectedCombined - combinedAmount;
-    if (feeDiscrepancy > 200000n) {
-      throw new Error(`Security failure: Signed transaction combined output amount (${combinedAmount} sompi) is suspiciously lower than expected (${expectedCombined} sompi).`);
+    if (feeDiscrepancy !== 0n) {
+      throw new Error(`Security failure: Signed transaction combined output amount (${combinedAmount} sompi) does not match expected (${expectedCombined} sompi) exactly.`);
+    }
+    if (signedTx.outputs.length > 2) {
+      throw new Error(`Security failure: Signed transaction has extra unauthorized outputs (${signedTx.outputs.length} outputs, expected at most 2).`);
     }
   } else {
     // Find the recipient output
@@ -262,8 +300,8 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
         throw new Error(`Security failure: Signed transaction change output (${actualChangeAmount}) exceeds expected (${expectedChangeAmount}).`);
       }
       const feeDiscrepancy = expectedChangeAmount - actualChangeAmount;
-      if (feeDiscrepancy > 200000n) {
-        throw new Error(`Security failure: Signed transaction change output amount (${actualChangeAmount} sompi) is suspiciously lower than expected (${expectedChangeAmount} sompi).`);
+      if (feeDiscrepancy !== 0n) {
+        throw new Error(`Security failure: Signed transaction change output amount (${actualChangeAmount} sompi) does not match expected (${expectedChangeAmount} sompi) exactly.`);
       }
 
       // Ensure there are at most 2 outputs (recipient + change)
@@ -329,7 +367,7 @@ export class IsolatedSigner {
   public static async signTransactionIsolated(
     mnemonic: string,
     passphrase: string | undefined,
-    intent: UnsignedTxIntent,
+    intentInput: UnsignedTxIntent,
     addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
     redeemScriptHex?: string
   ): Promise<{
@@ -337,15 +375,8 @@ export class IsolatedSigner {
     transaction?: any;
     error?: string;
   }> {
-    // Zero-Trust Lock: Freeze intent and its inputs immediately to prevent memory mutation by malware
-    Object.freeze(intent);
-    if (intent.utxos) {
-      intent.utxos.forEach(u => {
-        if (u.outpoint) Object.freeze(u.outpoint);
-        Object.freeze(u);
-      });
-      Object.freeze(intent.utxos);
-    }
+    // Zero-Trust Deep Clone & Freeze: Completely isolate intent to prevent post-verification memory mutation by malware
+    const intent = deepCloneAndFreeze(intentInput);
 
     // 1. Verify transaction intent BEFORE key derivation.
     const verification = verifyTransactionIntent(intent, intent.network);
