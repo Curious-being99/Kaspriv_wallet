@@ -170,14 +170,18 @@ export async function scanKaspaWalletChain(
           );
 
           for (const res of results) {
-            const hasBalance = res.balance !== null && res.balance > 0n;
+            const utxosSum = (res.utxos && Array.isArray(res.utxos))
+              ? res.utxos.reduce((sum: bigint, u: any) => sum + BigInt(u.utxoEntry?.amount || u.amount || 0), 0n)
+              : 0n;
+            const apiBal = res.balance !== null && res.balance !== undefined ? res.balance : 0n;
+            const currentBal = utxosSum > apiBal ? utxosSum : apiBal;
+
+            const hasBalance = currentBal > 0n;
             const hasUtxos = res.utxos !== null && Array.isArray(res.utxos) && res.utxos.length > 0;
             const hasTxs = res.txs !== null && Array.isArray(res.txs) && res.txs.length > 0;
 
             if (hasBalance || hasUtxos || hasTxs) {
               batchHasActivity = true;
-              const currentBal = res.balance || 0n;
-              totalBalanceSompi += currentBal;
 
               // Check if address is already in discoveredAddresses
               const existingIdx = discoveredAddresses.findIndex(d => d.address === res.item.addr);
@@ -196,11 +200,20 @@ export async function scanKaspaWalletChain(
 
               if (res.utxos && Array.isArray(res.utxos)) {
                 res.utxos.forEach((u: any) => {
-                  allUtxos.push({
-                    ...u,
-                    derivationPath: res.item.path,
-                    address: res.item.addr,
-                  });
+                  const outpointTxId = u.outpoint?.transactionId || u.transactionId || u.txid || '';
+                  const outpointIndex = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
+                  // Avoid duplicate UTXOs
+                  const exists = allUtxos.some(existing => 
+                    (existing.outpoint?.transactionId || existing.txid) === outpointTxId && 
+                    (existing.outpoint?.index !== undefined ? existing.outpoint.index : existing.vout) === outpointIndex
+                  );
+                  if (!exists) {
+                    allUtxos.push({
+                      ...u,
+                      derivationPath: res.item.path,
+                      address: res.item.addr,
+                    });
+                  }
                 });
               }
 
@@ -215,6 +228,11 @@ export async function scanKaspaWalletChain(
             }
           }
 
+          // Calculate precise total balance from all accumulated UTXOs and address balances
+          const utxoTotal = allUtxos.reduce((sum, u) => sum + BigInt(u.utxoEntry?.amount || u.amount || 0), 0n);
+          const addressBalanceTotal = discoveredAddresses.reduce((sum, d) => sum + (d.balanceSompi || 0n), 0n);
+          totalBalanceSompi = utxoTotal > addressBalanceTotal ? utxoTotal : addressBalanceTotal;
+
           if (onProgress) {
             onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
           }
@@ -226,8 +244,8 @@ export async function scanKaspaWalletChain(
             consecutiveEmptyBatches = 0;
           } else {
             consecutiveEmptyBatches++;
-            // Stop scanning this subchain early if 2 consecutive batches (20 addresses) have no activity
-            if (consecutiveEmptyBatches >= 2 && i >= 10) {
+            // Stop scanning this subchain early only after 6 consecutive empty batches (30 addresses) past index 25
+            if (consecutiveEmptyBatches >= 6 && i >= 25) {
               break;
             }
           }

@@ -1979,7 +1979,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         passToUse,
         prefix,
         activeWallet.addressType || 'P2PKH',
-        20,
+        50,
         (scannedCount, foundCount, balanceSompi) => {
           setIndexingState({ isIndexing: true, scannedAddresses: scannedCount, foundAddresses: foundCount, balanceSompi });
         }
@@ -2089,7 +2089,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let scanRes;
     try {
       scanRes = await scanKaspaWalletChain(
-        mStr, passphrase, prefix, addressType, 20,
+        mStr, passphrase, prefix, addressType, 50,
         (scannedCount, foundCount, balanceSompi) => {
           setIndexingState({ isIndexing: true, scannedAddresses: scannedCount, foundAddresses: foundCount, balanceSompi });
         }
