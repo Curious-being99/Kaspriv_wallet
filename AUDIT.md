@@ -160,6 +160,24 @@ All mitigations have been merged into the main application branch and thoroughly
 
 ---
 
+## Technical Honesty Notes & Implementation Disclosures
+
+To maintain absolute cryptographic transparency and precision, we document the following nuances regarding our implementation boundaries:
+
+1. **Precision of `kasToSompi`:**
+   - Although the `kasToSompi(kas)` conversion function accepts both `number` and `string` arguments, passing a standard JavaScript `number` can expose monetary calculations to native IEEE-754 double-precision floating-point rounding errors (e.g., fractional precision limits).
+   - **Recommendation:** Always prefer and maintain raw `string` amount inputs from the UI components. This ensures all fractional multiplication and padding occur safely within direct `BigInt` parsing logic, avoiding any floating-point conversions.
+
+2. **Native Android vs. Web Biometrics:**
+   - The audited "no fallback" strictness refers directly to the **Android platform** where biometric credentials must match and bind to the Android Keystore / StrongBox hardware-backed TEE secure path.
+   - For standard web-based builds, biometric key-derivation uses WebAuthn PRF (Pseudo-Random Function) extensions and user-presence assertions to derive credentials safely within browser limitations.
+
+3. **Key Wrapping and Hardware Keystore Limits:**
+   - The function `wrapKeyWithHardwareKeystore` inside `src/utils/crypto.ts` operates as a software-based Argon2id and WebCrypto AES-GCM helper utilizing a hardware-bound thematic AAD (Additional Authenticated Data).
+   - **Enclave Reality:** Real hardware-enforced cryptographic wrapping of keys is bound by the native mobile enclaves and handled via the underlying Android/iOS `HardwareVaultPlugin` or Biometric wrapper, rather than the JavaScript/TypeScript software helper function alone.
+
+---
+
 ## Acknowledgement & Community Impact
 
 The security posture of **KasPriv Wallet** has been substantially elevated due to the diligence, expertise, and guidance of **[@KodinglsFun](https://x.com/KodinglsFun)**. 
