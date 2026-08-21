@@ -12,8 +12,8 @@ export function sanitizeText(input: string, maxLength = 200): string {
   // 1. Convert to string and trim
   let clean = String(input).trim();
 
-  // 2. Remove HTML tags
-  clean = clean.replace(/<[^>]*>?/gm, '');
+  // 2. Remove angle brackets to prevent HTML tag/script injection patterns
+  clean = clean.replace(/[<>]/g, '');
 
   // 3. Remove non-printable control characters (except space, tab, newline)
   clean = clean.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
