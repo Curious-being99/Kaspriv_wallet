@@ -369,7 +369,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const activeLoadedNode = mergedNodes.find(n => n.selected) || mergedNodes[0];
 
         let savedApiUrl = await getSetting<string>('kaspa_api_url') || activeLoadedNode?.apiUrl;
-        if (!savedApiUrl || savedApiUrl.includes('api.kaspagov.org') || savedApiUrl.includes('testnet') || savedApiUrl.includes('devnet')) {
+        let shouldResetApiUrl = !savedApiUrl;
+        if (savedApiUrl) {
+          try {
+            const parsedApiUrl = new URL(savedApiUrl);
+            const hostname = parsedApiUrl.hostname.toLowerCase();
+            const hostLabels = hostname.split('.');
+            shouldResetApiUrl =
+              hostname === 'api.kaspagov.org' ||
+              hostLabels.includes('testnet') ||
+              hostLabels.includes('devnet');
+          } catch {
+            shouldResetApiUrl = true;
+          }
+        }
+        if (shouldResetApiUrl) {
           savedApiUrl = 'https://api.kaspa.org';
         }
         if (savedApiUrl) {
