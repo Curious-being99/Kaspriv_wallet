@@ -239,29 +239,12 @@ export async function encryptWithPassword(plaintext: string, password: string, c
     console.warn('Worker encrypt failed, falling back to local thread:', err);
   }
 
-  // Strictly block JavaScript fallbacks in production APK native environments (including workers)
-  const isAndroidAPK = forceNativeOnly || (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.());
-  if (isAndroidAPK) {
-    const rust = await tryGetRustWasm();
-    if (!rust || typeof rust.encrypt_with_password_rust !== 'function') {
-      throw new Error('Native Crypto Module missing: APK target requires compiled Rust Native core.');
-    }
-    const res = rust.encrypt_with_password_rust(plaintext, password, context);
-    if (!res || typeof res !== 'object') {
-      throw new Error('Native encryption failed: Invalid response from Rust Native core.');
-    }
-    return {
-      ciphertext: res.ciphertext,
-      salt: res.salt,
-      iv: res.iv
-    };
-  }
-
   // 1. Prioritize Rust WASM Core if compiled and loaded
   const rust = await tryGetRustWasm();
+  const isAndroid = forceNativeOnly || (typeof window !== 'undefined' && (window as any).Capacitor?.getPlatform?.() === 'android');
   if (rust && typeof rust.encrypt_with_password_rust === 'function') {
     try {
-      const res = rust.encrypt_with_password_rust(plaintext, password, context);
+      const res = await rust.encrypt_with_password_rust(plaintext, password, context);
       if (res && typeof res === 'object') {
         return {
           ciphertext: res.ciphertext,
@@ -271,8 +254,10 @@ export async function encryptWithPassword(plaintext: string, password: string, c
       }
     } catch (err) {
       console.error('Rust WASM encrypt failed:', err);
-      throw err;
+      if (isAndroid) throw err;
     }
+  } else if (isAndroid) {
+    console.warn('Android native crypto core requested but WASM module not loaded yet.');
   }
 
   // 2. Developer/Environment Fallback
@@ -396,25 +381,18 @@ export async function decryptWithPasswordLegacy(
 async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: string, ivHex: string, password: string, context: string): Promise<string> {
   validateEncryptedRecord(ciphertextHex, saltHex, ivHex, password);
 
-  // Strictly block JavaScript fallbacks in production APK native environments (including workers)
-  const isAndroidAPK = forceNativeOnly || (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.());
-  if (isAndroidAPK) {
-    const rust = await tryGetRustWasm();
-    if (!rust || typeof rust.decrypt_with_password_rust !== 'function') {
-      throw new Error('Native Crypto Module missing: APK target requires compiled Rust Native core.');
-    }
-    return await rust.decrypt_with_password_rust(ciphertextHex, password, saltHex, ivHex, context);
-  }
-
   // 1. Prioritize Rust WASM Core if compiled and loaded
   const rust = await tryGetRustWasm();
+  const isAndroid = forceNativeOnly || (typeof window !== 'undefined' && (window as any).Capacitor?.getPlatform?.() === 'android');
   if (rust && typeof rust.decrypt_with_password_rust === 'function') {
     try {
       return await rust.decrypt_with_password_rust(ciphertextHex, password, saltHex, ivHex, context);
     } catch (err) {
       console.error('Rust WASM decrypt failed:', err);
-      throw new Error(`Decryption failed: ${err}`);
+      if (isAndroid) throw new Error(`Decryption failed: ${err}`);
     }
+  } else if (isAndroid) {
+    console.warn('Android native crypto core requested for decryption but WASM module not loaded yet.');
   }
 
   // 2. Developer/Environment Fallback
