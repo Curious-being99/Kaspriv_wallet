@@ -1,10 +1,53 @@
 import { argon2id } from 'hash-wasm';
 
 /**
+ * Universal safe cryptographic provider retriever.
+ * Resolves standard window.crypto or fallback globalThis.crypto context safely,
+ * decoupling cryptography from browser WebView dependencies.
+ */
+function getCrypto(): Crypto {
+  const c = (typeof window !== 'undefined' ? window.crypto : null) || (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
+  if (!c) {
+    throw new Error('Pre-derivation validation failed: Web Crypto API is not available in this environment.');
+  }
+  return c;
+}
+
+let wasmModule: any = null;
+let wasmLosslessChecked = false;
+
+// Safe dynamic WebAssembly loader for Rust Core compilation folder
+async function tryGetRustWasm() {
+  if (wasmLosslessChecked) return wasmModule;
+  wasmLosslessChecked = true;
+  try {
+    // Dynamic import to avoid missing files compilation issues during dev
+    // and automatically link once wasm-pack build output is populated
+    const targetWasmModulePath = './rust-wasm/kaspriv_rust_crypto';
+    wasmModule = await import(/* @vite-ignore */ targetWasmModulePath as any);
+  } catch (err) {
+    // Rust core wasm not compiled yet, which is normal before local compiling
+  }
+  return wasmModule;
+}
+
+/**
  * Securely overwrites a Uint8Array with zeros.
  */
 export function wipe(buffer: Uint8Array): void {
+  // Overwrite JS engine references
   buffer.fill(0);
+  
+  // If rust wasm is compiled and available, pass it to Rust's secure_wipe_rust for bare-metal zeroization
+  tryGetRustWasm().then(rust => {
+    if (rust && typeof rust.secure_wipe_rust === 'function') {
+      try {
+        rust.secure_wipe_rust(buffer);
+      } catch (e) {
+        // Fallback silently if WASM memory is detached or inaccessible
+      }
+    }
+  }).catch(() => {});
 }
 
 /**
@@ -13,7 +56,7 @@ export function wipe(buffer: Uint8Array): void {
  */
 export function zeroize(buffer: Uint8Array | null | undefined): void {
   if (buffer) {
-    buffer.fill(0);
+    wipe(buffer);
   }
 }
 
@@ -182,13 +225,24 @@ function validateEncryptedRecord(ciphertextHex: string, saltHex: string, ivHex: 
  * Encrypts a plaintext string using a two-tier key hierarchy (DEK wrapped by KEK).
  */
 export async function encryptWithPassword(plaintext: string, password: string, context: string = AAD_CONTEXT): Promise<{ ciphertext: string; salt: string; iv: string }> {
+  try {
+    const { cryptoWorkerManager } = await import('./cryptoWorkerManager');
+    if (cryptoWorkerManager.isSupported()) {
+      return await cryptoWorkerManager.runTask<{ ciphertext: string; salt: string; iv: string }>('encryptWithPassword', { plaintext, password, context });
+    }
+  } catch (err) {
+    console.warn('Worker encrypt failed, falling back to local thread:', err);
+  }
+
   const encoder = new TextEncoder();
   const plaintextBytes = encoder.encode(plaintext);
   const aadBytes = encoder.encode(context);
 
+  const cryptoProvider = getCrypto();
+
   // 1. Generate random salt (16 bytes) and KEK IV (12-bytes)
-  const salt = window.crypto.getRandomValues(new Uint8Array(16));
-  const kekIv = window.crypto.getRandomValues(new Uint8Array(12));
+  const salt = cryptoProvider.getRandomValues(new Uint8Array(16));
+  const kekIv = cryptoProvider.getRandomValues(new Uint8Array(12));
 
   // 2. Derive KEK (Key Encryption Key) using Argon2id
   const kekBytes = await argon2id({
@@ -197,7 +251,7 @@ export async function encryptWithPassword(plaintext: string, password: string, c
     ...ARGON2_CONFIG
   });
 
-  const kek = await window.crypto.subtle.importKey(
+  const kek = await cryptoProvider.subtle.importKey(
     'raw',
     kekBytes as unknown as BufferSource,
     { name: 'AES-GCM' },
@@ -207,8 +261,8 @@ export async function encryptWithPassword(plaintext: string, password: string, c
   wipe(kekBytes);
 
   // 3. Generate random DEK (Data Encryption Key, 32 bytes)
-  const dekBytes = window.crypto.getRandomValues(new Uint8Array(32));
-  const dek = await window.crypto.subtle.importKey(
+  const dekBytes = cryptoProvider.getRandomValues(new Uint8Array(32));
+  const dek = await cryptoProvider.subtle.importKey(
     'raw',
     dekBytes as unknown as BufferSource,
     { name: 'AES-GCM' },
@@ -217,8 +271,8 @@ export async function encryptWithPassword(plaintext: string, password: string, c
   );
 
   // 4. Encrypt plaintext with DEK
-  const dekIv = window.crypto.getRandomValues(new Uint8Array(12));
-  const payloadEncrypted = await window.crypto.subtle.encrypt(
+  const dekIv = cryptoProvider.getRandomValues(new Uint8Array(12));
+  const payloadEncrypted = await cryptoProvider.subtle.encrypt(
     { name: 'AES-GCM', iv: dekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
     dek,
     plaintextBytes as unknown as BufferSource
@@ -226,7 +280,7 @@ export async function encryptWithPassword(plaintext: string, password: string, c
   wipe(plaintextBytes);
 
   // 5. Encrypt DEK with KEK
-  const dekEncrypted = await window.crypto.subtle.encrypt(
+  const dekEncrypted = await cryptoProvider.subtle.encrypt(
     { name: 'AES-GCM', iv: kekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
     kek,
     dekBytes as unknown as BufferSource
@@ -255,6 +309,15 @@ export async function decryptWithPassword(
   password: string, 
   context: string = AAD_CONTEXT
 ): Promise<string> {
+  try {
+    const { cryptoWorkerManager } = await import('./cryptoWorkerManager');
+    if (cryptoWorkerManager.isSupported()) {
+      return await cryptoWorkerManager.runTask<string>('decryptWithPassword', { ciphertextHex, saltHex, ivHex, password, context });
+    }
+  } catch (err) {
+    console.warn('Worker decrypt failed, falling back to local thread:', err);
+  }
+
   return await decryptWithPasswordInternal(ciphertextHex, saltHex, ivHex, password, context);
 }
 
@@ -294,6 +357,8 @@ async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: strin
   const kekIv = hexToBytes(ivHex);
   const aadBytes = encoder.encode(context);
 
+  const cryptoProvider = getCrypto();
+
   // 1. Derive KEK
   const kekBytes = await argon2id({
     password,
@@ -301,7 +366,7 @@ async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: strin
     ...ARGON2_CONFIG
   });
 
-  const kek = await window.crypto.subtle.importKey(
+  const kek = await cryptoProvider.subtle.importKey(
     'raw',
     kekBytes as unknown as BufferSource,
     { name: 'AES-GCM' },
@@ -319,13 +384,13 @@ async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: strin
       const payloadEncrypted = hexToBytes(parts[3]);
 
       // Unwrap DEK
-      const dekBytesBuffer = await window.crypto.subtle.decrypt(
+      const dekBytesBuffer = await cryptoProvider.subtle.decrypt(
         { name: 'AES-GCM', iv: kekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
         kek,
         dekEncrypted as unknown as BufferSource
       );
       const dekBytes = new Uint8Array(dekBytesBuffer);
-      const dek = await window.crypto.subtle.importKey(
+      const dek = await cryptoProvider.subtle.importKey(
         'raw',
         dekBytes as unknown as BufferSource,
         { name: 'AES-GCM' },
@@ -335,7 +400,7 @@ async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: strin
       wipe(dekBytes);
 
       // Decrypt payload
-      const decryptedBuffer = await window.crypto.subtle.decrypt(
+      const decryptedBuffer = await cryptoProvider.subtle.decrypt(
         { name: 'AES-GCM', iv: dekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
         dek,
         payloadEncrypted as unknown as BufferSource
@@ -349,7 +414,7 @@ async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: strin
     } else {
       // Legacy format (v1)
       const ciphertext = hexToBytes(ciphertextHex);
-      const decryptedBuffer = await window.crypto.subtle.decrypt(
+      const decryptedBuffer = await cryptoProvider.subtle.decrypt(
         { name: 'AES-GCM', iv: kekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
         kek,
         ciphertext as unknown as BufferSource

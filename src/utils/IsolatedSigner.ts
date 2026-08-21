@@ -395,6 +395,23 @@ export class IsolatedSigner {
     transaction?: any;
     error?: string;
   }> {
+    try {
+      const { cryptoWorkerManager, serializeWithBigInt, deserializeWithBigInt } = await import('./cryptoWorkerManager');
+      if (cryptoWorkerManager.isSupported()) {
+        const serializedIntent = serializeWithBigInt(intentInput);
+        const res = await cryptoWorkerManager.runTask<any>('signTransactionIsolated', {
+          serializedIntent,
+          mnemonic,
+          passphrase,
+          addressType,
+          redeemScriptHex
+        });
+        return deserializeWithBigInt(res);
+      }
+    } catch (err: any) {
+      console.warn('Worker signTransactionIsolated failed, falling back to local thread:', err);
+    }
+
     // Zero-Trust Deep Clone & Freeze: Completely isolate intent to prevent post-verification memory mutation by malware
     const intent = deepCloneAndFreeze(intentInput);
 
@@ -479,6 +496,19 @@ export class IsolatedSigner {
     passphrase: string | undefined,
     message: string
   ): Promise<{ success: boolean; signature?: string; error?: string }> {
+    try {
+      const { cryptoWorkerManager } = await import('./cryptoWorkerManager');
+      if (cryptoWorkerManager.isSupported()) {
+        return await cryptoWorkerManager.runTask<{ success: boolean; signature?: string; error?: string }>('signMessageIsolated', {
+          mnemonic,
+          passphrase,
+          message
+        });
+      }
+    } catch (err: any) {
+      console.warn('Worker signMessageIsolated failed, falling back to local thread:', err);
+    }
+
     let privKeyBytes: Uint8Array | null = null;
 
     try {

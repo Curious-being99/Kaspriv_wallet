@@ -29,6 +29,21 @@ export default defineConfig({
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-simple-keyboard', 'qrcode.react', 'html5-qrcode', '@kaspa/core-lib'],
   },
+  worker: {
+    format: 'es',
+    plugins: () => [
+      wasm(),
+      nodePolyfills({
+        include: ['buffer', 'stream', 'util', 'crypto', 'process', 'path', 'fs'],
+        globals: {
+          Buffer: true,
+          global: true,
+          process: true,
+          require: true,
+        }
+      })
+    ]
+  },
   assetsInclude: ['**/*.wasm'],
   server: {
     host: '0.0.0.0',
