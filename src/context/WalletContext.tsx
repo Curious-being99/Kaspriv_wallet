@@ -1170,11 +1170,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         localPendingChangeUtxosRef.current.forEach((pending) => {
           const key = `${pending.txid}:${pending.vout}`;
-          const isExpired = (now - pending.timestamp) > 60000;
+          const isExpired = (now - pending.timestamp) > 15000;
           if (liveOutpointKeys.has(key)) {
             // Already officially in the live UTXO set! No need to track anymore
           } else if (isExpired) {
-            // Expired after 60 seconds (safety cleanup), drop it
+            // Expired after 15 seconds (safety cleanup), drop it
           } else {
             // Not yet returned by node, keep tracking and merge into UTXO outputs list
             stillPendingChange.push(pending);
@@ -1252,10 +1252,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         );
 
         // Clean up spentUtxoOutpoints: keep only outpoints that the API node still mistakenly returns,
-        // or that were spent within the last 60 seconds (safety margin for load-balanced/lagging nodes)
+        // or that were spent within the last 15 seconds (safety margin for load-balanced/lagging nodes)
         setSpentUtxoOutpoints((prev) => prev.filter(op => {
           const spentTime = spentUtxoTimestampsRef.current[op] || 0;
-          const isRecentlySpent = (now - spentTime) < 60000;
+          const isRecentlySpent = (now - spentTime) < 15000;
           return liveOutpointKeys.has(op) || isRecentlySpent;
         }));
 

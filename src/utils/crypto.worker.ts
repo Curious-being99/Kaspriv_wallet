@@ -23,9 +23,9 @@ self.addEventListener('message', async (e: MessageEvent) => {
       // Reconstruct BigInts inside the worker
       const intent = deserializeWithBigInt(serializedIntent);
       const res = await IsolatedSigner.signTransactionIsolated(
-        intent,
         mnemonic,
         passphrase,
+        intent,
         addressType,
         redeemScriptHex
       );
