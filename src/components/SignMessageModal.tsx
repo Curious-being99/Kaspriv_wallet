@@ -148,7 +148,7 @@ export const SignMessageModal: React.FC = () => {
               onFocus={() => openKeyboard({ value: message, onChange: setMessage })}
               onClick={() => openKeyboard({ value: message, onChange: setMessage })}
               inputMode="none" onChange={() => {}}
-              className="w-full p-3 rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+              className="w-full p-3 rounded-xl bg-[#0B151E] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
             />
           </div>
 
@@ -182,7 +182,7 @@ export const SignMessageModal: React.FC = () => {
                   onFocus={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
                   onClick={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
                   inputMode="none" onChange={() => {}}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] text-sm text-slate-100 outline-none transition-colors pr-10"
+                  className="w-full px-3 py-2.5 rounded-xl bg-[#0B151E] focus:border-[#70C7BA] text-sm text-slate-100 outline-none transition-colors pr-10 cursor-pointer"
                 />
                 <button
                   type="button"

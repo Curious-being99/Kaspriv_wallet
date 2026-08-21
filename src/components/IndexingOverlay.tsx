@@ -1,7 +1,7 @@
 import React from 'react';
 import { useWallet } from '../context/WalletContext';
 import { Server, Hash, Activity } from 'lucide-react';
-import { formatKas } from '../utils/kaspa';
+import { formatKas, getKaspaApiUrl } from '../utils/kaspa';
 
 export const IndexingOverlay: React.FC = () => {
   const { indexingState, isLocked } = useWallet();
@@ -65,7 +65,7 @@ export const IndexingOverlay: React.FC = () => {
         <div className="w-full pt-2">
           <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500 font-medium">
             <Server className="w-3.5 h-3.5 text-[#70C7BA] animate-spin" />
-            <span>Connected to api.kaspa.org — Please wait until scan completes</span>
+            <span>Connected to {getKaspaApiUrl().replace(/^https?:\/\//, '')} — Please wait until scan completes</span>
           </div>
         </div>
       </div>

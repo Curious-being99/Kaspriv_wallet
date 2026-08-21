@@ -436,6 +436,7 @@ export const DevConsoleDrawer: React.FC = () => {
                 <input
                   type="text"
                   value={searchQuery}
+                  onFocus={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
                   onClick={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
                   inputMode="none" onChange={() => {}}
                   placeholder="Filter logs..."

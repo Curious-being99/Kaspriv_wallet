@@ -135,8 +135,9 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
               value={searchQuery}
               onFocus={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
               onClick={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
-              inputMode="none" onChange={() => {}}
-              className="w-full bg-[#131924] border border-[#212B38] rounded-2xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#70C7BA] transition-colors"
+              inputMode="none"
+              onChange={() => {}}
+              className="w-full bg-[#131924] border border-[#212B38] rounded-2xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#70C7BA] transition-colors cursor-pointer"
             />
             {searchQuery && (
               <button

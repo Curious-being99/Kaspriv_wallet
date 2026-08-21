@@ -248,6 +248,61 @@ const INITIAL_NODES: KaspaNode[] = [
     latencyMs: 12,
     isOnline: true,
     selected: true,
+  },
+  {
+    id: 'node-community-mirror',
+    name: 'Kaspa Community REST (api.kaspa.net)',
+    url: 'grpcs://api.kaspa.net',
+    apiUrl: 'https://api.kaspa.net',
+    explorerUrl: 'https://explorer.kaspa.org',
+    network: 'mainnet',
+    latencyMs: 18,
+    isOnline: true,
+    selected: false,
+  },
+  {
+    id: 'node-mainnet-ha',
+    name: 'Kaspa High-Availability REST (api-mainnet.kaspa.org)',
+    url: 'grpcs://api-mainnet.kaspa.org',
+    apiUrl: 'https://api-mainnet.kaspa.org',
+    explorerUrl: 'https://explorer.kaspa.org',
+    network: 'mainnet',
+    latencyMs: 22,
+    isOnline: true,
+    selected: false,
+  },
+  {
+    id: 'node-kaspad-net',
+    name: 'Kaspad Primary REST (api.kaspad.net)',
+    url: 'grpcs://api.kaspad.net',
+    apiUrl: 'https://api.kaspad.net',
+    explorerUrl: 'https://explorer.kaspa.org',
+    network: 'mainnet',
+    latencyMs: 25,
+    isOnline: true,
+    selected: false,
+  },
+  {
+    id: 'node-aspectron',
+    name: 'Aspectron Kaspa REST (kaspa.aspectron.org)',
+    url: 'grpcs://kaspa.aspectron.org',
+    apiUrl: 'https://kaspa.aspectron.org',
+    explorerUrl: 'https://explorer.kaspa.org',
+    network: 'mainnet',
+    latencyMs: 28,
+    isOnline: true,
+    selected: false,
+  },
+  {
+    id: 'node-testnet-10',
+    name: 'Kaspa Testnet 10 REST',
+    url: 'grpcs://api-testnet-10.kaspa.org',
+    apiUrl: 'https://api-testnet-10.kaspa.org',
+    explorerUrl: 'https://explorer-testnet.kaspa.org',
+    network: 'testnet-10',
+    latencyMs: 35,
+    isOnline: true,
+    selected: false,
   }
 ];
 
@@ -941,11 +996,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         let bulkSuccess = false;
 
         try {
-          const bulkBalances: { [address: string]: bigint } = {};
+          const bulkBalances: { [address: string]: bigint | null } = {};
           const bulkUtxos: KaspaUtxo[] = [];
           
-          // Query in batches of 30 addresses to avoid oversized POST payloads
-          const bulkChunkSize = 30;
+          // Query in batches of 20 addresses
+          const bulkChunkSize = 20;
           let failedBulk = false;
 
           for (let i = 0; i < addressesToFetch.length; i += bulkChunkSize) {
@@ -967,19 +1022,34 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
 
           if (!failedBulk) {
-            // Bulk calls succeeded! Map results 1-to-1 with addressesToFetch
-            balances = addressesToFetch.map(addr => bulkBalances[addr] !== undefined ? bulkBalances[addr] : 0n);
+            // Bulk calls succeeded! Map results 1-to-1 with addressesToFetch with case-insensitive normalization
+            const normBalances: { [normAddr: string]: bigint | null } = {};
+            Object.entries(bulkBalances).forEach(([k, v]) => {
+              normBalances[k.trim().toLowerCase()] = v;
+            });
+            balances = addressesToFetch.map(addr => {
+              const norm = addr.trim().toLowerCase();
+              return normBalances[norm] !== undefined ? normBalances[norm] : null;
+            });
+
+            const normMap = new Map<string, string>();
+            addressesToFetch.forEach(addr => normMap.set(addr.trim().toLowerCase(), addr));
 
             const utxosByAddress: { [address: string]: KaspaUtxo[] } = {};
             addressesToFetch.forEach(addr => { utxosByAddress[addr] = []; });
+
             bulkUtxos.forEach(u => {
-              if (u.address && utxosByAddress[u.address] !== undefined) {
-                utxosByAddress[u.address].push(u);
+              const uNorm = u.address ? u.address.trim().toLowerCase() : '';
+              const origAddr = normMap.get(uNorm);
+              if (origAddr && utxosByAddress[origAddr]) {
+                utxosByAddress[origAddr].push({ ...u, address: origAddr });
+              } else if (addressesToFetch.length === 1) {
+                utxosByAddress[addressesToFetch[0]].push({ ...u, address: addressesToFetch[0] });
               }
             });
             utxosResults = addressesToFetch.map(addr => utxosByAddress[addr]);
 
-            // Fetch transaction records for primary or active addresses in sequential/batched chunks to respect rate limits
+            // Fetch transaction records for primary, active, or discovered addresses in sequential/batched chunks
             txResults = [];
             const txBatchSize = 2;
             for (let i = 0; i < addressesToFetch.length; i += txBatchSize) {
@@ -992,7 +1062,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                   const isPrimary = addr === wallet.receiveAddress;
                   const hasBal = balances[globalIdx] !== null && balances[globalIdx]! > 0n;
                   const hasUtxos = utxosResults[globalIdx] !== null && Array.isArray(utxosResults[globalIdx]) && utxosResults[globalIdx]!.length > 0;
-                  if (isPrimary || hasBal || hasUtxos) {
+                  const isDiscovered = wallet.discoveredAddresses?.includes(addr);
+                  const isLowIndex = globalIdx < 4; // Always fetch for first few receive & change addresses
+                  if (isPrimary || hasBal || hasUtxos || isDiscovered || isLowIndex) {
                     return fetchKaspaAddressTransactions(addr);
                   }
                   return Promise.resolve([]);
@@ -1001,19 +1073,19 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               txResults.push(...chunkTxs);
 
               if (i + txBatchSize < addressesToFetch.length) {
-                await new Promise(r => setTimeout(r, 150));
+                await new Promise(r => setTimeout(r, 120));
               }
             }
 
             bulkSuccess = true;
           }
-        } catch (err) {
-          console.warn('[refreshBalance] Bulk fetch failed, falling back to sequential polling:', err);
+        } catch {
+          // Bulk fetch failed or unsupported, fallback gracefully
         }
 
         // 2. Fallback to individual sequential/batched chunks if bulk POST failed/unsupported
         if (!bulkSuccess) {
-          const batchSize = 2;
+          const batchSize = 3;
           balances = [];
           utxosResults = [];
           txResults = [];
@@ -1025,13 +1097,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               Promise.all(chunk.map(addr => fetchKaspaAddressUtxos(addr))),
             ]);
 
-            // Fetch heavy transaction records for primary receive address or addresses with active balance/UTXOs
+            // Fetch transaction records for primary receive address, discovered addresses, or active balance/UTXOs
             const chunkTxs = await Promise.all(
               chunk.map((addr, idx) => {
+                const globalIdx = i + idx;
                 const isPrimary = addr === wallet.receiveAddress;
                 const hasBal = chunkBalances[idx] !== null && chunkBalances[idx]! > 0n;
                 const hasUtxos = chunkUtxos[idx] !== null && Array.isArray(chunkUtxos[idx]) && chunkUtxos[idx]!.length > 0;
-                if (isPrimary || hasBal || hasUtxos) {
+                const isDiscovered = wallet.discoveredAddresses?.includes(addr);
+                const isLowIndex = globalIdx < 4;
+                if (isPrimary || hasBal || hasUtxos || isDiscovered || isLowIndex) {
                   return fetchKaspaAddressTransactions(addr);
                 }
                 return Promise.resolve([]);
@@ -1042,20 +1117,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             utxosResults.push(...chunkUtxos);
             txResults.push(...chunkTxs);
 
-            // 150ms delay between chunks to respect rate limits
+            // 120ms delay between chunks to respect rate limits
             if (i + batchSize < addressesToFetch.length) {
-              await new Promise(r => setTimeout(r, 150));
+              await new Promise(r => setTimeout(r, 120));
             }
           }
         }
 
         const hasValidUtxoResponse = utxosResults.some(res => Array.isArray(res));
         const hasValidBalanceResponse = (balances as (bigint | null)[]).some(bal => bal !== null);
+        const allAddressResponsesFailed = !hasValidUtxoResponse && !hasValidBalanceResponse;
 
         // If all network calls failed (e.g. offline, rate limited or API down), retain existing cached UTXOs and balance
-        if (!hasValidUtxoResponse && !hasValidBalanceResponse) {
+        if (allAddressResponsesFailed) {
           consecutiveFailuresRef.current += 1;
-          console.warn(`[refreshBalance] All node requests failed (failure #${consecutiveFailuresRef.current}); preserving cached UTXOs and balance.`);
           return;
         }
 
@@ -1071,18 +1146,19 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             liveUtxosData.forEach((u: any, idx: number) => {
               const devPath = wallet.addressPaths?.[address];
               allMergedUtxos.push({
-                id: `utxo-live-${u.outpoint?.transactionId || u.transaction_id || idx}-${idx}`,
-                txid: u.outpoint?.transactionId || u.transaction_id || '',
+                id: `utxo-live-${u.outpoint?.transactionId || u.transaction_id || u.txid || idx}-${idx}`,
+                txid: u.outpoint?.transactionId || u.transaction_id || u.txid || '',
                 vout: u.outpoint?.index !== undefined ? Number(u.outpoint.index) : (u.index !== undefined ? Number(u.index) : (u.vout ?? 0)),
-                amountSompi: BigInt(u.utxoEntry?.amount || u.amount || 0),
+                amountSompi: BigInt(u.utxoEntry?.amount || u.amount || u.amountSompi || 0),
                 address,
-                blockDaaScore: Number(u.utxoEntry?.blockDaaScore || u.block_daa_score || 0),
+                blockDaaScore: Number(u.utxoEntry?.blockDaaScore || u.block_daa_score || u.blockDaaScore || 0),
                 derivationPath: devPath,
               });
             });
           } else {
             // Preserve cached UTXOs for this address if UTXO network call failed/returned null
-            const existingAddressUtxos = utxosRef.current.filter(u => u.address === address);
+            const normA = address.trim().toLowerCase();
+            const existingAddressUtxos = utxosRef.current.filter(u => u.address && u.address.trim().toLowerCase() === normA);
             allMergedUtxos.push(...existingAddressUtxos);
           }
         });
@@ -1114,8 +1190,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           return !spentSet.has(outpoint);
         });
 
-        // Update UTXOs if we got valid responses
-        if (hasValidUtxoResponse || filteredUtxos.length > 0) {
+        // Update UTXOs: if response was valid or we have UTXOs, save them. Never wipe if requests errored.
+        const allAddressesValid = utxosResults.every(res => Array.isArray(res));
+        if (filteredUtxos.length > 0 || allAddressesValid) {
           setUtxos(filteredUtxos);
           try {
             saveUtxosToDB(wallet.id, filteredUtxos);
@@ -1129,19 +1206,41 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         // Calculate verified live spendable balance from actual unspent UTXO set
         const utxoSum = filteredUtxos.reduce((sum, u) => sum + u.amountSompi, 0n);
-        const verifiedBalance = (allMergedUtxos.length > 0 || spentUtxoOutpointsRef.current.length > 0)
-          ? utxoSum
-          : (hasValidBalanceResponse ? totalLiveBalance : wallet.balanceSompi);
+        let verifiedBalance = wallet.balanceSompi;
+        if (utxoSum > 0n) {
+          verifiedBalance = utxoSum;
+        } else if (totalLiveBalance > 0n && spentUtxoOutpointsRef.current.length === 0) {
+          verifiedBalance = totalLiveBalance;
+        } else if (allAddressesValid && (balances as (bigint | null)[]).every(b => b !== null)) {
+          // Only drop to 0 if all address queries affirmatively completed with 0 without network errors
+          verifiedBalance = utxoSum;
+        } else {
+          // Retain existing balance if any query failed
+          verifiedBalance = wallet.balanceSompi;
+        }
 
         const updatedBalances: { [address: string]: string } = {};
         addressesToFetch.forEach((addr, idx) => {
-          const addrUtxos = filteredUtxos.filter(u => u.address === addr);
+          const normAddr = addr.trim().toLowerCase();
+          const addrUtxos = filteredUtxos.filter(u => u.address && u.address.trim().toLowerCase() === normAddr);
           const addrUtxoSum = addrUtxos.reduce((s, u) => s + u.amountSompi, 0n);
           const liveAddrBal = balances[idx];
-          updatedBalances[addr] = ((allMergedUtxos.length > 0 || spentUtxoOutpointsRef.current.length > 0)
-            ? addrUtxoSum
-            : (liveAddrBal !== null && liveAddrBal !== undefined ? liveAddrBal : 0n)
-          ).toString();
+          const prevAddrBal = wallet.addressBalances?.[addr] || '0';
+
+          let calculatedBal = 0n;
+          if (addrUtxoSum > 0n) {
+            calculatedBal = addrUtxoSum;
+          } else if (liveAddrBal !== null && liveAddrBal !== undefined) {
+            calculatedBal = liveAddrBal;
+          } else {
+            // Keep previous balance if this address request failed
+            try {
+              calculatedBal = BigInt(prevAddrBal);
+            } catch {
+              calculatedBal = 0n;
+            }
+          }
+          updatedBalances[addr] = calculatedBal.toString();
         });
 
         setWallets((prev: Wallet[]) =>
@@ -1161,91 +1260,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }));
 
         // Process transactions for all addresses and merge them
-        
-        const seenTxids = new Set<string>();
-        const allMergedTxs: KaspaTransaction[] = [];
-        
+        const rawTxsList: any[] = [];
         txResults.forEach((liveTxsData) => {
           if (liveTxsData && Array.isArray(liveTxsData)) {
-            liveTxsData.forEach((tx: any) => {
-              const txid = tx.transaction_id || tx.txid || '';
-              if (!txid || seenTxids.has(txid)) return;
-              seenTxids.add(txid);
-
-              const belongsToUs = (addr: string) => {
-                if (!addr) return false;
-                const normalized = addr.trim().toLowerCase();
-                return addressesToFetch.some(a => a.trim().toLowerCase() === normalized);
-              };
-
-              const hasOurAddressInOutputs = tx.outputs?.some((out: any) => {
-                const outAddr = out.script_public_key_address || out.address;
-                return belongsToUs(outAddr);
-              });
-
-              const hasOurAddressInInputs = tx.inputs?.some((inp: any) => 
-                belongsToUs(inp.previous_outpoint_address) || belongsToUs(inp.address)
-              );
-
-              // If we have an input, it's outgoing. 
-              // If we don't have input info (fallback API), but we don't find our address in any output,
-              // then it must be outgoing (since the API returned it for our address).
-              const isOut = hasOurAddressInInputs || (tx.outputs && tx.outputs.length > 0 && !hasOurAddressInOutputs);
-              
-              let amountSompi = 0n;
-              if (isOut) {
-                // Outgoing: Sum of outputs NOT going back to any of our addresses
-                amountSompi = tx.outputs?.reduce((acc: bigint, out: any) => {
-                  const outAddr = out.script_public_key_address || out.address;
-                  if (!belongsToUs(outAddr)) {
-                    return acc + BigInt(out.amount || 0);
-                  }
-                  return acc;
-                }, 0n) || 0n;
-              } else {
-                // Incoming: Sum of outputs going to any of our addresses
-                amountSompi = tx.outputs?.reduce((acc: bigint, out: any) => {
-                  const outAddr = out.script_public_key_address || out.address;
-                  if (belongsToUs(outAddr)) {
-                    return acc + BigInt(out.amount || 0);
-                  }
-                  return acc;
-                }, 0n) || 0n;
-              }
-
-              // Fee calculation
-              const sumInputs: bigint = tx.inputs?.reduce((acc: bigint, inp: any) => 
-                acc + BigInt(inp.previous_outpoint_amount || inp.amount || 0), 0n) || 0n;
-              const sumOutputs: bigint = tx.outputs?.reduce((acc: bigint, out: any) => 
-                acc + BigInt(out.amount || 0), 0n) || 0n;
-              const feeSompi: bigint = (sumInputs > sumOutputs) ? (sumInputs - sumOutputs) : BigInt(tx.fee || 0);
-
-              const firstTargetOutput = tx.outputs?.find((out: any) => {
-                const outAddr = out.script_public_key_address || out.address;
-                return isOut ? !belongsToUs(outAddr) : belongsToUs(outAddr);
-              });
-              
-              const txAddress: string = firstTargetOutput?.script_public_key_address || 
-                                       firstTargetOutput?.address || 
-                                       wallet.receiveAddress;
-
-              const txType = isOut ? (amountSompi === 0n ? 'compound' : 'send') : 'receive';
-
-              allMergedTxs.push({
-                txid,
-                type: txType,
-                amountSompi,
-                feeSompi,
-                address: txAddress,
-                timestamp: tx.block_time ? Number(tx.block_time) : Date.now(),
-                blockDaaScore: Number(tx.block_daa_score || tx.accepting_block_blue_score || tx.accepting_block_daa_score || 0),
-                note: txType === 'compound' ? 'Compounded UTXOs' : (isOut ? 'Sent Kaspa' : 'Received Kaspa'),
-                isAccepted: Boolean(tx.is_accepted ?? true),
-                confirmations: 1,
-              });
-            });
+            rawTxsList.push(...liveTxsData);
           }
         });
+
+        const allMergedTxs = parseRawKaspaTransactions(rawTxsList, addressesToFetch, wallet.receiveAddress);
 
         // Merge newly fetched live transactions with existing transactions so history discovered during import or scan is never lost
         const existingTxs = transactionsRef.current || [];
@@ -1276,6 +1298,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         combinedTxs.sort((a, b) => b.timestamp - a.timestamp);
 
         setTransactions(combinedTxs);
+        if (combinedTxs.length > 0) {
+          saveTransactionsToDB(wallet.id, combinedTxs).catch(err => {
+            console.warn('Failed to cache transactions to DB in refreshBalance:', err);
+          });
+        }
 
         // Check for new incoming or outgoing transactions and trigger native notifications
         if (wallet && wallet.id) {
@@ -1695,9 +1722,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const scheduleNextPoll = () => {
       if (!isMounted) return;
 
-      // Base polling interval: 25 seconds when active foreground, 60 seconds when backgrounded
+      // Base polling interval: 30 seconds when active foreground, 60 seconds when backgrounded
       const isForeground = isAppActiveRef.current && (typeof document === 'undefined' || !document.hidden);
-      const baseIntervalMs = isForeground ? 25000 : 60000;
+      const baseIntervalMs = isForeground ? 30000 : 60000;
 
       // Exponential backoff if consecutive node errors occur (up to 4x multiplier)
       const failures = consecutiveFailuresRef.current;
@@ -2073,56 +2100,73 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     rawTxsData.forEach((tx: any) => {
-      const txid = tx.transaction_id || tx.txid || '';
+      if (!tx) return;
+      const txid = typeof tx === 'string' ? tx : (tx.transaction_id || tx.txid || tx.id || '');
       if (!txid || seenTxids.has(txid)) return;
       seenTxids.add(txid);
 
-      const hasOurAddressInOutputs = tx.outputs?.some((out: any) => {
+      const outputs = Array.isArray(tx.outputs) ? tx.outputs : [];
+      const inputs = Array.isArray(tx.inputs) ? tx.inputs : [];
+
+      const hasOurAddressInOutputs = outputs.some((out: any) => {
         const outAddr = out.script_public_key_address || out.address;
         return belongsToUs(outAddr);
       });
 
-      const hasOurAddressInInputs = tx.inputs?.some((inp: any) => 
+      const hasOurAddressInInputs = inputs.some((inp: any) => 
         belongsToUs(inp.previous_outpoint_address) || belongsToUs(inp.address)
       );
 
-      const isOut = hasOurAddressInInputs || (tx.outputs && tx.outputs.length > 0 && !hasOurAddressInOutputs);
+      const isOut = hasOurAddressInInputs || (outputs.length > 0 && !hasOurAddressInOutputs);
       
       let amountSompi = 0n;
       if (isOut) {
-        amountSompi = tx.outputs?.reduce((acc: bigint, out: any) => {
+        amountSompi = outputs.reduce((acc: bigint, out: any) => {
           const outAddr = out.script_public_key_address || out.address;
           if (!belongsToUs(outAddr)) {
-            return acc + BigInt(out.amount || 0);
+            return acc + BigInt(out.amount || out.value || 0);
           }
           return acc;
-        }, 0n) || 0n;
+        }, 0n);
       } else {
-        amountSompi = tx.outputs?.reduce((acc: bigint, out: any) => {
+        amountSompi = outputs.reduce((acc: bigint, out: any) => {
           const outAddr = out.script_public_key_address || out.address;
           if (belongsToUs(outAddr)) {
-            return acc + BigInt(out.amount || 0);
+            return acc + BigInt(out.amount || out.value || 0);
           }
           return acc;
-        }, 0n) || 0n;
+        }, 0n);
       }
 
-      const sumInputs: bigint = tx.inputs?.reduce((acc: bigint, inp: any) => 
-        acc + BigInt(inp.previous_outpoint_amount || inp.amount || 0), 0n) || 0n;
-      const sumOutputs: bigint = tx.outputs?.reduce((acc: bigint, out: any) => 
-        acc + BigInt(out.amount || 0), 0n) || 0n;
-      const feeSompi: bigint = (sumInputs > sumOutputs) ? (sumInputs - sumOutputs) : BigInt(tx.fee || 0);
+      // Fallback if outputs/inputs weren't resolved or amount was 0 but direct amount field exists
+      if (amountSompi === 0n && (tx.amount || tx.value || tx.amountSompi)) {
+        try {
+          amountSompi = BigInt(tx.amount || tx.value || tx.amountSompi || 0);
+        } catch {}
+      }
 
-      const firstTargetOutput = tx.outputs?.find((out: any) => {
+      const sumInputs: bigint = inputs.reduce((acc: bigint, inp: any) => 
+        acc + BigInt(inp.previous_outpoint_amount || inp.amount || inp.value || 0), 0n);
+      const sumOutputs: bigint = outputs.reduce((acc: bigint, out: any) => 
+        acc + BigInt(out.amount || out.value || 0), 0n);
+      const feeSompi: bigint = (sumInputs > sumOutputs) ? (sumInputs - sumOutputs) : BigInt(tx.fee || tx.feeSompi || 0);
+
+      const firstTargetOutput = outputs.find((out: any) => {
         const outAddr = out.script_public_key_address || out.address;
         return isOut ? !belongsToUs(outAddr) : belongsToUs(outAddr);
       });
       
       const txAddress: string = firstTargetOutput?.script_public_key_address || 
                                firstTargetOutput?.address || 
-                               defaultAddress;
+                               (isOut ? (inputs[0]?.previous_outpoint_address || inputs[0]?.address || defaultAddress) : defaultAddress);
 
       const txType = isOut ? (amountSompi === 0n ? 'compound' : 'send') : 'receive';
+
+      let rawTime = Number(tx.block_time || tx.blockTime || tx.timestamp || Date.now());
+      if (rawTime > 0 && rawTime < 10000000000) {
+        rawTime *= 1000;
+      }
+      if (!rawTime || isNaN(rawTime)) rawTime = Date.now();
 
       allMergedTxs.push({
         txid,
@@ -2130,11 +2174,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         amountSompi,
         feeSompi,
         address: txAddress,
-        timestamp: tx.block_time ? Number(tx.block_time) : Date.now(),
-        blockDaaScore: Number(tx.block_daa_score || tx.accepting_block_blue_score || tx.accepting_block_daa_score || 0),
-        note: txType === 'compound' ? 'Compounded UTXOs' : (isOut ? 'Sent Kaspa' : 'Received Kaspa'),
-        isAccepted: Boolean(tx.is_accepted ?? true),
-        confirmations: 1,
+        timestamp: rawTime,
+        blockDaaScore: Number(tx.block_daa_score || tx.blockDaaScore || tx.accepting_block_blue_score || tx.accepting_block_daa_score || 0),
+        note: tx.note || (txType === 'compound' ? 'Compounded UTXOs' : (isOut ? 'Sent Kaspa' : 'Received Kaspa')),
+        isAccepted: Boolean(tx.is_accepted ?? tx.isAccepted ?? true),
+        confirmations: tx.confirmations || 1,
       });
     });
 
@@ -2781,26 +2825,72 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       }
 
-      // Privacy Defenses: Derive fresh change address index to defeat address clustering heuristics
+      // Privacy & UTXO Integrity: Use next sequential unused change address and persist derivation path
       let effectiveChangeAddress = activeWallet.changeAddress;
+      let effectiveChangePath = activeWallet.addressPaths?.[effectiveChangeAddress] || '';
+
       if (seedToUse) {
         try {
           const prefix = network === 'mainnet' ? 'kaspa' : network === 'testnet-10' ? 'kaspatest' : 'kaspadev';
-          // Rotate change index deterministically based on transaction count
-          const changeIndex = (transactions.length || 0) % 5;
-          effectiveChangeAddress = await generateDeterministicAddress(
+          const paths = activeWallet.addressPaths || {};
+          const allDiscovered = activeWallet.discoveredAddresses || [activeWallet.receiveAddress];
+
+          const changeAddressesList = allDiscovered
+            .filter((addr) => {
+              const p = paths[addr] || '';
+              return p.includes('/1/');
+            })
+            .map((addr) => {
+              const p = paths[addr] || '';
+              const parts = p.split('/');
+              const idx = parseInt(parts[parts.length - 1] || '0', 10);
+              return { addr, idx, path: p };
+            })
+            .sort((a, b) => a.idx - b.idx);
+
+          // Find the highest existing change index
+          const maxIdx = changeAddressesList.reduce((max, item) => Math.max(max, item.idx), -1);
+          const nextIdx = maxIdx + 1;
+          const nextDerivationPath = `m/44'/111111'/0'/1/${nextIdx}`;
+
+          const freshChangeAddress = await generateDeterministicAddress(
             seedToUse,
             passphraseToUse || undefined,
             prefix,
             addrType,
-            changeIndex,
+            nextIdx,
             true
+          );
+
+          effectiveChangeAddress = freshChangeAddress;
+          effectiveChangePath = nextDerivationPath;
+
+          // Reliably persist the newly derived change address and its derivation path in wallet state
+          setWallets((prev) =>
+            prev.map((w) => {
+              if (w.id === activeWallet.id) {
+                const updatedDiscovered = w.discoveredAddresses ? [...w.discoveredAddresses] : [];
+                if (!updatedDiscovered.includes(freshChangeAddress)) {
+                  updatedDiscovered.push(freshChangeAddress);
+                }
+                const updatedPaths = { ...w.addressPaths, [freshChangeAddress]: nextDerivationPath };
+                return {
+                  ...w,
+                  discoveredAddresses: updatedDiscovered,
+                  addressPaths: updatedPaths,
+                  changeAddress: freshChangeAddress,
+                };
+              }
+              return w;
+            })
           );
         } catch {
           effectiveChangeAddress = activeWallet.changeAddress || activeWallet.receiveAddress;
+          effectiveChangePath = activeWallet.addressPaths?.[effectiveChangeAddress] || "m/44'/111111'/0'/1/0";
         }
       } else if (!effectiveChangeAddress) {
         effectiveChangeAddress = activeWallet.receiveAddress;
+        effectiveChangePath = activeWallet.addressPaths?.[effectiveChangeAddress] || "m/44'/111111'/0'/0/0";
       }
 
       // 2. Build Unsigned Intent & Execute via IsolatedSigner
@@ -2876,7 +2966,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               amountSompi: changeSompi,
               address: effectiveChangeAddress || activeWallet.receiveAddress,
               blockDaaScore: 0,
-              derivationPath: activeWallet.addressPaths?.[effectiveChangeAddress || activeWallet.receiveAddress] || "m/44'/111111'/0'/1/0",
+              derivationPath: effectiveChangePath || activeWallet.addressPaths?.[effectiveChangeAddress || activeWallet.receiveAddress] || "m/44'/111111'/0'/1/0",
               timestamp: nowSpent,
             };
             setLocalPendingChangeUtxos((prev) => [...prev, pendingChange]);
@@ -2903,7 +2993,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 amountSompi: changeSompi,
                 address: effectiveChangeAddress || activeWallet.receiveAddress,
                 blockDaaScore: 0,
-                derivationPath: activeWallet.addressPaths?.[effectiveChangeAddress || activeWallet.receiveAddress] || "m/44'/111111'/0'/1/0",
+                derivationPath: effectiveChangePath || activeWallet.addressPaths?.[effectiveChangeAddress || activeWallet.receiveAddress] || "m/44'/111111'/0'/1/0",
               };
               const updated = [...unspent, pendingChange];
               saveUtxosToDB(activeWallet.id, updated).catch(() => {});

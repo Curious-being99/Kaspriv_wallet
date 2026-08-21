@@ -10,10 +10,10 @@ Special thanks and appreciation go to **[@KodinglsFun](https://x.com/KodinglsFun
 
 - **Audit Period:** August 2026
 - **Reviewer Credit:** [@KodinglsFun](https://x.com/KodinglsFun) (Code Reviewer)
-- **Status:** **ALL FINDINGS RESOLVED & FULLY MITIGATED**
-- **Core Focus:** Hardware enclave integrity, cryptographic boundaries, strict input parser sanitization, zero-tolerance monetary calculations, and deep-freeze in-memory mutation defense.
+- **Status:** **ACTIVE SECURITY HARDENING & REVIEW IN PROGRESS**
+- **Core Focus:** Hardware enclave integrity, cryptographic boundaries, strict input parser sanitization, zero-tolerance monetary calculations, deterministic change derivation, testnet isolation, and deep-freeze in-memory mutation defense.
 
-The audit successfully identified several subtle cryptographic and software design vectors. Over successive iterations, these vulnerabilities were completely neutralized. The application has been hardened into a zero-trust non-custodial environment.
+The audit successfully identified key cryptographic and software design vectors. Over successive iterations, significant vulnerabilities have been neutralized, and rigorous protections have been integrated across transaction construction, key derivation, and state persistence. Additional hardening and test automation are tracked transparently in this report.
 
 ---
 
@@ -143,38 +143,80 @@ The audit successfully identified several subtle cryptographic and software desi
   - **Automated Schema Sanitization:** Created a strict `validateAndCleanUtxo` sanitizer utility in `src/utils/kaspa/api.ts` that enforces rigid data format types (such as exact 64-character hex TXID, integer indexes, string/numeric amounts matching `BigInt` formats, and pure-hex scriptPublicKeys).
   - **Safe Array Construction:** All raw REST payloads are processed through this validation mapping, safely filtering out and discarding any compromised or malformed data structures before they can reach the application's core logic.
 
+### 8. Untrusted Node UTXO Payload Injection
+* **Severity:** **High**
+* **Finding:** UTXO arrays fetched from external public APIs were fed directly into transaction selection routines. A malicious, compromised, or spoofed API endpoint could inject modified data structures or incorrect amount formats to cause calculation mismatches in-app.
+* **Mitigation:**
+  - **Automated Schema Sanitization:** Created a strict `validateAndCleanUtxo` sanitizer utility in `src/utils/kaspa/api.ts` that enforces rigid data format types (such as exact 64-character hex TXID, integer indexes, string/numeric amounts matching `BigInt` formats, and pure-hex scriptPublicKeys).
+  - **Safe Array Construction:** All raw REST payloads are processed through this validation mapping, safely filtering out and discarding any compromised or malformed data structures before they can reach the application's core logic.
+
 ---
 
-## Cryptographic Security Verification
+### 9. Deterministic Change Address Derivation & Derivation Path Persistence
+* **Severity:** **High**
+* **Finding:** Change address generation previously cycled across a small modulo ring of 5 static indexes (`% 5`), lacked reliable derivation path persistence on newly generated addresses, and used a hardcoded `/1/0` fallback for pending change UTXOs. This presented a significant risk of address reuse, temporarily unspendable change outputs, and UTXO sync desynchronization.
+* **Mitigation:**
+  - **Sequential Fresh Change Derivation:** Shifted from static modulo indexing to incremental derivation (`m/44'/111111'/0'/1/{maxIdx + 1}`) ensuring fresh change addresses for every spend.
+  - **Path Persistence:** Newly derived change addresses and their exact derivation paths are reliably persisted into the wallet's `addressPaths` and `discoveredAddresses` state upon generation.
+  - **Dynamic Pending Change Pathing:** Pending change UTXOs dynamically inherit the exact derivation path of the generated change address, completely eliminating hardcoded `/1/0` fallback paths.
 
-All mitigations have been merged into the main application branch and thoroughly tested.
+---
 
-| Module | Verification Target | Test Outcome |
-| :--- | :--- | :--- |
-| `src/utils/crypto.ts` | Strict Hex Decoder Validation | **PASS** (Odd-length & non-hex characters rejected) |
-| `src/utils/kaspa/address.ts` | Canonical Bit-Alignment & Strict Colons | **PASS** (Zero padding checked; colons and prefixes validated) |
-| `src/utils/kaspa/units.ts` | Monetary Decimal & BigInt Precision | **PASS** (Zero float rounding error leaks detected) |
-| `src/utils/IsolatedSigner.ts` | Zero-Tolerance Transaction Verification | **PASS** (Fee mismatches and nested-intent mutations blocked) |
-| `src/utils/biometrics.ts` | Secure StrongBox/Keystore Enforcement | **PASS** (Fallback pathways blocked and unauthenticated templates rejected) |
-| `src/utils/kaspa/api.ts` | UTXO REST Payload Sanitization | **PASS** (Malformed structures discarded from network endpoints) |
+### 10. Multi-Network Address-to-Script Construction
+* **Severity:** **Medium-High**
+* **Finding:** Several internal address-to-script helper calls omitted the active network parameter and defaulted to mainnet prefix encoding, causing script generation failures or malformed transaction scripts on Testnet-10, Testnet-11, and Devnet.
+* **Mitigation:**
+  - **Network Propagation:** Passed the active `network` configuration across `buildKaspaTransaction`, `createSignedTransaction`, and `IsolatedSigner`'s `verifyBuiltTransaction` and `verifyFinalSignedTransaction`.
+  - **Strict Multi-Network Script Public Keys:** Address-to-script conversions now consistently validate against the expected network prefix before generating output scripts.
+
+---
+
+### 11. Duplicate Input Outpoint Rejection & Exact Authorized Output Matching
+* **Severity:** **High**
+* **Finding:** Input outpoints were not strictly deduplicated during manual transaction construction, and output validation did not explicitly reject unexpected non-recipient/non-change outputs.
+* **Mitigation:**
+  - **Input Outpoint Deduplication:** Added strict set-based uniqueness validation for input outpoints (`${txid}:${index}`) during transaction construction and pre-broadcast verification.
+  - **Strict Authorized Output Whitelisting:** Output arrays are strictly validated to ensure every output matches either the intended recipient or authorized change destination script, blocking unauthorized outputs or fee-siphoning scripts.
+
+---
+
+### 12. Floating-Point Monetary Inaccuracies & Encrypted Record Pre-Validation
+* **Severity:** **Medium**
+* **Finding:** `kasToSompi` previously performed `Math.round(kas * Number(SOMPI_PER_KAS))` on numeric inputs, exposing calculations to IEEE-754 precision errors. In addition, encrypted wallet records were fed directly to Argon2id without upfront format and length validation.
+* **Mitigation:**
+  - **Zero Floating-Point Conversion:** Replaced all float math with string-based decimal splitting and exact `BigInt` scaling.
+  - **Pre-Argon2 Validation:** Added `validateEncryptedRecord` in `src/utils/crypto.ts` to validate ciphertext formats, salt/IV lengths, and boundaries prior to executing memory-hard key derivation.
+
+---
+
+## Security Verification & Hardening Status
+
+| Module | Hardening Target | Status | Notes |
+| :--- | :--- | :--- | :--- |
+| `src/utils/crypto.ts` | Strict Hex & Record Format Validation | **ACTIVE / MITIGATED** | Odd-length/non-hex rejected; pre-Argon2 sanity validation active |
+| `src/utils/kaspa/address.ts` | Canonical Bit-Alignment & Strict Colons | **ACTIVE / MITIGATED** | Zero padding verified; network prefixes strictly validated |
+| `src/utils/kaspa/units.ts` | Zero-Float String Decimal & BigInt Precision | **ACTIVE / MITIGATED** | Direct string splitting; no IEEE-754 rounding operations |
+| `src/utils/IsolatedSigner.ts` | Zero-Tolerance Intent & Output Verification | **ACTIVE / MITIGATED** | Network-aware scripts, duplicate input rejection, deep freeze |
+| `src/utils/kaspa/tx.ts` | Multi-Network Script Construction & Parsing | **ACTIVE / MITIGATED** | Byte-level hex parsing; network propagated to all script builders |
+| `src/context/WalletContext.tsx` | Sequential Change Derivation & Path Binding | **ACTIVE / MITIGATED** | Sequential change indexes; exact derivation paths bound to pending UTXOs |
+| `src/utils/biometrics.ts` | Secure StrongBox/Keystore Enforcement | **ACTIVE / MITIGATED** | Software fallback removed; hardware enclave required |
+| `src/utils/kaspa/api.ts` | UTXO REST Payload Sanitization | **ACTIVE / MITIGATED** | Strict schema validation before passing into selection |
 
 ---
 
 ## Technical Honesty Notes & Implementation Disclosures
 
-To maintain absolute cryptographic transparency and precision, we document the following nuances regarding our implementation boundaries:
+1. **Kaspa Authoritative SDK Migration:**
+   - While manual transaction construction, sighash calculation, and verification have been rigorously hardened with strict validation, we recognize the long-term benefits of standardizing consensus-sensitive logic with the authoritative Kaspa SDK. Migration and integration of official SDK components remains an active architectural priority.
 
-1. **Precision of `kasToSompi`:**
-   - Although the `kasToSompi(kas)` conversion function accepts both `number` and `string` arguments, passing a standard JavaScript `number` can expose monetary calculations to native IEEE-754 double-precision floating-point rounding errors (e.g., fractional precision limits).
-   - **Recommendation:** Always prefer and maintain raw `string` amount inputs from the UI components. This ensures all fractional multiplication and padding occur safely within direct `BigInt` parsing logic, avoiding any floating-point conversions.
+2. **Automated Security & Fuzzing Test Suite:**
+   - Development of an expanded automated property-based, fuzzing, and security regression test suite is ongoing to continuously assert parser invariants, address boundaries, and sighash consistency across versions.
 
-2. **Native Android vs. Web Biometrics:**
-   - The audited "no fallback" strictness refers directly to the **Android platform** where biometric credentials must match and bind to the Android Keystore / StrongBox hardware-backed TEE secure path.
-   - For standard web-based builds, biometric key-derivation uses WebAuthn PRF (Pseudo-Random Function) extensions and user-presence assertions to derive credentials safely within browser limitations.
+3. **Native Android vs. Web Biometrics:**
+   - The "no fallback" biometric enforcement strictly requires Android Keystore / StrongBox hardware backing for native builds. On web builds, WebAuthn PRF and user presence assertions are leveraged.
 
-3. **Key Wrapping and Hardware Keystore Limits:**
-   - The function `wrapKeyWithHardwareKeystore` inside `src/utils/crypto.ts` operates as a software-based Argon2id and WebCrypto AES-GCM helper utilizing a hardware-bound thematic AAD (Additional Authenticated Data).
-   - **Enclave Reality:** Real hardware-enforced cryptographic wrapping of keys is bound by the native mobile enclaves and handled via the underlying Android/iOS `HardwareVaultPlugin` or Biometric wrapper, rather than the JavaScript/TypeScript software helper function alone.
+4. **Hardware Key Wrapping Enclave Realities:**
+   - Hardware key wrapping is bound by the native mobile hardware security module (StrongBox/TEE). Software helpers provide authenticated context binding with Argon2id and AES-GCM.
 
 ---
 

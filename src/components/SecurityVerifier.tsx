@@ -167,7 +167,7 @@ export const SecurityVerifier: React.FC = () => {
               })}
               inputMode="none" onChange={() => {}}
               placeholder="Active secret key, seed, or passphrase"
-              className="flex-1 bg-[#0c141f] border border-[#212B38] rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-[#70C7BA] outline-none font-mono"
+              className="flex-1 bg-[#0c141f] border border-[#212B38] rounded-xl px-3 py-2 text-xs text-slate-200 focus:border-[#70C7BA] outline-none font-mono cursor-pointer"
             />
             <button
               onClick={initializeMemoryBuffer}
@@ -316,7 +316,7 @@ export const SecurityVerifier: React.FC = () => {
                           }
                         })}
                         inputMode="none" onChange={() => {}}
-                        className="w-full bg-[#0c141f] border border-[#212B38] rounded-xl px-3 py-2 text-[11px] text-slate-300 font-mono outline-none focus:border-[#70C7BA]"
+                        className="w-full bg-[#0c141f] border border-[#212B38] rounded-xl px-3 py-2 text-[11px] text-slate-300 font-mono outline-none focus:border-[#70C7BA] cursor-pointer"
                       />
                     </div>
                     <div>
@@ -341,7 +341,7 @@ export const SecurityVerifier: React.FC = () => {
                           }
                         })}
                         inputMode="none" onChange={() => {}}
-                        className="w-full bg-[#0c141f] border border-[#212B38] rounded-xl px-3 py-2 text-[11px] text-slate-300 font-mono outline-none focus:border-[#70C7BA]"
+                        className="w-full bg-[#0c141f] border border-[#212B38] rounded-xl px-3 py-2 text-[11px] text-slate-300 font-mono outline-none focus:border-[#70C7BA] cursor-pointer"
                       />
                     </div>
                   </div>

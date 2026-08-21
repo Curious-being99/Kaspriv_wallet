@@ -159,6 +159,8 @@ export function verifyTransactionIntent(
  * This prevents the construction layer from silently deviating from what was verified.
  */
 function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): void {
+  const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress, intent.network);
+
   if (transaction.type === 'wasm') {
     // For WASM transactions, we trust the builder if the input parameters match exactly
     // since we cannot easily inspect the internal WASM mtx structure here.
@@ -169,8 +171,6 @@ function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): voi
     
     // Check deep into WASM structure if possible
     if (transaction.mtx && Array.isArray(transaction.mtx.outputs)) {
-      const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress);
-      
       const isSelfSend = intent.toAddress === intent.changeAddress;
       if (isSelfSend) {
         // Just verify at least one output goes to the right address
@@ -191,8 +191,7 @@ function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): voi
       }
     }
   } else {
-    // For manual transactions, we can inspect the outputs array
-    const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress);
+    // For manual transactions, inspect the outputs array
     const destinationOutput = transaction.outputs.find((o: any) => 
       BigInt(o.amount) === intent.amountSompi && 
       o.scriptPublicKey?.scriptPublicKey === expectedScriptPubKey
@@ -200,7 +199,6 @@ function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): voi
     if (!destinationOutput) {
       throw new Error('Security failure: Could not find output matching the intended amount and destination address in the built transaction.');
     }
-    // Note: We could also verify the scriptPublicKey matches the toAddress here.
   }
 }
 
@@ -214,8 +212,10 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
     throw new Error('Security failure: Signed transaction is missing inputs or outputs array.');
   }
 
-  // 1. Verify inputs match the intent UTXOs exactly (allow subset if WASM builder optimized it)
+  // 1. Verify inputs match the intent UTXOs exactly and contain no duplicate outpoints
   let totalActualInputSompi = 0n;
+  const seenSignedOutpoints = new Set<string>();
+
   for (const input of signedTx.inputs) {
     const txId = input.previousOutpoint?.transactionId;
     const index = input.previousOutpoint?.index;
@@ -223,11 +223,17 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
       throw new Error('Security failure: Signed transaction input is missing previousOutpoint fields.');
     }
 
+    const outpointKey = `${String(txId).toLowerCase()}:${Number(index)}`;
+    if (seenSignedOutpoints.has(outpointKey)) {
+      throw new Error(`Security failure: Duplicate input outpoint detected in signed transaction: ${outpointKey}`);
+    }
+    seenSignedOutpoints.add(outpointKey);
+
     // Every input outpoint must match a UTXO in the intent
     const utxoMatch = intent.utxos.find(u => {
       const uTxId = u.outpoint?.transactionId || u.transactionId;
       const uIndex = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
-      return String(uTxId) === String(txId) && Number(uIndex) === Number(index);
+      return String(uTxId).toLowerCase() === String(txId).toLowerCase() && Number(uIndex) === Number(index);
     });
 
     if (!utxoMatch) {
@@ -243,7 +249,7 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
   }
 
   // 2. Verify outputs match the approved intent exactly
-  const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress);
+  const expectedRecipientScriptPubKey = addressToScriptPublicKey(intent.toAddress, intent.network);
   const expectedChangeAmount = totalActualInputSompi - intent.amountSompi - intent.feeSompi;
   const isSelfSend = intent.toAddress === intent.changeAddress;
 
@@ -251,9 +257,10 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
     let combinedAmount = 0n;
     for (const out of signedTx.outputs) {
       const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
-      if (spk === expectedScriptPubKey) {
-        combinedAmount += BigInt(out.amount);
+      if (spk !== expectedRecipientScriptPubKey) {
+        throw new Error(`Security failure: Signed transaction contains unauthorized output script ${spk} in self-send.`);
       }
+      combinedAmount += BigInt(out.amount);
     }
 
     const expectedCombined = intent.amountSompi + expectedChangeAmount;
@@ -268,10 +275,24 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
       throw new Error(`Security failure: Signed transaction has extra unauthorized outputs (${signedTx.outputs.length} outputs, expected at most 2).`);
     }
   } else {
+    const expectedChangeScriptPubKey = expectedChangeAmount > 0n 
+      ? addressToScriptPublicKey(intent.changeAddress, intent.network)
+      : null;
+
+    // Verify all outputs strictly belong to either recipient or change
+    for (const out of signedTx.outputs) {
+      const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
+      const isRecipient = spk === expectedRecipientScriptPubKey;
+      const isChange = expectedChangeScriptPubKey !== null && spk === expectedChangeScriptPubKey;
+      if (!isRecipient && !isChange) {
+        throw new Error(`Security failure: Signed transaction contains unexpected unauthorized output destination.`);
+      }
+    }
+
     // Find the recipient output
     const recipientOutput = signedTx.outputs.find((out: any) => {
       const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
-      return spk === expectedScriptPubKey;
+      return spk === expectedRecipientScriptPubKey;
     });
 
     if (!recipientOutput) {
@@ -285,7 +306,6 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
 
     // Verify change output if present
     if (expectedChangeAmount > 0n) {
-      const expectedChangeScriptPubKey = addressToScriptPublicKey(intent.changeAddress);
       const changeOutput = signedTx.outputs.find((out: any) => {
         const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
         return spk === expectedChangeScriptPubKey;
@@ -305,8 +325,8 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
       }
 
       // Ensure there are at most 2 outputs (recipient + change)
-      if (signedTx.outputs.length > 2) {
-        throw new Error(`Security failure: Signed transaction has extra unauthorized outputs (${signedTx.outputs.length} outputs, expected at most 2).`);
+      if (signedTx.outputs.length !== 2) {
+        throw new Error(`Security failure: Signed transaction output count mismatch (${signedTx.outputs.length} outputs, expected exactly 2).`);
       }
     } else {
       // If no change, there should be exactly 1 output (just the recipient)
@@ -399,7 +419,8 @@ export class IsolatedSigner {
         intent.feeSompi,
         addressType,
         redeemScriptHex,
-        intent.lockTime
+        intent.lockTime,
+        intent.network
       );
 
       // 3. Verify the built transaction actually matches the intent.

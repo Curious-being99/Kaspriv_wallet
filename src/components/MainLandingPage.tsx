@@ -450,7 +450,7 @@ export const MainLandingPage: React.FC = () => {
                       onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                       onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                       inputMode="none" onChange={() => {}}
-                      className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+                      className="w-full px-3 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
                     />
                   </div>
 
@@ -466,7 +466,7 @@ export const MainLandingPage: React.FC = () => {
                         onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                         onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                         inputMode="none" onChange={() => {}}
-                        className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+                        className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
                       />
                       <button
                         type="button"
@@ -646,7 +646,7 @@ export const MainLandingPage: React.FC = () => {
                   onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   inputMode="none" onChange={() => {}}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
                 />
               </div>
 
@@ -672,7 +672,7 @@ export const MainLandingPage: React.FC = () => {
                     onClick={() => openKeyboard({ value: importWordsText, onChange: setImportWordsText })}
                     inputMode="none" onChange={() => {}}
                     placeholder="abandon ability able about above absent..."
-                    className={`w-full p-3 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs font-mono text-slate-100 outline-none transition-all resize-none ${
+                    className={`w-full p-3 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs font-mono text-slate-100 outline-none transition-all resize-none cursor-pointer ${
                       !showImportSeed && importWordsText ? 'filter blur-[6px] select-none text-transparent' : ''
                     }`}
                   />
@@ -681,7 +681,7 @@ export const MainLandingPage: React.FC = () => {
                       onClick={() => setShowImportSeed(true)}
                       className="absolute inset-0 flex items-center justify-center cursor-pointer bg-[#090D12]/50 rounded-xl"
                     >
-                      <span className="text-[10px] bg-[#090D12]  px-2.5 py-1 rounded-lg text-slate-300 shadow flex items-center gap-1.5">
+                      <span className="text-[10px] bg-[#090D12] px-2.5 py-1 rounded-lg text-slate-300 shadow flex items-center gap-1.5">
                         <Eye className="w-3 h-3 text-[#70C7BA]" /> Click to reveal seed phrase
                       </span>
                     </div>
@@ -701,7 +701,7 @@ export const MainLandingPage: React.FC = () => {
                     onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                     onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                     inputMode="none" onChange={() => {}}
-                    className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+                    className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
                   />
                   <button
                     type="button"
@@ -795,7 +795,7 @@ export const MainLandingPage: React.FC = () => {
                   onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   inputMode="none" onChange={() => {}}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-emerald-400 text-xs text-slate-100 outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12] focus:border-emerald-400 text-xs text-slate-100 outline-none cursor-pointer"
                 />
               </div>
 
@@ -809,7 +809,7 @@ export const MainLandingPage: React.FC = () => {
                   onFocus={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
                   onClick={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
                   inputMode="none" onChange={() => {}}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-emerald-400 font-mono text-[10px] text-slate-100 outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12] focus:border-emerald-400 font-mono text-[10px] text-slate-100 outline-none cursor-pointer"
                 />
               </div>
 
@@ -866,7 +866,7 @@ export const MainLandingPage: React.FC = () => {
                         onFocus={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
                         onClick={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
                         inputMode="none" onChange={() => {}}
-                        className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-sm text-slate-100 outline-none"
+                        className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-sm text-slate-100 outline-none cursor-pointer"
                       />
                       <button
                         type="button"
@@ -919,7 +919,7 @@ export const MainLandingPage: React.FC = () => {
                         onFocus={() => openKeyboard({ value: confirmSetupPassword, onChange: setConfirmSetupPassword })}
                         onClick={() => openKeyboard({ value: confirmSetupPassword, onChange: setConfirmSetupPassword })}
                         inputMode="none" onChange={() => {}}
-                        className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-sm text-slate-100 outline-none"
+                        className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-sm text-slate-100 outline-none cursor-pointer"
                       />
                       <button
                         type="button"
@@ -1012,11 +1012,7 @@ export const MainLandingPage: React.FC = () => {
                           setActiveDuressField('primary');
                           openKeyboard({ value: setupDuressPassword, onChange: (val) => setSetupDuressPassword(val) });
                         }}
-                        onChange={(e) => {
-                          setSetupDuressPassword(e.target.value);
-                          openKeyboard({ value: e.target.value, onChange: (val) => setSetupDuressPassword(val) });
-                        }}
-                        inputMode="none"
+                        inputMode="none" onChange={() => {}}
                         className={`w-full px-3.5 pr-10 py-2.5 rounded-xl bg-[#090D12] border-2 transition-all ${
                           activeDuressField === 'primary' && isKeyboardOpen
                             ? 'border-rose-500 ring-2 ring-rose-500/20'
@@ -1086,11 +1082,7 @@ export const MainLandingPage: React.FC = () => {
                           setActiveDuressField('confirm');
                           openKeyboard({ value: confirmSetupDuressPassword, onChange: (val) => setConfirmSetupDuressPassword(val) });
                         }}
-                        onChange={(e) => {
-                          setConfirmSetupDuressPassword(e.target.value);
-                          openKeyboard({ value: e.target.value, onChange: (val) => setConfirmSetupDuressPassword(val) });
-                        }}
-                        inputMode="none"
+                        inputMode="none" onChange={() => {}}
                         className={`w-full px-3.5 pr-10 py-2.5 rounded-xl bg-[#090D12] border-2 transition-all ${
                           activeDuressField === 'confirm' && isKeyboardOpen
                             ? 'border-rose-500 ring-2 ring-rose-500/20'

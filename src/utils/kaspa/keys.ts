@@ -56,7 +56,7 @@ export function generate24WordMnemonic(): string[] {
 }
 
 /**
- * Derive a Kaspa address from a 33-byte compressed public key or 32-byte Schnorr pubkey using kaspa-wasm
+ * Derive a Kaspa address from a 33-byte compressed public key or 32-byte Schnorr pubkey using pure JS Bech32/checksum encoding
  */
 export function getAddressFromPublicKey(
   publicKey: Uint8Array | string, 
@@ -65,8 +65,19 @@ export function getAddressFromPublicKey(
 ): string {
   let pubKey: Uint8Array;
   if (typeof publicKey === 'string') {
-    const hex = publicKey.startsWith('0x') ? publicKey.slice(2) : publicKey;
-    pubKey = new Uint8Array(hex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+    const clean = publicKey.startsWith('0x') ? publicKey.slice(2) : publicKey;
+    if (!/^[0-9a-fA-F]*$/.test(clean) || clean.length % 2 !== 0) {
+      throw new Error('Invalid public key hex string');
+    }
+    const bytes = new Uint8Array(clean.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+      const byteVal = Number.parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+      if (Number.isNaN(byteVal)) {
+        throw new Error('Failed to parse public key hex byte');
+      }
+      bytes[i] = byteVal;
+    }
+    pubKey = bytes;
   } else {
     pubKey = publicKey;
   }

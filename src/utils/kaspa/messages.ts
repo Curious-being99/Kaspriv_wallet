@@ -47,7 +47,7 @@ export async function signKaspaMessage(
 }
 
 /**
- * Verify message signature using kaspa-wasm / Schnorr verification
+ * Verify message signature using pure JavaScript Schnorr verification (@noble/secp256k1)
  */
 export function verifyKaspaMessage(message: string, signatureHex: string, publicKeyHex: string): boolean {
   try {

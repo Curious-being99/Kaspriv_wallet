@@ -745,7 +745,7 @@ export const SendModal: React.FC = () => {
                 inputMode="none" onChange={() => {}}
                 className={`w-full px-3 py-2 rounded-xl bg-[#0B151E] border ${
                   addressError ? 'border-rose-500' : 'border-[#273E54] focus:border-[#70C7BA]'
-                } font-mono text-xs text-slate-100 outline-none transition-colors`}
+                } font-mono text-xs text-slate-100 outline-none transition-colors cursor-pointer`}
               />
 
               {addressError && (
@@ -780,7 +780,7 @@ export const SendModal: React.FC = () => {
                   onFocus={() => openKeyboard({ value: amountInput, onChange: setAmountInput, layoutName: 'numeric', type: 'number' })}
                   onClick={() => openKeyboard({ value: amountInput, onChange: setAmountInput, layoutName: 'numeric', type: 'number' })}
                   inputMode="none" onChange={() => {}}
-                  className="w-full pl-3 pr-14 py-2 rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] font-mono text-base font-bold text-slate-100 outline-none"
+                  className="w-full pl-3 pr-14 py-2 rounded-xl bg-[#0B151E] focus:border-[#70C7BA] font-mono text-base font-bold text-slate-100 outline-none cursor-pointer"
                 />
                 <span className="absolute right-3 top-2.5 font-bold text-xs text-[#70C7BA]">KAS</span>
               </div>
@@ -953,7 +953,7 @@ export const SendModal: React.FC = () => {
                 onFocus={() => openKeyboard({ value: note, onChange: setNote })}
                 onClick={() => openKeyboard({ value: note, onChange: setNote })}
                 inputMode="none" onChange={() => {}}
-                className="w-full px-3 py-2 rounded-xl bg-[#0B151E]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+                className="w-full px-3 py-2 rounded-xl bg-[#0B151E] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
               />
             </div>
 
@@ -1031,7 +1031,7 @@ export const SendModal: React.FC = () => {
                 onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                 inputMode="none" onChange={() => {}}
                 placeholder="Enter passphrase if set during creation..."
-                className="w-full px-2.5 py-1.5 rounded-lg bg-[#090D12]  focus:border-[#70C7BA] text-[11px] font-mono text-slate-100 outline-none transition-colors"
+                className="w-full px-2.5 py-1.5 rounded-lg bg-[#090D12] focus:border-[#70C7BA] text-[11px] font-mono text-slate-100 outline-none transition-colors cursor-pointer"
               />
             </div>
 
@@ -1049,7 +1049,7 @@ export const SendModal: React.FC = () => {
                     onFocus={() => openKeyboard({ value: passwordInput, onChange: handlePasswordChange })}
                     onClick={() => openKeyboard({ value: passwordInput, onChange: handlePasswordChange })}
                     inputMode="none" onChange={() => {}}
-                    className={`w-full px-3 py-2 rounded-lg bg-[#090D12] ${passwordError ? 'border border-rose-500' : 'focus:border-[#70C7BA]'} text-sm text-slate-100 outline-none transition-colors pr-10`}
+                    className={`w-full px-3 py-2 rounded-lg bg-[#090D12] ${passwordError ? 'border border-rose-500' : 'focus:border-[#70C7BA]'} text-sm text-slate-100 outline-none transition-colors pr-10 cursor-pointer`}
                   />
                   <button
                     type="button"

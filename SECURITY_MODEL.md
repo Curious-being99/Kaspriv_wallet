@@ -123,15 +123,13 @@ Before password verification, seed decryption, or private key derivation occurs,
 
 ---
 
-## 4. Environment, WASM, & Cryptographic Runtime Security
+## 4. Pure JavaScript / TypeScript Cryptographic Runtime & Node Signing
 
-* **WebAssembly & Tooling Architecture**: Kaspriv depends on `kaspa-wasm` (and `@kaspa/core-lib`), patches it for the browser, and configures Vite for WASM.
-* **Protocol & Signing Runtime**: Transaction, address, and fee logic are written to follow Kaspa protocol rules, with `@noble` / `@scure` used for signing and HD derivation in the current runtime path.
+* **Pure Native Cryptographic Runtime**: Kaspriv uses pure JavaScript/TypeScript cryptographic primitives (`@noble/secp256k1`, `@scure/bip32`, `@scure/bip39`, and `@noble/hashes`) along with `@kaspa/core-lib` for HD derivation, Schnorr signing, and transaction construction.
+* **No WASM Postinstall Dependency**: Operates cleanly without fragile postinstall patching (`kaspa-wasm`) scripts or binary WASM runtime hacks, ensuring seamless compatibility across mobile WebView, Node.js, and desktop browsers.
+* **Protocol & Signing Runtime**: Transaction, address, and fee logic are strictly written to follow Kaspa protocol rules with high-performance client-side Schnorr signing and direct real Kaspa node broadcasting.
 * **Native Web Crypto**: AES-256-GCM encryption/decryption is performed by browser-native C++ implementations via `window.crypto.subtle`.
-* **kaspa-wasm Postinstall Patch & Upstream Monitoring**:
-  * **Patch Mechanism**: `package.json` includes a `postinstall` script (`sed -i ...`) that rewrites Node-centric `util` destructuring (`TextDecoder`, `TextEncoder`) in `node_modules/kaspa-wasm/kaspa_wasm.js` to use `globalThis.TextDecoder` and `globalThis.TextEncoder`.
-  * **Fragility Note**: This string-substitution patch is inherently fragile—it depends on exact line patterns in `kaspa_wasm.js` and GNU `sed` CLI availability.
-  * **Upstream Strategy**: Monitor `kaspa-wasm` upstream releases for native Web/ESM environment support, and verify postinstall execution integrity whenever updating `kaspa-wasm` or toolchain packages.
+* **Memory-Hard KDF**: Argon2id memory-hard key derivation is powered by `hash-wasm` using WebAssembly memory constraints (128 MiB).
 
 ---
 

@@ -7,7 +7,7 @@
 
 ## Overview
 
-The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side web application designed to provide users with a secure, responsive, and robust interface for managing Kaspa (KAS) assets. Kaspriv depends on `kaspa-wasm` (and `@kaspa/core-lib`), patches it for the browser, and configures Vite for WASM. Transaction, address, and fee logic are written to follow Kaspa protocol rules, with `@noble` / `@scure` used for signing and HD derivation in the current runtime path, guaranteeing absolute self-custody with zero server-side private key storage and strict in-memory execution boundaries.
+The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side web application designed to provide users with a secure, responsive, and robust interface for managing Kaspa (KAS) assets. Kaspriv uses pure JavaScript and TypeScript cryptographic primitives (`@noble/secp256k1`, `@scure/bip32`, `@scure/bip39`, and `@noble/hashes`) for Schnorr signing, HD derivation, and Bech32 address calculation. Transaction, address, and fee logic follow Kaspa protocol rules directly with real node broadcast, guaranteeing absolute self-custody with zero server-side private key storage and strict in-memory execution boundaries.
 
 ---
 
@@ -88,8 +88,8 @@ Before password verification, seed decryption, or private key derivation occurs,
 * **Frontend:** React 18, TypeScript, Vite, Tailwind CSS
 * **Animations:** Motion (`motion/react`)
 * **Icons:** Lucide React
-* **Cryptography:** Web Crypto API (`window.crypto.subtle`), `hash-wasm` (Argon2id), `@noble/secp256k1`, `@scure/bip32`, `@scure/bip39`
-* **Kaspa Core & Tooling:** Kaspriv depends on `kaspa-wasm` (and `@kaspa/core-lib`), patches it for the browser, and configures Vite for WASM. Transaction, address, and fee logic are written to follow Kaspa protocol rules, with `@noble` / `@scure` used for signing and HD derivation in the current runtime path.
+* **Cryptography & Signing:** Web Crypto API (`window.crypto.subtle`), `hash-wasm` (Argon2id), `@noble/secp256k1`, `@scure/bip32`, `@scure/bip39`, `@noble/hashes`
+* **Kaspa Core & Protocol:** Pure JavaScript / TypeScript signing engine and Bech32 address encoder, `@kaspa/core-lib`, direct real Kaspa node REST/RPC integration. Transaction, address, and fee logic follow Kaspa protocol rules with high-performance client-side Schnorr signing.
 
 ---
 

@@ -21,8 +21,9 @@ export const ExplorerSearch: React.FC = () => {
                     value={query}
                     onFocus={() => openKeyboard({ value: query, onChange: setQuery })}
                     onClick={() => openKeyboard({ value: query, onChange: setQuery })}
-                    inputMode="none" onChange={() => {}}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#090D12] border border-[#212B38] focus:border-[#70C7BA] text-sm text-slate-100 outline-none"
+                    inputMode="none"
+                    onChange={() => {}}
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#090D12] border border-[#212B38] focus:border-[#70C7BA] text-sm text-slate-100 outline-none cursor-pointer"
                 />
                 <Search className="absolute left-3 top-3.5 w-5 h-5 text-slate-500" />
                 <button 

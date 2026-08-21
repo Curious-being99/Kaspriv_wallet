@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState, useRef, useEffect, useCallb
 import Keyboard from 'react-simple-keyboard';
 import 'react-simple-keyboard/build/css/index.css';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clipboard, Trash2, Check, X } from 'lucide-react';
-import { hapticLight, hapticMedium } from '../utils/haptics';
+import { Clipboard, Check, Trash2 } from 'lucide-react';
+import { hapticLight } from '../utils/haptics';
 
 interface KeyboardContextType {
   openKeyboard: (props: {
@@ -191,12 +191,25 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       closeKeyboard();
     };
 
+    const blockExternalKeyboard = (e: KeyboardEvent) => {
+      // Allow browser shortcuts (Cmd/Ctrl combinations, F5, F12, Tab)
+      if (e.metaKey || e.ctrlKey || e.key === 'F5' || e.key === 'F12' || e.key === 'Tab') {
+        return;
+      }
+      // Block all physical/external hardware keyboard key presses unconditionally
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    window.addEventListener('keydown', blockExternalKeyboard, true);
+
     if (isOpen) {
       document.addEventListener('mousedown', handleOutsideClick);
       document.addEventListener('touchstart', handleOutsideClick, { passive: true });
     }
     
     return () => {
+      window.removeEventListener('keydown', blockExternalKeyboard, true);
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('touchstart', handleOutsideClick);
     };
@@ -220,14 +233,21 @@ export const KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             transition={{ type: 'tween', duration: 0.2, ease: 'easeOut' }}
             className="fixed bottom-0 left-0 right-0 z-[9999] bg-[#090D12] border-t border-[#1F2937] pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom,0px))] shadow-2xl keyboard-overlay-container"
           >
-            <div className="flex items-center justify-between mb-1 px-3">
+            {/* Keyboard Control Toolbar */}
+            <div className="flex items-center justify-between mb-1 px-3 pt-1">
               <div className="flex items-center gap-1.5">
-                <button type="button" onClick={handlePaste} className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-[#1F2937] text-[#70C7BA] transition-colors">
+                <button type="button" onClick={handlePaste} className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-[#1F2937] text-[#70C7BA] hover:bg-[#2B384A] transition-colors">
                   {pastedNotice ? <Check className="w-3 h-3 text-emerald-400" /> : <Clipboard className="w-3 h-3" />}
                   <span>{pastedNotice ? 'Pasted!' : 'Paste'}</span>
                 </button>
+                {inputValue.length > 0 && (
+                  <button type="button" onClick={handleClear} className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-[#1F2937] text-slate-400 hover:text-rose-400 transition-colors">
+                    <Trash2 className="w-3 h-3" />
+                    <span>Clear</span>
+                  </button>
+                )}
               </div>
-              <button type="button" onClick={closeKeyboard} className="text-[#70C7BA] font-bold text-xs px-3 py-1 bg-[#1F2937] rounded-lg">
+              <button type="button" onClick={closeKeyboard} className="text-[#090D12] font-bold text-xs px-3 py-1 bg-[#70C7BA] hover:bg-[#82d1c5] rounded-lg transition-colors">
                 Done
               </button>
             </div>

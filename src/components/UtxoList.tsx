@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
+import { useVirtualKeyboard } from '../context/KeyboardContext';
 import { shortenAddress, sompiToKas, formatKas, sompiToKasString } from '../utils/kaspa';
 import {
   Layers,
@@ -28,6 +29,7 @@ export const UtxoList: React.FC = () => {
     explorerUrl,
   } = useWallet();
 
+  const { openKeyboard } = useVirtualKeyboard();
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'spendable' | 'frozen'>('all');
   const [sortBy, setSortBy] = useState<'amount-desc' | 'amount-asc' | 'score-desc'>('amount-desc');
@@ -202,9 +204,12 @@ export const UtxoList: React.FC = () => {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
+              onClick={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
+              inputMode="none"
+              onChange={() => {}}
               placeholder="Search TXID, address, or KAS amount..."
-              className="w-full bg-[#0E131B] border border-[#1B232E] rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-[#70C7BA]/50 transition-colors"
+              className="w-full bg-[#0E131B] border border-[#1B232E] rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-[#70C7BA]/50 transition-colors cursor-pointer"
             />
           </div>
 

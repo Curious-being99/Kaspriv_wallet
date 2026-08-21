@@ -79,8 +79,8 @@ export async function scanKaspaWalletChain(
           }
           if (txs && Array.isArray(txs)) {
             txs.forEach((t: any) => {
-              const txid = t.transaction_id || t.txid;
-              if (txid) allTransactionsMap.set(txid, t);
+              const txid = typeof t === 'string' ? t : (t.transaction_id || t.txid || t.id || '');
+              if (txid) allTransactionsMap.set(txid, typeof t === 'string' ? { transaction_id: txid } : t);
             });
           }
         }
@@ -219,9 +219,9 @@ export async function scanKaspaWalletChain(
 
               if (res.txs && Array.isArray(res.txs)) {
                 res.txs.forEach((t: any) => {
-                  const txid = t.transaction_id || t.txid;
+                  const txid = typeof t === 'string' ? t : (t.transaction_id || t.txid || t.id || '');
                   if (txid && !allTransactionsMap.has(txid)) {
-                    allTransactionsMap.set(txid, t);
+                    allTransactionsMap.set(txid, typeof t === 'string' ? { transaction_id: txid } : t);
                   }
                 });
               }

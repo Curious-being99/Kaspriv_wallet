@@ -307,7 +307,7 @@ export const MobileSettingsView: React.FC = () => {
                         onFocus={() => openKeyboard({ value: seedPasswordInput, onChange: (val) => { setSeedPasswordInput(val); if (seedPasswordError) setSeedPasswordError(null); } })}
                         onClick={() => openKeyboard({ value: seedPasswordInput, onChange: (val) => { setSeedPasswordInput(val); if (seedPasswordError) setSeedPasswordError(null); } })}
                         inputMode="none" onChange={() => {}}
-                        className={`w-full px-3 py-2.5 text-center text-xs rounded-xl bg-[#090D12] ${seedPasswordError ? 'border-rose-500' : 'focus:border-[#70C7BA]'} text-slate-100 outline-none transition-colors pr-10 border border-[#212B38]`}
+                        className={`w-full px-3 py-2.5 text-center text-xs rounded-xl bg-[#090D12] ${seedPasswordError ? 'border-rose-500' : 'focus:border-[#70C7BA]'} text-slate-100 outline-none transition-colors pr-10 border border-[#212B38] cursor-pointer`}
                       />
                       <button
                         type="button"
@@ -529,12 +529,8 @@ export const MobileSettingsView: React.FC = () => {
                         value={bioPasswordInput}
                         onFocus={() => openKeyboard({ value: bioPasswordInput, onChange: (val) => setBioPasswordInput(val) })}
                         onClick={() => openKeyboard({ value: bioPasswordInput, onChange: (val) => setBioPasswordInput(val) })}
-                        onChange={(e) => {
-                          setBioPasswordInput(e.target.value);
-                          openKeyboard({ value: e.target.value, onChange: (val) => setBioPasswordInput(val) });
-                        }}
-                        inputMode="none"
-                        className="w-full px-3 py-2.5 text-xs rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-slate-100 outline-none pr-10 border border-[#212B38]"
+                        inputMode="none" onChange={() => {}}
+                        className="w-full px-3 py-2.5 text-xs rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-slate-100 outline-none pr-10 border border-[#212B38] cursor-pointer"
                       />
                       <button
                         type="button"
@@ -816,12 +812,8 @@ export const MobileSettingsView: React.FC = () => {
                       value={newDuressInput}
                       onFocus={() => openKeyboard({ value: newDuressInput, onChange: (val) => setNewDuressInput(val) })}
                       onClick={() => openKeyboard({ value: newDuressInput, onChange: (val) => setNewDuressInput(val) })}
-                      onChange={(e) => {
-                        setNewDuressInput(e.target.value);
-                        openKeyboard({ value: e.target.value, onChange: (val) => setNewDuressInput(val) });
-                      }}
-                      inputMode="none"
-                      className="w-full px-3 py-2.5 text-xs rounded-xl bg-[#090D12] focus:border-rose-400 text-slate-100 outline-none pr-10 border border-[#212B38]"
+                      inputMode="none" onChange={() => {}}
+                      className="w-full px-3 py-2.5 text-xs rounded-xl bg-[#090D12] focus:border-rose-400 text-slate-100 outline-none pr-10 border border-[#212B38] cursor-pointer"
                     />
                     <button
                       type="button"
@@ -862,12 +854,8 @@ export const MobileSettingsView: React.FC = () => {
                       value={confirmDuressInput}
                       onFocus={() => openKeyboard({ value: confirmDuressInput, onChange: (val) => setConfirmDuressInput(val) })}
                       onClick={() => openKeyboard({ value: confirmDuressInput, onChange: (val) => setConfirmDuressInput(val) })}
-                      onChange={(e) => {
-                        setConfirmDuressInput(e.target.value);
-                        openKeyboard({ value: e.target.value, onChange: (val) => setConfirmDuressInput(val) });
-                      }}
-                      inputMode="none"
-                      className="w-full px-3 py-2.5 text-xs rounded-xl bg-[#090D12] focus:border-rose-400 text-slate-100 outline-none pr-10 border border-[#212B38]"
+                      inputMode="none" onChange={() => {}}
+                      className="w-full px-3 py-2.5 text-xs rounded-xl bg-[#090D12] focus:border-rose-400 text-slate-100 outline-none pr-10 border border-[#212B38] cursor-pointer"
                     />
                   </div>
 

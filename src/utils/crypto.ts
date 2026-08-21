@@ -125,9 +125,57 @@ function hexToBytes(hex: string): Uint8Array {
   }
   const bytes = new Uint8Array(clean.length / 2);
   for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+    const byteVal = Number.parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+    if (Number.isNaN(byteVal)) {
+      throw new Error('Failed to parse hex byte');
+    }
+    bytes[i] = byteVal;
   }
   return bytes;
+}
+
+/**
+ * Validates encrypted wallet record parameters for sanity and format
+ * before initiating expensive Argon2id derivation.
+ */
+function validateEncryptedRecord(ciphertextHex: string, saltHex: string, ivHex: string, password: string): void {
+  if (!password || typeof password !== 'string' || password.length === 0) {
+    throw new Error('Validation failure: Password must be a non-empty string.');
+  }
+  if (!saltHex || typeof saltHex !== 'string' || !/^[0-9a-fA-F]{32}$/.test(saltHex)) {
+    throw new Error('Validation failure: Salt must be a 32-character (16-byte) hex string.');
+  }
+  if (!ivHex || typeof ivHex !== 'string' || !/^[0-9a-fA-F]{24}$/.test(ivHex)) {
+    throw new Error('Validation failure: IV must be a 24-character (12-byte) hex string.');
+  }
+  if (!ciphertextHex || typeof ciphertextHex !== 'string' || ciphertextHex.length > 50000) {
+    throw new Error('Validation failure: Ciphertext is missing or exceeds allowable record size.');
+  }
+
+  if (ciphertextHex.startsWith('v2:')) {
+    const parts = ciphertextHex.split(':');
+    if (parts.length !== 4) {
+      throw new Error('Validation failure: Malformed v2 ciphertext structure.');
+    }
+    const dekIvHex = parts[1];
+    const dekEncryptedHex = parts[2];
+    const payloadEncryptedHex = parts[3];
+
+    if (!/^[0-9a-fA-F]{24}$/.test(dekIvHex)) {
+      throw new Error('Validation failure: DEK IV must be a 24-character (12-byte) hex string.');
+    }
+    if (!/^[0-9a-fA-F]{96}$/.test(dekEncryptedHex)) { // 32 bytes + 16 bytes auth tag = 48 bytes = 96 hex
+      throw new Error('Validation failure: Encrypted DEK must be a valid 48-byte AES-GCM hex string.');
+    }
+    if (!/^[0-9a-fA-F]+$/.test(payloadEncryptedHex) || payloadEncryptedHex.length % 2 !== 0) {
+      throw new Error('Validation failure: Payload ciphertext must be a valid even-length hex string.');
+    }
+  } else {
+    const clean = ciphertextHex.startsWith('0x') ? ciphertextHex.slice(2) : ciphertextHex;
+    if (!/^[0-9a-fA-F]+$/.test(clean) || clean.length % 2 !== 0) {
+      throw new Error('Validation failure: Legacy ciphertext must be a valid even-length hex string.');
+    }
+  }
 }
 
 /**
@@ -238,6 +286,8 @@ export async function decryptWithPasswordLegacy(
 }
 
 async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: string, ivHex: string, password: string, context: string): Promise<string> {
+  validateEncryptedRecord(ciphertextHex, saltHex, ivHex, password);
+
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   const salt = hexToBytes(saltHex);

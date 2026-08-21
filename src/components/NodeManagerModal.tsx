@@ -350,7 +350,7 @@ export const NodeManagerModal: React.FC = () => {
                         onClick={() => openKeyboard({ value: nodeName, onChange: setNodeName })}
                         inputMode="none"
                         onChange={() => {}}
-                        className="w-full px-3 py-2 rounded-xl bg-[#090D12] border border-[#212B38] text-xs text-slate-100 outline-none focus:border-[#70C7BA]"
+                        className="w-full px-3 py-2 rounded-xl bg-[#090D12] border border-[#212B38] text-xs text-slate-100 outline-none focus:border-[#70C7BA] cursor-pointer"
                       />
                     </div>
 
@@ -382,7 +382,7 @@ export const NodeManagerModal: React.FC = () => {
                       onClick={() => openKeyboard({ value: restApiUrl, onChange: setRestApiUrl })}
                       inputMode="none"
                       onChange={() => {}}
-                      className="w-full px-3 py-2 rounded-xl bg-[#090D12] border border-[#212B38] text-xs font-mono text-slate-100 outline-none focus:border-[#70C7BA]"
+                      className="w-full px-3 py-2 rounded-xl bg-[#090D12] border border-[#212B38] text-xs font-mono text-slate-100 outline-none focus:border-[#70C7BA] cursor-pointer"
                     />
                     <p className="text-[9px] text-slate-500 mt-1">
                       Connects directly to your <code className="text-slate-300">kaspa-rest-server</code> bridge for UTXO indexing and transaction relay.
@@ -402,7 +402,7 @@ export const NodeManagerModal: React.FC = () => {
                         onClick={() => openKeyboard({ value: rpcUrl, onChange: setRpcUrl })}
                         inputMode="none"
                         onChange={() => {}}
-                        className="w-full px-3 py-2 rounded-xl bg-[#090D12] border border-[#212B38] text-xs font-mono text-slate-100 outline-none focus:border-[#70C7BA]"
+                        className="w-full px-3 py-2 rounded-xl bg-[#090D12] border border-[#212B38] text-xs font-mono text-slate-100 outline-none focus:border-[#70C7BA] cursor-pointer"
                       />
                     </div>
 
@@ -418,7 +418,7 @@ export const NodeManagerModal: React.FC = () => {
                         onClick={() => openKeyboard({ value: customExplorerUrl, onChange: setCustomExplorerUrl })}
                         inputMode="none"
                         onChange={() => {}}
-                        className="w-full px-3 py-2 rounded-xl bg-[#090D12] border border-[#212B38] text-xs font-mono text-slate-100 outline-none focus:border-[#70C7BA]"
+                        className="w-full px-3 py-2 rounded-xl bg-[#090D12] border border-[#212B38] text-xs font-mono text-slate-100 outline-none focus:border-[#70C7BA] cursor-pointer"
                       />
                     </div>
                   </div>

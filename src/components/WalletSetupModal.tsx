@@ -362,7 +362,7 @@ export const WalletSetupModal: React.FC = () => {
                       onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                       onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                       inputMode="none" onChange={() => {}}
-                      className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+                      className="w-full px-3 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
                     />
                   </div>
 
@@ -378,7 +378,7 @@ export const WalletSetupModal: React.FC = () => {
                         onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                         onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                         inputMode="none" onChange={() => {}}
-                        className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+                        className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
                       />
                       <button
                         type="button"
@@ -574,7 +574,7 @@ export const WalletSetupModal: React.FC = () => {
                   onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   inputMode="none" onChange={() => {}}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
                 />
               </div>
 
@@ -646,7 +646,7 @@ export const WalletSetupModal: React.FC = () => {
                           onClick={() => openKeyboard({ value: importWordsText, onChange: setImportWordsText })}
                           inputMode="none" onChange={() => {}}
                           placeholder="abandon ability able about above absent..."
-                          className={`w-full p-3 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs font-mono text-slate-100 outline-none transition-all resize-none no-scrollbar ${
+                          className={`w-full p-3 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs font-mono text-slate-100 outline-none transition-all resize-none no-scrollbar cursor-pointer ${
                             !showImportSeed && importWordsText ? 'filter blur-[6px] select-none text-transparent' : ''
                           }`}
                         />
@@ -678,7 +678,7 @@ export const WalletSetupModal: React.FC = () => {
                     onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                     onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
                     inputMode="none" onChange={() => {}}
-                    className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+                    className="w-full px-3 pr-10 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
                   />
                   <button
                     type="button"
@@ -781,7 +781,7 @@ export const WalletSetupModal: React.FC = () => {
                   onFocus={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   onClick={() => openKeyboard({ value: walletName, onChange: setWalletName })}
                   inputMode="none" onChange={() => {}}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] text-xs text-slate-100 outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] text-xs text-slate-100 outline-none cursor-pointer"
                 />
               </div>
 
@@ -796,7 +796,7 @@ export const WalletSetupModal: React.FC = () => {
                   onFocus={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
                   onClick={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
                   inputMode="none" onChange={() => {}}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12]  focus:border-[#70C7BA] font-mono text-xs text-slate-100 outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl bg-[#090D12] focus:border-[#70C7BA] font-mono text-xs text-slate-100 outline-none cursor-pointer"
                 />
               </div>
 
@@ -851,11 +851,10 @@ export const WalletSetupModal: React.FC = () => {
                         type={showSetupPassword ? "text" : "password"}
                         placeholder="Strong password required"
                         value={setupPassword}
-                        onChange={(e) => setSetupPassword(e.target.value)}
                         onFocus={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
                         onClick={() => openKeyboard({ value: setupPassword, onChange: setSetupPassword })}
-                        inputMode="none"
-                        className="w-full px-4 py-3 rounded-xl bg-[#090D12] border-2 border-[#1C2F42] focus:border-[#70C7BA] text-slate-100 outline-none text-sm transition-all pr-12"
+                        inputMode="none" onChange={() => {}}
+                        className="w-full px-4 py-3 rounded-xl bg-[#090D12] border-2 border-[#1C2F42] focus:border-[#70C7BA] text-slate-100 outline-none text-sm transition-all pr-12 cursor-pointer"
                       />
                       <button
                         type="button"
@@ -913,10 +912,9 @@ export const WalletSetupModal: React.FC = () => {
                         type={showSetupPassword ? "text" : "password"}
                         placeholder="Repeat password"
                         value={confirmSetupPassword}
-                        onChange={(e) => setConfirmSetupPassword(e.target.value)}
                         onFocus={() => openKeyboard({ value: confirmSetupPassword, onChange: setConfirmSetupPassword })}
                         onClick={() => openKeyboard({ value: confirmSetupPassword, onChange: setConfirmSetupPassword })}
-                        inputMode="none"
+                        inputMode="none" onChange={() => {}}
                         className={`w-full px-4 py-3 rounded-xl bg-[#090D12] border-2 transition-all pr-12 ${
                           confirmSetupPassword && setupPassword !== confirmSetupPassword 
                             ? 'border-rose-500/50' 
@@ -1004,7 +1002,6 @@ export const WalletSetupModal: React.FC = () => {
                       type={showSetupDuressPassword ? "text" : "password"}
                       placeholder="Enter emergency duress password"
                       value={setupDuressPassword}
-                      onChange={(e) => setSetupDuressPassword(e.target.value)}
                       onFocus={() => {
                         setActiveDuressField('primary');
                         openKeyboard({
@@ -1019,7 +1016,7 @@ export const WalletSetupModal: React.FC = () => {
                           onChange: (val) => setSetupDuressPassword(val),
                         });
                       }}
-                      inputMode="none"
+                      inputMode="none" onChange={() => {}}
                       className={`w-full px-4 py-3 rounded-xl bg-[#090D12] border-2 transition-all pr-12 ${
                         setupDuressPassword && setupPassword && setupDuressPassword === setupPassword
                           ? 'border-rose-500'
@@ -1052,7 +1049,6 @@ export const WalletSetupModal: React.FC = () => {
                         type={showSetupDuressPassword ? "text" : "password"}
                         placeholder="Repeat emergency duress password"
                         value={confirmSetupDuressPassword}
-                        onChange={(e) => setConfirmSetupDuressPassword(e.target.value)}
                         onFocus={() => {
                           setActiveDuressField('confirm');
                           openKeyboard({
@@ -1067,7 +1063,7 @@ export const WalletSetupModal: React.FC = () => {
                             onChange: (val) => setConfirmSetupDuressPassword(val),
                           });
                         }}
-                        inputMode="none"
+                        inputMode="none" onChange={() => {}}
                         className={`w-full px-4 py-3 rounded-xl bg-[#090D12] border-2 transition-all pr-12 ${
                           confirmSetupDuressPassword && setupDuressPassword !== confirmSetupDuressPassword
                             ? 'border-rose-500/50'

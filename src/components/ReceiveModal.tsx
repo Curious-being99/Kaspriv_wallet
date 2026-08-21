@@ -143,7 +143,7 @@ export const ReceiveModal: React.FC = () => {
               onClick={() => openKeyboard({ value: requestedAmount, onChange: setRequestedAmount, layoutName: 'numeric', type: 'number' })}
               inputMode="none"
               onChange={() => {}}
-              className="w-full px-3 py-2 rounded-xl bg-[#080B0F] border border-[#212B38] text-xs font-mono text-slate-100 outline-none focus:border-[#70C7BA]"
+              className="w-full px-3 py-2 rounded-xl bg-[#080B0F] border border-[#212B38] text-xs font-mono text-slate-100 outline-none focus:border-[#70C7BA] cursor-pointer"
             />
           </div>
           <div>
@@ -157,7 +157,7 @@ export const ReceiveModal: React.FC = () => {
               onClick={() => openKeyboard({ value: note, onChange: setNote })}
               inputMode="none"
               onChange={() => {}}
-              className="w-full px-3 py-2 rounded-xl bg-[#080B0F] border border-[#212B38] text-xs text-slate-100 outline-none focus:border-[#70C7BA]"
+              className="w-full px-3 py-2 rounded-xl bg-[#080B0F] border border-[#212B38] text-xs text-slate-100 outline-none focus:border-[#70C7BA] cursor-pointer"
             />
           </div>
         </div>

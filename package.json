@@ -8,7 +8,6 @@
     "build": "vite build && node scripts/copy-android-icons.js",
     "lint": "eslint .",
     "preview": "vite preview",
-    "postinstall": "node patch-kaspa-wasm.js",
     "cap:build": "vite build && cap sync && node scripts/patch-android-build-gradle.js && node scripts/copy-android-icons.js",
     "cap:sync": "cap sync && node scripts/patch-android-build-gradle.js && node scripts/copy-android-icons.js"
   },
@@ -30,7 +29,6 @@
     "html5-qrcode": "^2.3.8",
     "http-proxy-agent": "9.1.0",
     "idb": "8.0.3",
-    "kaspa-wasm": "0.13.0",
     "lucide-react": "0.475.0",
     "migrate": "2.1.0",
     "motion": "12.4.7",

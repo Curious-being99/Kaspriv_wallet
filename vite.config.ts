@@ -27,7 +27,7 @@ export default defineConfig({
     })
   ],
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-simple-keyboard', 'qrcode.react', 'html5-qrcode', '@kaspa/core-lib', 'kaspa-wasm'],
+    include: ['react', 'react-dom', 'react-simple-keyboard', 'qrcode.react', 'html5-qrcode', '@kaspa/core-lib'],
   },
   assetsInclude: ['**/*.wasm'],
   server: {

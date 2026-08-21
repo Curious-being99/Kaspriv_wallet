@@ -84,10 +84,12 @@ export const Header: React.FC = () => {
                     <input
                       type="text"
                       value={nameInput}
-                      onChange={(e) => setNameInput(e.target.value)}
+                      onFocus={() => openKeyboard({ value: nameInput, onChange: setNameInput })}
+                      onClick={() => openKeyboard({ value: nameInput, onChange: setNameInput })}
+                      inputMode="none"
+                      onChange={() => {}}
                       placeholder="Wallet name"
-                      className="w-full px-2 py-1 text-xs bg-transparent text-slate-100 outline-none font-medium"
-                      autoFocus
+                      className="w-full px-2 py-1 text-xs bg-transparent text-slate-100 outline-none font-medium cursor-pointer"
                     />
                     <button
                       type="submit"

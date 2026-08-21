@@ -4,13 +4,32 @@ import * as secp from '@noble/secp256k1';
 import { safeStringify } from '../json';
 import { wipe, ensureKaspaRuntime } from './common';
 import { addressToScriptPublicKey } from './address';
+import { NetworkType } from '../../types';
+
+function parseHexBytes(hex: string): Uint8Array {
+  const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+  if (!/^[0-9a-fA-F]*$/.test(clean)) {
+    throw new Error('Invalid hex string: contains non-hexadecimal characters');
+  }
+  if (clean.length % 2 !== 0) {
+    throw new Error('Invalid hex string: must have an even length');
+  }
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    const byteVal = Number.parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+    if (Number.isNaN(byteVal)) {
+      throw new Error('Failed to parse hex byte');
+    }
+    bytes[i] = byteVal;
+  }
+  return bytes;
+}
 
 /**
  * Create a P2SH Redeem Script from a public key or custom script bytes
  */
 export function createP2SHRedeemScript(publicKeyHex: string): { redeemScriptHex: string; scriptHashHex: string } {
-  const hex = publicKeyHex.startsWith('0x') ? publicKeyHex.slice(2) : publicKeyHex;
-  const pubKey = new Uint8Array(hex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+  const pubKey = parseHexBytes(publicKeyHex);
   const xOnly = pubKey.length === 33 ? pubKey.slice(1) : pubKey;
 
   const redeemScript = new Uint8Array(34);
@@ -36,9 +55,22 @@ export async function buildKaspaTransaction(
   feeSompi: bigint,
   addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
   redeemScriptHex?: string,
-  lockTime?: number
+  lockTime?: number,
+  network: NetworkType = 'mainnet'
 ): Promise<any> {
   await ensureKaspaRuntime();
+
+  // Deduplicate and validate inputs
+  const seenOutpoints = new Set<string>();
+  for (const u of utxos) {
+    const txId = String(u.outpoint?.transactionId || u.transactionId || '').toLowerCase();
+    const idx = Number(u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0));
+    const outpointKey = `${txId}:${idx}`;
+    if (seenOutpoints.has(outpointKey)) {
+      throw new Error(`Security Violation: Duplicate input outpoint detected in transaction build: ${outpointKey}`);
+    }
+    seenOutpoints.add(outpointKey);
+  }
 
   // Manual construction
   const inputs: any[] = utxos.map(u => ({
@@ -54,7 +86,7 @@ export async function buildKaspaTransaction(
 
   const outputs = [{
     amount: amountSompi,
-    scriptPublicKey: { scriptPublicKey: addressToScriptPublicKey(toAddress), version: 0 }
+    scriptPublicKey: { scriptPublicKey: addressToScriptPublicKey(toAddress, network), version: 0 }
   }];
 
   const totalInputSompi = utxos.reduce((acc, u) => acc + BigInt(u.utxoEntry?.amount || u.amount || 0), 0n);
@@ -62,7 +94,7 @@ export async function buildKaspaTransaction(
   if (changeSompi > 0n && changeAddress) {
     outputs.push({
       amount: changeSompi,
-      scriptPublicKey: { scriptPublicKey: addressToScriptPublicKey(changeAddress), version: 0 }
+      scriptPublicKey: { scriptPublicKey: addressToScriptPublicKey(changeAddress, network), version: 0 }
     });
   }
 
@@ -73,7 +105,7 @@ export async function buildKaspaTransaction(
   });
   Object.freeze(outputs);
 
-  return { type: 'manual', inputs, outputs, utxos, lockTime: lockTime || 0, addressType, redeemScriptHex };
+  return { type: 'manual', inputs, outputs, utxos, lockTime: lockTime || 0, addressType, redeemScriptHex, network };
 }
 
 /**
@@ -91,26 +123,11 @@ export async function signTransactionWithPrivateKeyBytes(
     const writeUint16LE = (val: number) => { const b = new Uint8Array(2); b[0] = val & 0xff; b[1] = (val >> 8) & 0xff; return b; };
     const writeUint32LE = (val: number) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, val, true); return b; };
     const writeUint64LE = (val: bigint) => { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(val), true); return b; };
-    const hexToBytes = (hex: string): Uint8Array => {
-      const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
-      if (!/^[0-9a-fA-F]*$/.test(clean)) {
-        throw new Error('Invalid hex string: contains non-hexadecimal characters');
-      }
-      if (clean.length % 2 !== 0) {
-        throw new Error('Invalid hex string: must have an even length');
-      }
-      const bytes = new Uint8Array(clean.length / 2);
-      for (let i = 0; i < bytes.length; i++) {
-        bytes[i] = parseInt(clean.substring(i * 2, i * 2 + 2), 16);
-      }
-      return bytes;
-    };
-
     const outpointParts: Uint8Array[] = [];
     const seqParts: Uint8Array[] = [];
     const sigOpCountParts: Uint8Array[] = [];
     txData.inputs.forEach((input: any) => {
-      outpointParts.push(hexToBytes(input.previousOutpoint.transactionId));
+      outpointParts.push(parseHexBytes(input.previousOutpoint.transactionId));
       outpointParts.push(writeUint32LE(input.previousOutpoint.index));
       seqParts.push(writeUint64LE(0n));
       sigOpCountParts.push(new Uint8Array([1]));
@@ -123,7 +140,7 @@ export async function signTransactionWithPrivateKeyBytes(
     const outputParts: Uint8Array[] = [];
     txData.outputs.forEach((out: any) => {
       const amt = BigInt(out.amount);
-      const spkBytes = hexToBytes(out.scriptPublicKey.scriptPublicKey);
+      const spkBytes = parseHexBytes(out.scriptPublicKey.scriptPublicKey);
       outputParts.push(writeUint64LE(amt));
       outputParts.push(writeUint16LE(0));
       outputParts.push(writeUint64LE(BigInt(spkBytes.length)));
@@ -133,11 +150,13 @@ export async function signTransactionWithPrivateKeyBytes(
     const payloadHash = new Uint8Array(32);
     const subnetworkIdBytes = new Uint8Array(20);
 
+    const network: NetworkType = txData.network || 'mainnet';
+
     txData.inputs.forEach((input: any, i: number) => {
       const u = input.utxo;
       const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
-      const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || u.scriptPublicKey || addressToScriptPublicKey(u.address);
-      const scriptForSighashBytes = hexToBytes(spkHex);
+      const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || u.scriptPublicKey || addressToScriptPublicKey(u.address, network);
+      const scriptForSighashBytes = parseHexBytes(spkHex);
 
       let activeKeyBytes: Uint8Array;
       if (privateKeyBytes instanceof Uint8Array) {
@@ -155,7 +174,7 @@ export async function signTransactionWithPrivateKeyBytes(
         previousOutpointsHash,
         sequencesHash,
         sigOpCountsHash,
-        hexToBytes(input.previousOutpoint.transactionId),
+        parseHexBytes(input.previousOutpoint.transactionId),
         writeUint32LE(input.previousOutpoint.index),
         writeUint16LE(0),
         writeUint64LE(BigInt(scriptForSighashBytes.length)),
@@ -180,7 +199,7 @@ export async function signTransactionWithPrivateKeyBytes(
       if (isInputP2SH) {
         const inputRedeemScript = txData.redeemScriptHex || createP2SHRedeemScript(pubKeyHex).redeemScriptHex;
         const pushRedeemScript = (()=>{
-          const bytes = hexToBytes(inputRedeemScript);
+          const bytes = parseHexBytes(inputRedeemScript);
           if (bytes.length <= 75) return `${bytes.length.toString(16).padStart(2, '0')}${inputRedeemScript}`;
           if (bytes.length <= 255) return `4c${bytes.length.toString(16).padStart(2, '0')}${inputRedeemScript}`;
           return `4d${Buffer.from(writeUint16LE(bytes.length)).toString('hex')}${inputRedeemScript}`;
@@ -224,7 +243,8 @@ export async function createSignedTransaction(
   feeSompi: bigint,
   addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
   redeemScriptHex?: string,
-  lockTime?: number
+  lockTime?: number,
+  network: NetworkType = 'mainnet'
 ): Promise<{
   transaction: any;
 }> {
@@ -253,7 +273,8 @@ export async function createSignedTransaction(
       LOCKED_FEE_SOMPI,
       addressType,
       redeemScriptHex,
-      lockTime
+      lockTime,
+      network
     );
 
     // Integrity Guard Function: Compares physical output scripts against locked expectations
@@ -262,8 +283,8 @@ export async function createSignedTransaction(
         throw new Error('Security Violation: Invalid or manipulated output array detected!');
       }
 
-      const expectedRecipientScriptHex = addressToScriptPublicKey(LOCKED_TO_ADDRESS);
-      const expectedChangeScriptHex = addressToScriptPublicKey(LOCKED_CHANGE_ADDRESS);
+      const expectedRecipientScriptHex = addressToScriptPublicKey(LOCKED_TO_ADDRESS, network);
+      const expectedChangeScriptHex = addressToScriptPublicKey(LOCKED_CHANGE_ADDRESS, network);
 
       // Verify Output 0: must match recipient exactly
       const out0 = txOutputs[0];

@@ -19,7 +19,7 @@
 			"backgroundColor": "#090D12"
 		},
 		"CapacitorHttp": {
-			"enabled": false
+			"enabled": true
 		}
 	}
 }

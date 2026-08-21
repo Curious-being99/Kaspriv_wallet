@@ -127,9 +127,10 @@ export const ContactsView: React.FC = () => {
           value={searchQuery}
           onFocus={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
           onClick={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
-          inputMode="none" onChange={() => {}}
+          inputMode="none"
+          onChange={() => {}}
           placeholder="Search contacts by nickname, address, or note..."
-          className="w-full bg-[#0c141f] border border-[#212B38] rounded-2xl pl-11 pr-4 py-3 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-[#70C7BA] transition-colors"
+          className="w-full bg-[#0c141f] border border-[#212B38] rounded-2xl pl-11 pr-4 py-3 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-[#70C7BA] transition-colors cursor-pointer"
         />
       </div>
 
@@ -244,7 +245,7 @@ export const ContactsView: React.FC = () => {
                     onClick={() => openKeyboard({ value: nameInput, onChange: setNameInput })}
                     inputMode="none" onChange={() => {}}
                     placeholder="e.g. Alice Exchange, Hardware Wallet"
-                    className="w-full bg-[#090D12] border border-[#212B38] rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-[#70C7BA]"
+                    className="w-full bg-[#090D12] border border-[#212B38] rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-[#70C7BA] cursor-pointer"
                   />
                 </div>
 
@@ -260,7 +261,7 @@ export const ContactsView: React.FC = () => {
                     onClick={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
                     inputMode="none" onChange={() => {}}
                     placeholder="kaspa:qp89... or kaspatest:..."
-                    className="w-full bg-[#090D12] border border-[#212B38] rounded-xl px-3 py-2.5 text-xs text-slate-100 font-mono placeholder-slate-500 outline-none focus:border-[#70C7BA]"
+                    className="w-full bg-[#090D12] border border-[#212B38] rounded-xl px-3 py-2.5 text-xs text-slate-100 font-mono placeholder-slate-500 outline-none focus:border-[#70C7BA] cursor-pointer"
                   />
                 </div>
 
@@ -272,11 +273,10 @@ export const ContactsView: React.FC = () => {
                     value={notesInput}
                     onFocus={() => openKeyboard({ value: notesInput, onChange: setNotesInput })}
                     onClick={() => openKeyboard({ value: notesInput, onChange: setNotesInput })}
-                    inputMode="none"
-                    onChange={(e) => setNotesInput(e.target.value)}
+                    inputMode="none" onChange={() => {}}
                     placeholder="Add any reminders or tags..."
                     rows={2}
-                    className="w-full bg-[#090D12] border border-[#212B38] rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-[#70C7BA] resize-none"
+                    className="w-full bg-[#090D12] border border-[#212B38] rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-[#70C7BA] resize-none cursor-pointer"
                   />
                 </div>
 

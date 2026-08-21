@@ -125,15 +125,11 @@ export const LockScreen: React.FC = () => {
                 value={password}
                 onFocus={() => openKeyboard({ value: password, onChange: (val) => { setPassword(val); setError(null); } })}
                 onClick={() => openKeyboard({ value: password, onChange: (val) => { setPassword(val); setError(null); } })}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setError(null);
-                  openKeyboard({ value: e.target.value, onChange: (val) => { setPassword(val); setError(null); } });
-                }}
                 inputMode="none"
+                onChange={() => {}}
                 className={`w-full px-4 py-3 rounded-xl bg-[#0B151E] border-2 transition-all text-center text-sm ${
                   error ? 'border-rose-500/50' : 'border-[#1C2F42] focus:border-[#70C7BA]'
-                } text-slate-100 outline-none`}
+                } text-slate-100 outline-none cursor-pointer`}
               />
               <button
                 type="button"
