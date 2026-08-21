@@ -68,8 +68,8 @@ pub fn encrypt_with_password_rust(plaintext: &str, password: &str, context: &str
     getrandom::getrandom(&mut dek_iv).map_err(|e| JsValue::from_str(&format!("RNG DEK IV error: {}", e)))?;
     getrandom::getrandom(&mut random_dek).map_err(|e| JsValue::from_str(&format!("RNG DEK generation error: {}", e)))?;
     
-    // Derive KEK from password using Argon2id
-    let params = Params::new(65536, 3, 4, Some(32))
+    // Derive KEK from password using Argon2id (aligned with JS production specs: 128MB, 6 iterations, 1 parallelism)
+    let params = Params::new(131072, 6, 1, Some(32))
         .map_err(|e| JsValue::from_str(&format!("Argon2 params error: {}", e)))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     
@@ -93,19 +93,19 @@ pub fn encrypt_with_password_rust(plaintext: &str, password: &str, context: &str
     let encrypted_payload_bytes = dek_cipher.encrypt(GenericArray::from_slice(&dek_iv), payload)
         .map_err(|e| JsValue::from_str(&format!("Payload encryption error: {}", e)))?;
         
-    // 2. Encrypt DEK using KEK
+    // 2. Encrypt DEK using KEK with associated dynamic AAD context (matching JS)
     let dek_payload = Payload {
         msg: &random_dek,
-        aad: b"KASPRIV-DEK-WRAPPING-v2",
+        aad: context.as_bytes(),
     };
     let encrypted_dek_bytes = kek_cipher.encrypt(GenericArray::from_slice(&kek_iv), dek_payload)
         .map_err(|e| JsValue::from_str(&format!("DEK wrapping error: {}", e)))?;
     random_dek.zeroize();
     
-    // 3. Format into fully structured V2 record format: v2:kek_iv:encrypted_dek:encrypted_payload
+    // 3. Format into fully structured V2 record format: v2:dek_iv:encrypted_dek:encrypted_payload
     let ciphertext = format!(
         "v2:{}:{}:{}",
-        hex::encode(kek_iv),
+        hex::encode(dek_iv),
         hex::encode(encrypted_dek_bytes),
         hex::encode(encrypted_payload_bytes)
     );
@@ -125,8 +125,9 @@ pub fn encrypt_with_password_rust(plaintext: &str, password: &str, context: &str
 pub fn decrypt_with_password_rust(ciphertext: &str, password: &str, salt_hex: &str, iv_hex: &str, context: &str) -> Result<String, JsValue> {
     let mut secret_pwd = Zeroizing::new(password.as_bytes().to_vec());
     let salt = hex::decode(salt_hex).map_err(|e| JsValue::from_str(&format!("Salt parse error: {}", e)))?;
+    let kek_iv = hex::decode(iv_hex).map_err(|e| JsValue::from_str(&format!("KEK IV parse error: {}", e)))?;
     
-    // Parse structured V2 layout: v2:kek_iv:encrypted_dek:encrypted_payload
+    // Parse structured V2 layout: v2:dek_iv:encrypted_dek:encrypted_payload
     if !ciphertext.starts_with("v2:") {
         return Err(JsValue::from_str("Invalid format: Only v2 encrypted records are supported by the Rust core."));
     }
@@ -136,12 +137,12 @@ pub fn decrypt_with_password_rust(ciphertext: &str, password: &str, salt_hex: &s
         return Err(JsValue::from_str("Malformed encrypted payload structure."));
     }
     
-    let kek_iv = hex::decode(parts[1]).map_err(|e| JsValue::from_str(&format!("KEK IV parse error: {}", e)))?;
+    let dek_iv = hex::decode(parts[1]).map_err(|e| JsValue::from_str(&format!("DEK IV parse error: {}", e)))?;
     let encrypted_dek = hex::decode(parts[2]).map_err(|e| JsValue::from_str(&format!("Encrypted DEK parse error: {}", e)))?;
     let encrypted_payload = hex::decode(parts[3]).map_err(|e| JsValue::from_str(&format!("Encrypted payload parse error: {}", e)))?;
     
-    // Derive KEK
-    let params = Params::new(65536, 3, 4, Some(32))
+    // Derive KEK (using the same 128MB, 6 iterations, 1 parallelism parameters)
+    let params = Params::new(131072, 6, 1, Some(32))
         .map_err(|e| JsValue::from_str(&format!("Argon2 params error: {}", e)))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     
@@ -153,15 +154,15 @@ pub fn decrypt_with_password_rust(ciphertext: &str, password: &str, salt_hex: &s
         .map_err(|e| JsValue::from_str(&format!("Cipher initialization error: {}", e)))?;
     kek_bytes.zeroize();
     
-    // Decrypt the DEK
+    // Decrypt the DEK using kek_iv and dynamic AAD context (matching JS)
     let dek_payload = Payload {
         msg: &encrypted_dek,
-        aad: b"KASPRIV-DEK-WRAPPING-v2",
+        aad: context.as_bytes(),
     };
     let mut dek_bytes = kek_cipher.decrypt(GenericArray::from_slice(&kek_iv), dek_payload)
         .map_err(|e| JsValue::from_str(&format!("DEK decryption error: {}", e)))?;
         
-    // Decrypt the payload using the decrypted DEK
+    // Decrypt the payload using the decrypted DEK and dek_iv
     let dek_cipher = Aes256Gcm::new_from_slice(&dek_bytes)
         .map_err(|e| JsValue::from_str(&format!("DEK initialization error: {}", e)))?;
     dek_bytes.zeroize();
@@ -170,7 +171,7 @@ pub fn decrypt_with_password_rust(ciphertext: &str, password: &str, salt_hex: &s
         msg: &encrypted_payload,
         aad: context.as_bytes(),
     };
-    let decrypted_bytes = dek_cipher.decrypt(GenericArray::from_slice(&kek_iv), payload)
+    let decrypted_bytes = dek_cipher.decrypt(GenericArray::from_slice(&dek_iv), payload)
         .map_err(|e| JsValue::from_str(&format!("Payload decryption error: {}", e)))?;
         
     let decrypted_str = String::from_utf8(decrypted_bytes)

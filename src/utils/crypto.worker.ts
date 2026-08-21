@@ -1,10 +1,14 @@
-import { decryptWithPassword, encryptWithPassword } from './crypto';
+import { decryptWithPassword, encryptWithPassword, setForceNativeOnly } from './crypto';
 import { IsolatedSigner } from './IsolatedSigner';
 
 // Define the postMessage handlers inside our secure isolated worker thread
 self.addEventListener('message', async (e: MessageEvent) => {
   const { id, action, payload } = e.data;
   try {
+    if (payload && payload.isAndroidAPK) {
+      setForceNativeOnly(true);
+    }
+
     if (action === 'decryptWithPassword') {
       const { ciphertextHex, saltHex, ivHex, password, context } = payload;
       const decrypted = await decryptWithPassword(ciphertextHex, saltHex, ivHex, password, context);

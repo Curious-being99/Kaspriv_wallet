@@ -16,6 +16,11 @@ function getCrypto(): Crypto {
 let wasmModule: any = null;
 let wasmLosslessChecked = false;
 
+let forceNativeOnly = false;
+export function setForceNativeOnly(val: boolean) {
+  forceNativeOnly = val;
+}
+
 // Safe dynamic WebAssembly loader for Rust Core compilation folder
 async function tryGetRustWasm() {
   if (wasmLosslessChecked) return wasmModule;
@@ -234,17 +239,54 @@ export async function encryptWithPassword(plaintext: string, password: string, c
     console.warn('Worker encrypt failed, falling back to local thread:', err);
   }
 
+  // Strictly block JavaScript fallbacks in production APK native environments (including workers)
+  const isAndroidAPK = forceNativeOnly || (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.());
+  if (isAndroidAPK) {
+    const rust = await tryGetRustWasm();
+    if (!rust || typeof rust.encrypt_with_password_rust !== 'function') {
+      throw new Error('Native Crypto Module missing: APK target requires compiled Rust Native core.');
+    }
+    const res = rust.encrypt_with_password_rust(plaintext, password, context);
+    if (!res || typeof res !== 'object') {
+      throw new Error('Native encryption failed: Invalid response from Rust Native core.');
+    }
+    return {
+      ciphertext: res.ciphertext,
+      salt: res.salt,
+      iv: res.iv
+    };
+  }
+
+  // 1. Prioritize Rust WASM Core if compiled and loaded
+  const rust = await tryGetRustWasm();
+  if (rust && typeof rust.encrypt_with_password_rust === 'function') {
+    try {
+      const res = rust.encrypt_with_password_rust(plaintext, password, context);
+      if (res && typeof res === 'object') {
+        return {
+          ciphertext: res.ciphertext,
+          salt: res.salt,
+          iv: res.iv
+        };
+      }
+    } catch (err) {
+      console.error('Rust WASM encrypt failed:', err);
+      throw err;
+    }
+  }
+
+  // 2. Developer/Environment Fallback
   const encoder = new TextEncoder();
   const plaintextBytes = encoder.encode(plaintext);
   const aadBytes = encoder.encode(context);
 
   const cryptoProvider = getCrypto();
 
-  // 1. Generate random salt (16 bytes) and KEK IV (12-bytes)
+  // Generate random salt (16 bytes) and KEK IV (12-bytes)
   const salt = cryptoProvider.getRandomValues(new Uint8Array(16));
   const kekIv = cryptoProvider.getRandomValues(new Uint8Array(12));
 
-  // 2. Derive KEK (Key Encryption Key) using Argon2id
+  // Derive KEK (Key Encryption Key) using Argon2id
   const kekBytes = await argon2id({
     password,
     salt,
@@ -260,7 +302,7 @@ export async function encryptWithPassword(plaintext: string, password: string, c
   );
   wipe(kekBytes);
 
-  // 3. Generate random DEK (Data Encryption Key, 32 bytes)
+  // Generate random DEK (Data Encryption Key, 32 bytes)
   const dekBytes = cryptoProvider.getRandomValues(new Uint8Array(32));
   const dek = await cryptoProvider.subtle.importKey(
     'raw',
@@ -270,7 +312,7 @@ export async function encryptWithPassword(plaintext: string, password: string, c
     ['encrypt', 'decrypt']
   );
 
-  // 4. Encrypt plaintext with DEK
+  // Encrypt plaintext with DEK
   const dekIv = cryptoProvider.getRandomValues(new Uint8Array(12));
   const payloadEncrypted = await cryptoProvider.subtle.encrypt(
     { name: 'AES-GCM', iv: dekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
@@ -279,7 +321,7 @@ export async function encryptWithPassword(plaintext: string, password: string, c
   );
   wipe(plaintextBytes);
 
-  // 5. Encrypt DEK with KEK
+  // Encrypt DEK with KEK
   const dekEncrypted = await cryptoProvider.subtle.encrypt(
     { name: 'AES-GCM', iv: kekIv as unknown as BufferSource, additionalData: aadBytes as unknown as BufferSource },
     kek,
@@ -354,6 +396,28 @@ export async function decryptWithPasswordLegacy(
 async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: string, ivHex: string, password: string, context: string): Promise<string> {
   validateEncryptedRecord(ciphertextHex, saltHex, ivHex, password);
 
+  // Strictly block JavaScript fallbacks in production APK native environments (including workers)
+  const isAndroidAPK = forceNativeOnly || (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.());
+  if (isAndroidAPK) {
+    const rust = await tryGetRustWasm();
+    if (!rust || typeof rust.decrypt_with_password_rust !== 'function') {
+      throw new Error('Native Crypto Module missing: APK target requires compiled Rust Native core.');
+    }
+    return await rust.decrypt_with_password_rust(ciphertextHex, password, saltHex, ivHex, context);
+  }
+
+  // 1. Prioritize Rust WASM Core if compiled and loaded
+  const rust = await tryGetRustWasm();
+  if (rust && typeof rust.decrypt_with_password_rust === 'function') {
+    try {
+      return await rust.decrypt_with_password_rust(ciphertextHex, password, saltHex, ivHex, context);
+    } catch (err) {
+      console.error('Rust WASM decrypt failed:', err);
+      throw new Error(`Decryption failed: ${err}`);
+    }
+  }
+
+  // 2. Developer/Environment Fallback
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   const salt = hexToBytes(saltHex);
@@ -362,7 +426,7 @@ async function decryptWithPasswordInternal(ciphertextHex: string, saltHex: strin
 
   const cryptoProvider = getCrypto();
 
-  // 1. Derive KEK
+  // Derive KEK
   const kekBytes = await argon2id({
     password,
     salt,

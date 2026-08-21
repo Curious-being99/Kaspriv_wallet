@@ -61,7 +61,11 @@ class CryptoWorkerManager {
     return new Promise<T>((resolve, reject) => {
       const id = `${Date.now()}-${this.nextTaskId++}`;
       this.tasks.set(id, { resolve, reject });
-      this.worker!.postMessage({ id, action, payload });
+      
+      const isAndroidAPK = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.();
+      const enrichedPayload = { ...payload, isAndroidAPK };
+      
+      this.worker!.postMessage({ id, action, payload: enrichedPayload });
     });
   }
 }
