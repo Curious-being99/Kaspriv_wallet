@@ -346,12 +346,22 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         let mergedNodes = INITIAL_NODES;
         if (savedCustomNodes && Array.isArray(savedCustomNodes) && savedCustomNodes.length > 0) {
-          const customList = savedCustomNodes.filter(cn => 
-            !INITIAL_NODES.some(inNode => inNode.id === cn.id) &&
-            cn.id !== 'node-kaspagov' &&
-            cn.id !== 'node-aspectron' &&
-            (!cn.apiUrl || !cn.apiUrl.includes('api.kaspagov.org'))
-          );
+          const customList = savedCustomNodes.filter(cn => {
+            const isLegacyNodeId = cn.id === 'node-kaspagov' || cn.id === 'node-aspectron';
+            if (isLegacyNodeId || INITIAL_NODES.some(inNode => inNode.id === cn.id)) return false;
+
+            if (!cn.apiUrl) return true;
+
+            try {
+              const { hostname } = new URL(cn.apiUrl);
+              const lowerHost = hostname.toLowerCase();
+              const isKaspagovHost =
+                lowerHost === 'api.kaspagov.org' || lowerHost.endsWith('.api.kaspagov.org');
+              return !isKaspagovHost;
+            } catch {
+              return true;
+            }
+          });
           mergedNodes = [...customList, ...INITIAL_NODES];
         }
 
