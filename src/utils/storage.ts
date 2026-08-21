@@ -1,169 +1,45 @@
 import { Wallet, UTXO, KaspaTransaction } from '../types';
+import { SQLitePlugin } from '../plugins/SQLitePlugin';
 
 /**
- * High-performance, robust Relational SQLite Database Engine.
- * Fully decoupled from standard IndexedDB to provide native SQL statement executions
- * ('CREATE TABLE', 'INSERT OR REPLACE', 'SELECT FROM', 'DELETE FROM') while maintaining 
- * seamless cross-platform browser sandboxing and preventing native mobile crashes.
+ * High-performance, compile-safe Relational SQLite Database Driver.
+ * Strictly linked to Android Jetpack Room with direct native bridge queries.
+ * All browser-level simulation, regex statement parsing, and localStorage fallbacks have been removed.
  */
 class SQLiteDatabase {
-  private tables: Map<string, Map<string, any>> = new Map();
   private initialized = false;
-
-  constructor() {
-    this.tables.set('wallets', new Map());
-    this.tables.set('settings', new Map());
-    this.tables.set('utxos', new Map());
-    this.tables.set('transactions', new Map());
-  }
-
-  private async persist(): Promise<void> {
-    if (panicWipeTriggered) return;
-    try {
-      const exportData: { [tableName: string]: any[] } = {};
-      for (const [tableName, rows] of this.tables.entries()) {
-        exportData[tableName] = Array.from(rows.values());
-      }
-      localStorage.setItem('kaspriv_sqlite_db_v1', JSON.stringify(exportData));
-    } catch (e) {
-      console.error('SQLite Engine: Failed to persist records to secure storage:', e);
-    }
-  }
 
   public async init(): Promise<void> {
     if (this.initialized) return;
     try {
-      // Execute schema builds
-      await this.executeSql('CREATE TABLE IF NOT EXISTS wallets (id TEXT PRIMARY KEY, value TEXT)');
-      await this.executeSql('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
-      await this.executeSql('CREATE TABLE IF NOT EXISTS utxos (walletId TEXT PRIMARY KEY, data TEXT)');
-      await this.executeSql('CREATE TABLE IF NOT EXISTS transactions (walletId TEXT PRIMARY KEY, data TEXT)');
-
-      const dataStr = localStorage.getItem('kaspriv_sqlite_db_v1');
-      if (dataStr) {
-        const importData = JSON.parse(dataStr);
-        for (const tableName of Object.keys(importData)) {
-          const rows = importData[tableName];
-          const tableMap = this.tables.get(tableName) || new Map();
-          for (const row of rows) {
-            const pk = tableName === 'wallets' ? row.id : (tableName === 'settings' ? row.key : row.walletId);
-            if (pk) {
-              tableMap.set(pk, row);
-            }
-          }
-          this.tables.set(tableName, tableMap);
-        }
+      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
+        // Build actual schemas inside the native Jetpack Room container
+        await this.executeSql('CREATE TABLE IF NOT EXISTS wallets (id TEXT PRIMARY KEY, value TEXT)');
+        await this.executeSql('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
+        await this.executeSql('CREATE TABLE IF NOT EXISTS utxos (walletId TEXT PRIMARY KEY, data TEXT)');
+        await this.executeSql('CREATE TABLE IF NOT EXISTS transactions (walletId TEXT PRIMARY KEY, data TEXT)');
       }
       this.initialized = true;
     } catch (e) {
-      console.error('SQLite Engine: Database initialization error:', e);
+      console.error('Native SQLite Driver: Initialization failed:', e);
       this.initialized = true;
     }
   }
 
   public async executeSql(sql: string, params: any[] = []): Promise<{ rows: any[] }> {
-    const normalized = sql.trim().replace(/\s+/g, ' ');
-    const upper = normalized.toUpperCase();
-
-    // CREATE TABLE schemas
-    if (upper.startsWith('CREATE TABLE')) {
-      return { rows: [] };
+    if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
+      const res = await SQLitePlugin.executeSql({ sql, params });
+      return { rows: res?.rows || [] };
     }
-
-    // INSERT OR REPLACE INTO tableName (columns) VALUES (?, ?)
-    if (upper.startsWith('INSERT OR REPLACE INTO') || upper.startsWith('INSERT INTO') || upper.startsWith('REPLACE INTO')) {
-      const match = normalized.match(/INSERT\s+(?:OR\s+REPLACE\s+)?INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i);
-      if (!match) throw new Error(`SQLite Engine Error: Invalid INSERT syntax: "${normalized}"`);
-      const tableName = match[1].toLowerCase();
-      const columns = match[2].split(',').map(c => c.trim());
-      const tableMap = this.tables.get(tableName);
-      if (!tableMap) throw new Error(`SQLite Engine Error: Table "${tableName}" does not exist`);
-
-      const row: any = {};
-      columns.forEach((col, idx) => {
-        row[col] = params[idx];
-      });
-
-      const pk = tableName === 'wallets' ? row.id : (tableName === 'settings' ? row.key : row.walletId);
-      if (!pk) throw new Error(`SQLite Engine Error: Primary Key missing for query on ${tableName}`);
-
-      tableMap.set(pk, row);
-      await this.persist();
-      return { rows: [row] };
-    }
-
-    // SELECT fields FROM tableName WHERE ...
-    if (upper.startsWith('SELECT')) {
-      const match = normalized.match(/SELECT\s+(.*?)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.*?))?$/i);
-      if (!match) throw new Error(`SQLite Engine Error: Invalid SELECT syntax: "${normalized}"`);
-      const fieldsStr = match[1].trim();
-      const tableName = match[2].toLowerCase();
-      const whereClause = match[3] ? match[3].trim() : null;
-
-      const tableMap = this.tables.get(tableName);
-      if (!tableMap) throw new Error(`SQLite Engine Error: Table "${tableName}" does not exist`);
-
-      let results = Array.from(tableMap.values());
-
-      if (whereClause) {
-        const whereMatch = whereClause.match(/(\w+)\s*=\s*\?/i);
-        if (whereMatch) {
-          const colName = whereMatch[1].toLowerCase();
-          const targetVal = params[0];
-          results = results.filter(row => row[colName] === targetVal);
-        }
-      }
-
-      if (fieldsStr !== '*') {
-        const fields = fieldsStr.split(',').map(f => f.trim());
-        results = results.map(row => {
-          const projected: any = {};
-          fields.forEach(f => {
-            projected[f] = row[f];
-          });
-          return projected;
-        });
-      }
-
-      return { rows: results };
-    }
-
-    // DELETE FROM tableName WHERE ...
-    if (upper.startsWith('DELETE FROM')) {
-      const match = normalized.match(/DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.*?))?$/i);
-      if (!match) throw new Error(`SQLite Engine Error: Invalid DELETE syntax: "${normalized}"`);
-      const tableName = match[1].toLowerCase();
-      const whereClause = match[2] ? match[2].trim() : null;
-
-      const tableMap = this.tables.get(tableName);
-      if (!tableMap) throw new Error(`SQLite Engine Error: Table "${tableName}" does not exist`);
-
-      if (!whereClause) {
-        tableMap.clear();
-      } else {
-        const whereMatch = whereClause.match(/(\w+)\s*=\s*\?/i);
-        if (whereMatch) {
-          const colName = whereMatch[1].toLowerCase();
-          const targetVal = params[0];
-          for (const [pk, row] of tableMap.entries()) {
-            if (row[colName] === targetVal) {
-              tableMap.delete(pk);
-            }
-          }
-        }
-      }
-      await this.persist();
-      return { rows: [] };
-    }
-
-    throw new Error(`SQLite Engine Error: Unhandled SQL instruction: "${normalized}"`);
+    
+    // In browser preview, return an empty set to prevent runtime crashes during manual UI testing
+    return { rows: [] };
   }
 
   public async clearAll(): Promise<void> {
-    for (const tableMap of this.tables.values()) {
-      tableMap.clear();
+    if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
+      await SQLitePlugin.clearAll();
     }
-    await this.persist();
   }
 }
 
@@ -360,3 +236,4 @@ export async function removeSetting(key: string): Promise<void> {
     await db.executeSql('DELETE FROM settings WHERE key = ?', [key]);
   });
 }
+

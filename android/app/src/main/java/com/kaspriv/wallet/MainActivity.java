@@ -127,6 +127,7 @@ public class MainActivity extends BridgeActivity {
 
         // Register custom local Capacitor plugins
         registerPlugin(HardwareVaultPlugin.class);
+        registerPlugin(SQLitePlugin.class);
 
         super.onCreate(savedInstanceState);
         
