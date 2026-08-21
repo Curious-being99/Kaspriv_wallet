@@ -314,8 +314,11 @@ export async function decryptWithPassword(
     if (cryptoWorkerManager.isSupported()) {
       return await cryptoWorkerManager.runTask<string>('decryptWithPassword', { ciphertextHex, saltHex, ivHex, password, context });
     }
-  } catch (err) {
-    console.warn('Worker decrypt failed, falling back to local thread:', err);
+  } catch (err: any) {
+    if (err?.message?.includes('Decryption failed')) {
+      throw err;
+    }
+    console.warn('Worker decrypt unavailable, falling back to local thread:', err);
   }
 
   return await decryptWithPasswordInternal(ciphertextHex, saltHex, ivHex, password, context);

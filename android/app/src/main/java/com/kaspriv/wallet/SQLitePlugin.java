@@ -39,7 +39,7 @@ public class SQLitePlugin extends Plugin {
             String upper = sql.trim().toUpperCase();
 
             // Convert JSONArray params to Object[] for SupportSQLiteDatabase
-            Object[] bindArgs = null;
+            Object[] bindArgs = new Object[0];
             if (paramsArray != null && paramsArray.length() > 0) {
                 bindArgs = new Object[paramsArray.length()];
                 for (int i = 0; i < paramsArray.length(); i++) {
@@ -85,7 +85,7 @@ public class SQLitePlugin extends Plugin {
                 call.resolve(result);
             } else {
                 // Non-query statement
-                if (bindArgs != null) {
+                if (bindArgs.length > 0) {
                     db.execSQL(sql, bindArgs);
                 } else {
                     db.execSQL(sql);
