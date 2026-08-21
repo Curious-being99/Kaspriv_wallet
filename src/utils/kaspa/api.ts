@@ -248,29 +248,53 @@ export async function fetchKaspaAddressesBalances(addresses: string[]): Promise<
   const cleanAddresses = addresses.map(addr => addr.trim());
 
   try {
-    const res = await fetchWithTimeout(`${baseUrl}/addresses/balances`, {
+    let res = await fetchWithTimeout(`${baseUrl}/addresses/balances`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ addresses: cleanAddresses }),
     }, 15000);
 
     if (!res.ok) {
-      return null;
+      res = await fetchWithTimeout(`${baseUrl}/addresses/balances`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanAddresses),
+      }, 15000);
     }
 
-    const data = await res.json();
-    const result: { [address: string]: bigint } = {};
-    if (Array.isArray(data)) {
-      for (const item of data) {
-        if (item && item.address && item.balance !== undefined) {
-          result[item.address] = BigInt(item.balance);
+    if (res.ok) {
+      const data = await res.json();
+      const result: { [address: string]: bigint } = {};
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          if (item && item.address && item.balance !== undefined) {
+            result[item.address] = BigInt(item.balance);
+          }
         }
+        return result;
+      } else if (data && typeof data === 'object') {
+        for (const [addr, bal] of Object.entries(data)) {
+          if (bal !== undefined && bal !== null) {
+            result[addr] = BigInt(bal as any);
+          }
+        }
+        return result;
       }
-      return result;
     }
-    return null;
   } catch (err: any) {
-    console.warn(`[Kaspa API] Bulk balances fetch error for ${addresses.length} addresses:`, err.message || err);
+    console.warn(`[Kaspa API] Bulk balances fetch error, falling back to individual calls:`, err?.message || err);
+  }
+
+  try {
+    const results: { [address: string]: bigint } = {};
+    const promises = cleanAddresses.map(async (addr) => {
+      const bal = await fetchKaspaAddressBalance(addr);
+      results[addr] = bal !== null ? bal : 0n;
+    });
+    await Promise.all(promises);
+    return results;
+  } catch (err: any) {
+    console.warn(`[Kaspa API] Individual balances fallback error:`, err?.message || err);
     return null;
   }
 }
@@ -281,26 +305,45 @@ export async function fetchKaspaAddressesUtxos(addresses: string[]): Promise<Kas
   const cleanAddresses = addresses.map(addr => addr.trim());
 
   try {
-    const res = await fetchWithTimeout(`${baseUrl}/addresses/utxos`, {
+    let res = await fetchWithTimeout(`${baseUrl}/addresses/utxos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ addresses: cleanAddresses }),
     }, 15000);
 
     if (!res.ok) {
-      return null;
+      res = await fetchWithTimeout(`${baseUrl}/addresses/utxos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cleanAddresses),
+      }, 15000);
     }
 
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      const validUtxos = data
-        .map(validateAndCleanUtxo)
-        .filter((u): u is KaspaUtxo => u !== null);
-      return validUtxos;
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const validUtxos = data
+          .map(validateAndCleanUtxo)
+          .filter((u): u is KaspaUtxo => u !== null);
+        return validUtxos;
+      }
     }
-    return null;
   } catch (err: any) {
-    console.warn(`[Kaspa API] Bulk UTXOs fetch error for ${addresses.length} addresses:`, err.message || err);
+    console.warn(`[Kaspa API] Bulk UTXOs fetch error, falling back to individual calls:`, err?.message || err);
+  }
+
+  try {
+    const allUtxos: KaspaUtxo[] = [];
+    const promises = cleanAddresses.map(async (addr) => {
+      const utxos = await fetchKaspaAddressUtxos(addr);
+      if (utxos && Array.isArray(utxos)) {
+        allUtxos.push(...utxos);
+      }
+    });
+    await Promise.all(promises);
+    return allUtxos;
+  } catch (err: any) {
+    console.warn(`[Kaspa API] Individual UTXOs fallback error:`, err?.message || err);
     return null;
   }
 }

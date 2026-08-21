@@ -1,7 +1,7 @@
 # Kaspriv Mobile Web Wallet
 
 > **Architectural Summary:**
-> A zero-trust encrypted-at-rest mobile / web wallet architecture with authenticated encryption, memory-hard password-based key derivation, context-bound ciphertext, ephemeral signing, transaction-intent validation, and untrusted persistent storage.
+> A zero-trust encrypted-at-rest mobile web wallet architecture with authenticated encryption, memory-hard password-based key derivation, context-bound ciphertext, ephemeral signing, transaction-intent validation, and untrusted persistent storage.
 
 ---
 
