@@ -596,6 +596,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isDuressEnabled, setIsDuressEnabled] = useState<boolean>(false);
   const [isBiometricsSupported, setIsBiometricsSupported] = useState<boolean>(false);
   const [isBiometricsEnabled, setIsBiometricsEnabled] = useState<boolean>(false);
+  const [biometricCredential, setBiometricCredential] = useState<BiometricCredentialRecord | null>(null);
+
+  const getActiveBiometricCredential = async (): Promise<BiometricCredentialRecord | null> => {
+    if (biometricCredential) return biometricCredential;
+    const bioRecord = await getSetting<BiometricCredentialRecord>('wallet_biometric_credential');
+    if (bioRecord) {
+      setBiometricCredential(bioRecord);
+    }
+    return bioRecord || null;
+  };
   const [password, setPasswordState] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [authState, setAuthState] = useState<AuthState>(unifiedAuthService.getState());
@@ -3706,11 +3716,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const bioRecord = await registerBiometricUnlock(cleanPass);
       await saveSetting('wallet_biometric_credential', bioRecord);
       await saveSetting('wallet_biometrics_enabled', true);
+      setBiometricCredential(bioRecord);
       setIsBiometricsEnabled(true);
       if (bioRecord.mode === 'keystore' || bioRecord.credentialId?.startsWith('keystore:')) {
         showToast('Native Biometric Hardware Authentication enabled!', 'success');
-      } else if (bioRecord.mode === 'prf') {
-        showToast('Native Biometric Authentication enabled (Hardware PRF Mode)!', 'success');
       } else {
         showToast('Native Biometric Authentication enabled!', 'success');
       }
@@ -3727,8 +3736,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       await removeSetting('wallet_biometric_credential');
       await saveSetting('wallet_biometrics_enabled', false);
-      await deleteNativeKeystoreAlias();
+      setBiometricCredential(null);
       setIsBiometricsEnabled(false);
+      await deleteNativeKeystoreAlias();
       showToast('Biometric authentication disabled', 'info');
     } catch (err) {
       console.error('Failed to disable biometrics:', err);
@@ -3738,10 +3748,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const unlockWithBiometrics = async (): Promise<boolean> => {
     try {
       unifiedAuthService.beginAuthentication('biometrics');
-      const bioRecord = await getSetting<BiometricCredentialRecord>('wallet_biometric_credential');
+      const bioRecord = await getActiveBiometricCredential();
       if (!bioRecord) {
         unifiedAuthService.failAuthentication('Biometric credentials not found');
-        showToast('Biometric credentials not found', 'error');
+        showToast('Biometric credentials not found. Please re-enable in Settings.', 'error');
         return false;
       }
 
@@ -3785,7 +3795,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return { success: true };
     }
     try {
-      const bioRecord = await getSetting<BiometricCredentialRecord>('wallet_biometric_credential');
+      const bioRecord = await getActiveBiometricCredential();
       if (!bioRecord) {
         return { success: false, error: 'Biometric credentials not configured on this device.' };
       }

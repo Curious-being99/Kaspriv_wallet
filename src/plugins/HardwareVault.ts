@@ -1,10 +1,17 @@
 import { registerPlugin } from '@capacitor/core';
 
 export interface HardwareVaultPlugin {
+  checkBiometricAvailability(): Promise<{ available: boolean; reason: string }>;
+
   createBiometricKey(options: {
     alias: string;
     requireStrongBox?: boolean;
-  }): Promise<{ alias: string; strongBox: boolean; existed?: boolean }>;
+  }): Promise<{
+    alias: string;
+    existed?: boolean;
+    isHardwareBacked?: boolean;
+    securityLevel?: string;
+  }>;
 
   wrapSecret(options: {
     alias: string;

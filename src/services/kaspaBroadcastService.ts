@@ -1,0 +1,306 @@
+// src/services/kaspaBroadcastService.ts
+//
+// KasPriv Wallet: Kaspa Transaction Broadcast & Acceptance Tracking Service
+//
+// Responsibilities:
+// - Manages high-reliability multi-node failover for transaction broadcasting.
+// - Performs local validation before dispatch to avoid node penalty thresholds.
+// - Supports Mainnet (api.kaspa.org) and Testnet-10 (api-tn10.kaspa.org).
+// - Implements the BroadcastStatus machine for rich visual pipeline state.
+// - Performs polling-based GHOSTDAG block acceptance tracking.
+
+import { getCandidateApiUrls } from '../utils/kaspa/api';
+
+export type TransactionState =
+  | 'building'
+  | 'signing'
+  | 'broadcasting'
+  | 'submitted'
+  | 'accepted'
+  | 'rejected'
+  | 'network_error';
+
+export interface TransactionStatus {
+  transactionId: string;
+  state: TransactionState;
+  acceptingBlockHash?: string;
+  acceptingBlockDaaScore?: bigint;
+  errorCode?: string;
+}
+
+export type BroadcastStatus = TransactionState | 'invalid_transaction';
+
+export interface BroadcastResult {
+  status: BroadcastStatus;
+  txId?: string;
+  error?: string;
+  endpointUsed?: string;
+}
+
+export interface AcceptanceStatus {
+  isAccepted: boolean;
+  acceptingBlockHash?: string;
+  acceptingBlockDaaScore?: bigint;
+  confirmations: number;
+}
+
+/**
+ * Validates basic structural rules of the signed transaction client-side before broadcast
+ */
+export function validateTransactionClientSide(txPayload: any): { valid: boolean; reason?: string } {
+  const tx = txPayload?.transaction || txPayload;
+  if (!tx) {
+    return { valid: false, reason: 'Empty transaction payload' };
+  }
+
+  if (!Array.isArray(tx.inputs) || tx.inputs.length === 0) {
+    return { valid: false, reason: 'Transaction must contain at least one input outpoint' };
+  }
+
+  if (!Array.isArray(tx.outputs) || tx.outputs.length === 0) {
+    return { valid: false, reason: 'Transaction must contain at least one output destination' };
+  }
+
+  // Validate signatures exist
+  for (let i = 0; i < tx.inputs.length; i++) {
+    const input = tx.inputs[i];
+    if (!input.signatureScript || input.signatureScript.length < 10) {
+      return { valid: false, reason: `Input index ${i} has an invalid or missing signatureScript` };
+    }
+  }
+
+  // Ensure output amounts are valid positive bigints
+  for (let i = 0; i < tx.outputs.length; i++) {
+    const out = tx.outputs[i];
+    const rawAmt = out?.amount;
+    let amt: bigint;
+    try {
+      amt = typeof rawAmt === 'bigint' ? rawAmt : BigInt(rawAmt);
+    } catch {
+      return { valid: false, reason: `Output index ${i} has an unparseable amount value` };
+    }
+    if (amt <= 0n) {
+      return { valid: false, reason: `Output index ${i} has a zero or negative spending amount` };
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Returns preferred API URLs for the requested network prefix.
+ * Maps 'testnet-10' cleanly to 'https://api-tn10.kaspa.org'
+ */
+export function getBroadcastEndpoints(network: string): string[] {
+  const isTestnet = network.toLowerCase().includes('testnet') || network.toLowerCase() === 'tn10';
+  if (isTestnet) {
+    return ['https://api-tn10.kaspa.org', 'https://api-testnet-10.kaspa.org'];
+  }
+  return getCandidateApiUrls('mainnet');
+}
+
+/**
+ * Broadcasts a verified, signed transaction payload directly to the Kaspa REST mempool API.
+ * 
+ * If a previous endpoint timed out, we check if the transaction was already submitted
+ * using `knownTxId` (if available) before sending a redundant POST request.
+ */
+export async function broadcastKaspaTransactionService(
+  txPayload: any,
+  network: string = 'mainnet',
+  knownTxId?: string
+): Promise<BroadcastResult> {
+  // 1. Client-Side Integrity Check
+  const localVal = validateTransactionClientSide(txPayload);
+  if (!localVal.valid) {
+    return {
+      status: 'invalid_transaction',
+      error: localVal.reason || 'Client validation failed',
+    };
+  }
+
+  const endpoints = getBroadcastEndpoints(network);
+  const rawTx = txPayload?.transaction || txPayload;
+
+  // Normalize formatting for BigInt JSON parsing
+  const formattedTx = {
+    version: Number(rawTx.version || 0),
+    inputs: rawTx.inputs.map((inTx: any) => ({
+      previousOutpoint: {
+        transactionId: String(inTx.previousOutpoint?.transactionId || '').toLowerCase(),
+        index: Number(inTx.previousOutpoint?.index ?? 0),
+      },
+      signatureScript: String(inTx.signatureScript || ''),
+      sequence: Number(inTx.sequence || 0),
+      sigOpCount: Number(inTx.sigOpCount ?? 1),
+    })),
+    outputs: rawTx.outputs.map((outTx: any) => {
+      const amt = outTx.amount;
+      const safeAmount = typeof amt === 'bigint' ? amt : BigInt(amt);
+      return {
+        amount: safeAmount,
+        scriptPublicKey: {
+          version: Number(outTx.scriptPublicKey?.version || 0),
+          scriptPublicKey: String(outTx.scriptPublicKey?.scriptPublicKey || '').toLowerCase(),
+        },
+      };
+    }),
+    lockTime: Number(rawTx.lockTime || 0),
+    subnetworkId: String(rawTx.subnetworkId || '0000000000000000000000000000000000000000'),
+  };
+
+  const bodyPayload = { transaction: formattedTx };
+  let lastErrorMsg = 'Endpoints offline';
+  let hasTriedAtLeastOne = false;
+
+  for (const baseUrl of endpoints) {
+    // Timeout safeguard: if we already completed a try that timed out,
+    // and we have a transaction ID, check if it exists on this next node
+    // before broadcasting again.
+    if (hasTriedAtLeastOne && knownTxId) {
+      try {
+        const checkRes = await fetch(`${baseUrl}/transactions/${knownTxId}?include_payload=false`);
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          const returnedTxId = checkData?.transactionId || checkData?.txId || checkData?.id;
+          if (returnedTxId) {
+            console.log(`[Rebroadcast Safeguard] Found existing transaction ${knownTxId} on fallback node ${baseUrl}. Bypassing broadcast.`);
+            return {
+              status: 'submitted',
+              txId: knownTxId,
+              endpointUsed: baseUrl,
+            };
+          }
+        }
+      } catch {
+        // Soft fail on check; proceed with broadcast
+      }
+    }
+
+    try {
+      hasTriedAtLeastOne = true;
+      const res = await fetch(`${baseUrl}/transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
+      });
+
+      const data = await res.json().catch(() => null);
+      const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;
+
+      if (res.ok && returnedTxId) {
+        return {
+          status: 'submitted',
+          txId: String(returnedTxId),
+          endpointUsed: baseUrl,
+        };
+      }
+
+      if (res.status === 400 || res.status === 422) {
+        const nodeError = data?.message || data?.error || 'Node rejected rule validation';
+        return {
+          status: 'rejected',
+          error: `Mempool Rejected: ${nodeError}`,
+          endpointUsed: baseUrl,
+        };
+      }
+
+      lastErrorMsg = data?.message || `HTTP ${res.status}`;
+    } catch (err: any) {
+      lastErrorMsg = err.message || 'Connection timeout';
+    }
+  }
+
+  return {
+    status: 'network_error',
+    error: `Broadcast failed: ${lastErrorMsg}`,
+  };
+}
+
+/**
+ * Queries acceptance/confirmation status and DAG metadata of a given Transaction ID.
+ */
+export async function fetchTransactionAcceptanceStatus(
+  txId: string,
+  network: string = 'mainnet'
+): Promise<AcceptanceStatus> {
+  const endpoints = getBroadcastEndpoints(network);
+  let lastError: any = null;
+
+  for (const baseUrl of endpoints) {
+    try {
+      const res = await fetch(`${baseUrl}/transactions/${txId}?include_payload=false`);
+      if (!res.ok) {
+        if (res.status === 404) {
+          // Transaction not found in node's database yet
+          return { isAccepted: false, confirmations: 0 };
+        }
+        continue;
+      }
+
+      const data = await res.json();
+      const isAccepted = Boolean(data.isAccepted || data.acceptingBlockHash || data.accepting_block_hash);
+      const acceptingBlockHash = data.acceptingBlockHash || data.accepting_block_hash || undefined;
+      const acceptingBlockDaaScore = data.acceptingBlockDaaScore !== undefined ? BigInt(data.acceptingBlockDaaScore) : undefined;
+      const confirmations = data.confirmations !== undefined ? Number(data.confirmations) : (isAccepted ? 1 : 0);
+
+      return {
+        isAccepted,
+        acceptingBlockHash,
+        acceptingBlockDaaScore,
+        confirmations,
+      };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('All node status check endpoints timed out');
+}
+
+/**
+ * Creates an acceptance observer polling status at jittered intervals.
+ * Automatically halts when accepted on-chain.
+ */
+export function pollTransactionAcceptance(
+  txId: string,
+  network: string,
+  onStatusChange: (status: BroadcastStatus, details?: AcceptanceStatus) => void,
+  intervalMs = 4000,
+  maxAttempts = 15
+): () => void {
+  let attempts = 0;
+  let timerId: any = null;
+  let isCancelled = false;
+
+  const check = async () => {
+    if (isCancelled) return;
+    attempts++;
+
+    try {
+      const status = await fetchTransactionAcceptanceStatus(txId, network);
+      if (status.isAccepted) {
+        onStatusChange('accepted', status);
+        return; // Success, halt polling
+      }
+    } catch {
+      // Gracefully bypass transient API polling failures
+    }
+
+    if (attempts >= maxAttempts) {
+      onStatusChange('submitted'); // Remain in submitted/mempool state
+      return;
+    }
+
+    timerId = setTimeout(check, intervalMs);
+  };
+
+  // Launch initial checks
+  timerId = setTimeout(check, 1000);
+
+  // Return cancel handle
+  return () => {
+    isCancelled = true;
+    if (timerId) clearTimeout(timerId);
+  };
+}

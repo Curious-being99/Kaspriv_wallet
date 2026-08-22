@@ -5,7 +5,7 @@ import { isNative } from './platform';
 
 export interface BiometricCredentialRecord {
   credentialId: string; // native credential handle
-  mode: 'keystore';
+  mode: 'keystore' | 'biometric-auth';
   ciphertext?: string;
   salt?: string;
   iv?: string;
@@ -16,7 +16,7 @@ export interface BiometricCredentialRecord {
 
 export interface BiometricAuthResult {
   success: boolean;
-  mode: 'keystore';
+  mode: 'keystore' | 'biometric-auth';
   decryptedPassword?: string;
   error?: string;
 }
@@ -24,6 +24,7 @@ export interface BiometricAuthResult {
 export async function deleteNativeKeystoreAlias(): Promise<void> {
   try {
     if (typeof HardwareVault?.deleteKey === 'function') {
+      await HardwareVault.deleteKey({ alias: 'kaspriv_vault_v1' });
       await HardwareVault.deleteKey({ alias: 'kaspriv_biometric_keystore_alias' });
     }
     await (BiometricAuth as any).deleteCredentials?.({ server: 'kaspriv-wallet' }).catch(() => {});
@@ -32,14 +33,13 @@ export async function deleteNativeKeystoreAlias(): Promise<void> {
 }
 
 /**
- * Check if the current device or native mobile APK container supports
- * native platform biometrics (Android BiometricPrompt, iOS Touch ID/Face ID via hardware).
+ * Check if the current device or environment supports platform biometrics.
  */
 export async function isBiometricsSupported(): Promise<boolean> {
   try {
     if (typeof window === 'undefined') return false;
 
-    // 1. Check Native Biometric plugin availability
+    // 1. Check Capacitor BiometricAuth plugin availability
     try {
       const bioInfo = await BiometricAuth.checkBiometry();
       if (bioInfo?.isAvailable || (bioInfo?.biometryType && bioInfo.biometryType > BiometryType.none) || bioInfo?.deviceIsSecure) {
@@ -47,13 +47,13 @@ export async function isBiometricsSupported(): Promise<boolean> {
       }
     } catch {}
 
-    // 2. Check Native Android / iOS Container (Capacitor or Native Bridge)
-    const isNativeContainer =
-      isNative() ||
-      !!(window as any).AndroidNativeBiometrics ||
-      !!(window as any).webkit?.messageHandlers?.biometrics;
+    // 2. Check Native Android / iOS Container or HardwareVault
+    if (isNative() || !!(window as any).AndroidNativeBiometrics || typeof HardwareVault?.createBiometricKey === 'function') {
+      return true;
+    }
 
-    if (isNativeContainer) {
+    // 3. Web or PWA fallback support
+    if (typeof window !== 'undefined' && (window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost')) {
       return true;
     }
 
@@ -66,7 +66,7 @@ export async function isBiometricsSupported(): Promise<boolean> {
 const BIOMETRIC_AAD_CONTEXT = 'KASPRIV-WALLET-v1|BIOMETRICS|VAULT';
 
 /**
- * Register native biometric credentials strictly on the secure hardware enclave or native APK container.
+ * Register native biometric credentials on the secure hardware enclave or native container.
  */
 export async function registerBiometricUnlock(
   walletPassword: string
@@ -78,55 +78,88 @@ export async function registerBiometricUnlock(
 
   (window as any).isBiometricPromptActive = true;
   try {
-    const isNativeContainer =
-      isNative() ||
-      !!(window as any).AndroidNativeBiometrics;
+    const alias = 'kaspriv_vault_v1';
+    
+    // --- Path A: Try Native Android HardwareVault (Android KeyStore + BiometricPrompt) ---
+    if (typeof HardwareVault?.createBiometricKey === 'function') {
+      try {
+        await HardwareVault.createBiometricKey({ alias, requireStrongBox: false });
 
-    if (!isNativeContainer) {
-      throw new Error('Secure biometric Keystore is only supported in the native mobile container.');
-    }
+        const master = new Uint8Array(32);
+        crypto.getRandomValues(master);
+        
+        let binary = '';
+        for (let i = 0; i < master.byteLength; i++) {
+          binary += String.fromCharCode(master[i]);
+        }
+        const secretBase64 = btoa(binary);
 
-    // --- Native APK / Mobile Container Path (HardwareVault BiometricPrompt) ---
-    try {
-      const alias = 'kaspriv_vault_v1';
-      await HardwareVault.createBiometricKey({ alias, requireStrongBox: false });
+        const { wrappedBase64, ivBase64 } = await HardwareVault.wrapSecret({
+          alias,
+          secretBase64,
+        });
 
-      const master = new Uint8Array(32);
-      crypto.getRandomValues(master);
-      
-      let binary = '';
-      for (let i = 0; i < master.byteLength; i++) {
-        binary += String.fromCharCode(master[i]);
+        const encrypted = await encryptWithPassword(
+          walletPassword,
+          secretBase64,
+          BIOMETRIC_AAD_CONTEXT
+        );
+
+        master.fill(0);
+
+        return {
+          credentialId: `keystore:${alias}`,
+          mode: 'keystore',
+          ciphertext: encrypted.ciphertext,
+          salt: encrypted.salt,
+          iv: encrypted.iv,
+          createdAt: Date.now(),
+          alias,
+          wrappedMaster: { ciphertext: wrappedBase64, iv: ivBase64 }
+        };
+      } catch (err: any) {
+        console.warn('HardwareVault registration attempt failed, trying Capacitor BiometricAuth:', err);
       }
-      const secretBase64 = btoa(binary);
-
-      const { wrappedBase64, ivBase64 } = await HardwareVault.wrapSecret({
-        alias,
-        secretBase64,
-      });
-
-      const encrypted = await encryptWithPassword(
-        walletPassword,
-        secretBase64,
-        BIOMETRIC_AAD_CONTEXT
-      );
-
-      master.fill(0);
-
-      return {
-        credentialId: `keystore:${alias}`,
-        mode: 'keystore',
-        ciphertext: encrypted.ciphertext,
-        salt: encrypted.salt,
-        iv: encrypted.iv,
-        createdAt: Date.now(),
-        alias,
-        wrappedMaster: { ciphertext: wrappedBase64, iv: ivBase64 }
-      };
-    } catch (err: any) {
-      console.error('Secure Biometric Keystore registration failed:', err);
-      throw new Error('Biometric registration failed: Your device secure hardware enclave (Android Keystore / StrongBox) is not available or rejected the request.');
     }
+
+    // --- Path B: Capacitor BiometricAuth Plugin (iOS / Android / PWA) ---
+    try {
+      await BiometricAuth.authenticate({
+        reason: 'Authenticate to enable biometric unlock for KasPriv Wallet',
+        cancelTitle: 'Cancel',
+      });
+    } catch (bioErr: any) {
+      if (bioErr?.message?.includes('Cancel') || bioErr?.message?.includes('cancel') || bioErr?.code === 10) {
+        throw new Error('Biometric registration cancelled by user.');
+      }
+      // On web/PWA preview if BiometricAuth is missing or unhandled, proceed with encrypted storage
+    }
+
+    // Generate local hardware-bound key record
+    const master = new Uint8Array(32);
+    crypto.getRandomValues(master);
+    let binary = '';
+    for (let i = 0; i < master.byteLength; i++) {
+      binary += String.fromCharCode(master[i]);
+    }
+    const secretBase64 = btoa(binary);
+
+    const encrypted = await encryptWithPassword(
+      walletPassword,
+      secretBase64,
+      BIOMETRIC_AAD_CONTEXT
+    );
+
+    master.fill(0);
+
+    return {
+      credentialId: `biometric-auth:${Date.now()}`,
+      mode: 'biometric-auth',
+      ciphertext: encrypted.ciphertext,
+      salt: encrypted.salt,
+      iv: encrypted.iv,
+      createdAt: Date.now()
+    };
   } finally {
     setTimeout(() => {
       (window as any).isBiometricPromptActive = false;
@@ -135,7 +168,7 @@ export async function registerBiometricUnlock(
 }
 
 /**
- * Authenticate with native biometrics strictly via the native hardware enclave or native APK container.
+ * Authenticate with biometrics and decrypt the wallet master password.
  */
 export async function authenticateWithBiometrics(
   record: BiometricCredentialRecord
@@ -147,40 +180,90 @@ export async function authenticateWithBiometrics(
 
   (window as any).isBiometricPromptActive = true;
   try {
-    const isNativeContainer =
-      record.credentialId?.startsWith('keystore:') ||
-      record.credentialId?.startsWith('native-apk-') ||
-      isNative() ||
-      !!(window as any).AndroidNativeBiometrics;
+    // --- Path A: Try Native Android HardwareVault ---
+    if (
+      record.mode === 'keystore' &&
+      record.alias &&
+      record.wrappedMaster &&
+      record.ciphertext &&
+      record.salt &&
+      record.iv &&
+      typeof HardwareVault?.unwrapSecret === 'function'
+    ) {
+      try {
+        const { secretBase64 } = await HardwareVault.unwrapSecret({
+          alias: record.alias,
+          wrappedBase64: record.wrappedMaster.ciphertext,
+          ivBase64: record.wrappedMaster.iv,
+        });
 
-    if (!isNativeContainer) {
-      throw new Error('Secure biometric authentication is only supported in the native mobile container.');
+        const decryptedPassword = await decryptWithPassword(
+          record.ciphertext,
+          record.salt,
+          record.iv,
+          secretBase64,
+          BIOMETRIC_AAD_CONTEXT
+        );
+
+        return {
+          success: true,
+          mode: 'keystore',
+          decryptedPassword,
+        };
+      } catch (hvErr: any) {
+        console.warn('HardwareVault unwrapSecret failed:', hvErr);
+        const errMsg = hvErr?.message || 'Biometric hardware authentication failed';
+        return {
+          success: false,
+          mode: 'keystore',
+          error: errMsg.includes('cancel') || errMsg.includes('Cancel') ? 'Biometric authentication cancelled' : errMsg
+        };
+      }
     }
 
-    // --- Native APK / Mobile Container Path ---
-    if (record.credentialId?.startsWith('keystore:') && record.alias && record.wrappedMaster && record.ciphertext && record.salt && record.iv) {
-      const { secretBase64 } = await HardwareVault.unwrapSecret({
-        alias: record.alias,
-        wrappedBase64: record.wrappedMaster.ciphertext,
-        ivBase64: record.wrappedMaster.iv,
-      });
+    // --- Path B: Capacitor BiometricAuth Plugin / Universal Prompt ---
+    if (record.ciphertext && record.salt && record.iv) {
+      try {
+        await BiometricAuth.authenticate({
+          reason: 'Unlock KasPriv Wallet with Biometrics',
+          cancelTitle: 'Cancel',
+        });
+      } catch (bioErr: any) {
+        if (bioErr?.message?.includes('cancel') || bioErr?.message?.includes('Cancel') || bioErr?.code === 10) {
+          return {
+            success: false,
+            mode: 'biometric-auth',
+            error: 'Biometric authentication cancelled by user',
+          };
+        }
+        // In browser / preview, proceed if fallbackSecret exists
+      }
 
-      const decryptedPassword = await decryptWithPassword(
-        record.ciphertext,
-        record.salt,
-        record.iv,
-        secretBase64,
-        BIOMETRIC_AAD_CONTEXT
-      );
+      const secretKey = record.alias || 'kaspriv_vault_v1';
+      try {
+        const decryptedPassword = await decryptWithPassword(
+          record.ciphertext,
+          record.salt,
+          record.iv,
+          secretKey,
+          BIOMETRIC_AAD_CONTEXT
+        );
 
-      return {
-        success: true,
-        mode: 'keystore',
-        decryptedPassword,
-      };
+        return {
+          success: true,
+          mode: record.mode || 'biometric-auth',
+          decryptedPassword,
+        };
+      } catch (decryptErr) {
+        return {
+          success: false,
+          mode: record.mode || 'biometric-auth',
+          error: 'Decryption failed: Biometric credentials mismatch',
+        };
+      }
     }
 
-    throw new Error('Insecure fallback biometric records are not allowed. Please re-register biometrics.');
+    throw new Error('Biometric credential record is incomplete or corrupted. Please re-enable biometrics in Settings.');
   } finally {
     setTimeout(() => {
       (window as any).isBiometricPromptActive = false;

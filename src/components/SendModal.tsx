@@ -443,6 +443,7 @@ export const SendModal: React.FC = () => {
         }, 100);
 
       } else if (!authRes.success && authRes.error) {
+        setPasswordError(authRes.error);
         showToast(authRes.error, 'error');
       }
     } catch (err: any) {
@@ -1059,10 +1060,19 @@ export const SendModal: React.FC = () => {
                     type="button"
                     onClick={handleBiometricSign}
                     disabled={isSending || isAuthenticatingBiometrics}
-                    className="w-full flex items-center justify-center gap-1.5 py-1 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/30 text-xs font-bold text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-[0.98]"
                   >
-                    <Fingerprint className="w-3.5 h-3.5 text-[#70C7BA]" />
-                    <span>Tap to unlock with Biometrics</span>
+                    {isAuthenticatingBiometrics ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
+                        <span>Prompting Biometrics...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Fingerprint className="w-4 h-4 text-[#70C7BA]" />
+                        <span>Tap to authorize with Biometrics</span>
+                      </>
+                    )}
                   </button>
                 )}
 

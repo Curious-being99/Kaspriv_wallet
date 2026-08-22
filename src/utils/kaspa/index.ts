@@ -6,3 +6,4 @@ export * from './tx';
 export * from './messages';
 export * from './api';
 export * from './scanner';
+export * from './changeAddress';

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 import { wipe } from '../utils/kaspa/common';
 import { encryptWithPassword } from '../utils/crypto';
+import { HardwareVault } from '../plugins/HardwareVault';
 import { 
   ShieldCheck, 
   Trash2, 
@@ -14,7 +15,10 @@ import {
   RefreshCw,
   Lock,
   ChevronDown,
-  Key
+  Key,
+  Smartphone,
+  ShieldAlert,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -105,6 +109,55 @@ export const SecurityVerifier: React.FC = () => {
     setRawPayload(original);
     setSanitizedPayload(sanitized);
     setGuardExecuted(true);
+  };
+
+  // Test 3: Hardware KeyStore & StrongBox Auditor States
+  const [hardwareRequireStrongBox, setHardwareRequireStrongBox] = useState(false);
+  const [hardwareKeyResult, setHardwareKeyResult] = useState<{
+    alias: string;
+    existed?: boolean;
+    isHardwareBacked?: boolean;
+    securityLevel?: string;
+    error?: string;
+  } | null>(null);
+  const [hardwareIsRunning, setHardwareIsRunning] = useState(false);
+
+  const executeHardwareKeyTest = async () => {
+    setHardwareIsRunning(true);
+    setHardwareKeyResult(null);
+    try {
+      if (!HardwareVault || typeof HardwareVault.createBiometricKey !== 'function') {
+        throw new Error('HardwareVault plugin is not loaded or is not running inside a native Android container.');
+      }
+      const res = await HardwareVault.createBiometricKey({
+        alias: 'kaspriv_vault_test_key',
+        requireStrongBox: hardwareRequireStrongBox
+      });
+      setHardwareKeyResult({
+        alias: res.alias,
+        existed: res.existed,
+        isHardwareBacked: res.isHardwareBacked,
+        securityLevel: res.securityLevel
+      });
+    } catch (err: any) {
+      setHardwareKeyResult({
+        alias: 'kaspriv_vault_test_key',
+        error: err.message || String(err)
+      });
+    } finally {
+      setHardwareIsRunning(false);
+    }
+  };
+
+  const deleteHardwareKeyTest = async () => {
+    try {
+      if (HardwareVault && typeof HardwareVault.deleteKey === 'function') {
+        await HardwareVault.deleteKey({ alias: 'kaspriv_vault_test_key' });
+        setHardwareKeyResult(null);
+      }
+    } catch (err: any) {
+      console.error('Failed to delete test key:', err);
+    }
   };
 
   return (
@@ -392,6 +445,143 @@ export const SecurityVerifier: React.FC = () => {
                     The fields <code className="font-mono bg-cyan-900/40 px-1 py-0.5 rounded text-white">mnemonic</code> and <code className="font-mono bg-cyan-900/40 px-1 py-0.5 rounded text-white">passphrase</code> were dynamically purged during serialization. Only the metadata, balances, and the fully secure <code className="font-mono bg-cyan-900/40 px-1 py-0.5 rounded text-white">encryptedMnemonic</code> block reach physical storage.
                   </div>
                 </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* Verification Test 3: Hardware KeyStore & StrongBox Auditor */}
+      <div className="space-y-3.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-4 h-4 text-[#70C7BA]" />
+            <h3 className="text-xs font-bold text-slate-200">3. Hardware KeyStore & StrongBox Auditor</h3>
+          </div>
+          <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400">
+            Secure Hardware
+          </span>
+        </div>
+
+        <div className="bg-[#090D12] rounded-2xl border border-[#212B38]/40 p-3.5 space-y-3">
+          <p className="text-[10px] text-slate-400 leading-normal">
+            Interact with the physical Android KeyStore. Audit the key-level security parameters directly, confirming fail-closed logic and genuine StrongBox vs TEE enforcement.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-[#0c141f] rounded-xl border border-[#212B38]/30">
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold text-slate-200 block">Enforce StrongBox Co-processor</span>
+              <span className="text-[9px] text-slate-400 block leading-tight">
+                Fails immediately if device does not possess a physical StrongBox chip (fail-closed).
+              </span>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={hardwareRequireStrongBox}
+                onChange={(e) => setHardwareRequireStrongBox(e.target.checked)}
+                className="sr-only peer" 
+              />
+              <div className="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#70C7BA] peer-checked:after:bg-[#0c141f]"></div>
+            </label>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={executeHardwareKeyTest}
+              disabled={hardwareIsRunning}
+              className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${hardwareIsRunning ? 'animate-spin' : ''}`} />
+              {hardwareIsRunning ? 'Auditing Enclave...' : 'Generate & Audit Key'}
+            </button>
+            {hardwareKeyResult && (
+              <button
+                onClick={deleteHardwareKeyTest}
+                className="px-3 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold transition-all flex items-center justify-center cursor-pointer"
+                title="Remove Test Key"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <AnimatePresence>
+            {hardwareKeyResult && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="space-y-3 pt-1.5 overflow-hidden"
+              >
+                {hardwareKeyResult.error ? (
+                  <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] leading-relaxed flex items-start gap-2.5">
+                    <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5 text-rose-400" />
+                    <div>
+                      <strong className="block font-black mb-1">Key Generation Failed (Fail-Closed Sandbox Checked)</strong>
+                      <div className="space-y-1">
+                        <p>Error Code: <code className="font-mono bg-rose-950/40 px-1 py-0.5 rounded text-white text-[9px]">{hardwareKeyResult.error}</code></p>
+                        {hardwareRequireStrongBox && (
+                          <p className="text-slate-400 text-[9px] leading-snug">
+                            The request required a discrete StrongBox co-processor, but none was found on this hardware container. The enrollment safely failed closed as expected instead of degrading security silently.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                      <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Keystore Verification Report</span>
+                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
+                        hardwareKeyResult.securityLevel === 'strongbox'
+                          ? 'bg-[#70C7BA]/10 text-[#70C7BA]'
+                          : hardwareKeyResult.securityLevel === 'tee'
+                          ? 'bg-blue-500/10 text-blue-400'
+                          : 'bg-amber-500/10 text-amber-400'
+                      }`}>
+                        {hardwareKeyResult.securityLevel || 'unknown'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 text-[10px]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Key Alias Identifier:</span>
+                        <span className="font-mono text-slate-200">{hardwareKeyResult.alias}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Enclave Origin Status:</span>
+                        <span className="text-slate-200">{hardwareKeyResult.existed ? 'Verified (Loaded Existing)' : 'Freshly Provisioned'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Hardware Backing Bound:</span>
+                        <span className={hardwareKeyResult.isHardwareBacked ? 'text-[#70C7BA] font-extrabold' : 'text-rose-400'}>
+                          {hardwareKeyResult.isHardwareBacked ? 'Active (Silicon-Bound)' : 'None (Software Emulated)'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Vault Key Security Level:</span>
+                        <span className="text-slate-200 font-bold capitalize">{hardwareKeyResult.securityLevel}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] leading-relaxed flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block font-black mb-0.5">Hardware Verification Audit Completed</strong>
+                        Your biometric vault key is certified and locked inside the <strong className="text-white capitalize">{hardwareKeyResult.securityLevel}</strong> sandbox environment.
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-slate-950 text-slate-400 text-[9px] leading-relaxed flex items-start gap-2">
+                      <Info className="w-4 h-4 text-[#70C7BA] flex-shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-slate-300 block mb-0.5">Scope of Attestation:</strong>
+                        Attestation details are key-specific, describing the precise cryptographic parameters of this test key alias inside KeyStore rather than making generic device-wide declarations.
+                      </div>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
