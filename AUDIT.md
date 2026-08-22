@@ -191,12 +191,12 @@ The audit successfully identified key cryptographic and software design vectors.
 
 ### 13. Official Rusty Kaspa WASM SDK Migration
 * **Severity:** **Architectural Improvement (Security/Robustness)**
-* **Finding:** Transaction serialization, signing, and byte-handling were previously managed by custom manual JavaScript implementations, which, while hardened, lacked the authoritative consensus serialization logic found in the official Kaspa Rust codebase.
+* **Finding:** Password-based encryption, transaction serialization, signing, and byte-handling were previously managed by custom manual JavaScript implementations, which, while hardened, lacked the authoritative consensus and cryptographic implementation found in the official Kaspa Rust codebase.
 * **Mitigation:**
-  - **Adopted Official SDK:** Integrated the official `@kasdk/web` (Rusty Kaspa) WASM SDK for transaction building and signing.
-  - **Shadow Migration Strategy:** Implemented a parallel "shadow" signing engine in `src/utils/kaspa/tx.ts`. All transaction signing requests now attempt to use the official Rust engine as the primary path, providing superior serialization integrity.
-  - **Robust Fail-Safe:** Retained the previous, rigorously hardened JavaScript signing engine as an immutable emergency fallback. If the WASM runtime fails to initialize or sign, the engine silently falls back to the manual signer, ensuring funds remain accessible.
-  - **Build Integrity:** Configured the production build pipeline to correctly bundle the 11.5MB WASM binary, optimizing it for both web and APK deployment without introducing performance bottlenecks.
+  - **Adopted Official SDK:** Integrated the official `@kasdk/web` (Rusty Kaspa) WASM SDK for both password-based encryption (XChaCha20Poly1305 + AAD) and transaction signing.
+  - **Unified Cryptographic Path:** Replaced custom JS-based encryption (Argon2id + AES-GCM) with the authoritative Rusty Kaspa SDK implementation, improving performance and auditability.
+  - **Cryptographic Binding:** Verified SDK support for AAD (Associated Authenticated Data), ensuring ciphertexts remain strictly bound to wallet-specific context headers.
+  - **Codebase Simplification:** Removed legacy JS implementations (`hash-wasm` Argon2id) and custom WASM loading logic, drastically reducing the attack surface.
 
 ---
 

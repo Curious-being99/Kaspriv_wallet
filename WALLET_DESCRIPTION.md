@@ -7,8 +7,7 @@ The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side
 
 * **100% Non-Custodial & Client-Side:** Private keys and seed phrases are generated and managed strictly inside your browser environment. Private data is never transmitted across network boundaries or stored unencrypted.
 * **Military-Grade Encryption & Authentication:**
-    * **Argon2id Key Derivation:** Uses memory-hard Argon2id (64 MiB memory, 4 iterations, 1 parallel lane) via `hash-wasm` to derive strong AES keys from user passwords, rendering GPU/ASIC brute-force attacks computationally infeasible.
-    * **AES-256-GCM with AAD:** All wallet seeds and private keys are encrypted using native Web Crypto API (`window.crypto.subtle`) AES-256-GCM with 12-byte single-use random IVs and Context-Bound Additional Authenticated Data (AAD) (`KASPRIV-WALLET-v1|...`).
+    * **Rusty Kaspa SDK Encryption:** Uses the official Rusty Kaspa SDK (`@kasdk/web`) for XChaCha20-Poly1305 encryption with AAD to protect wallet seeds and private keys, ensuring standardization with the core Kaspa protocol.
 * **Isolated Signing Environment & Instant Memory Sanitization:**
     * **Isolated Signing (`IsolatedSigner`):** Key derivation and signature generation execute in isolated transient scopes.
     * **Cryptographic Wiping:** Secret buffers are explicitly zeroized using byte-overwriting (`wipe()`) in `finally` blocks.

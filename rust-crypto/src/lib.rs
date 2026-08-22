@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 use argon2::{Argon2, PasswordHasher, PasswordVerifier, Params, Algorithm, Version};
-use aes_gcm::{Aes256Gcm, KeyInit, aead::{Aead, Payload}};
-use aes_gcm::aead::generic_array::GenericArray;
+use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{Aead, Payload}};
+use chacha20poly1305::aead::generic_array::GenericArray;
 use zeroize::{Zeroize, Zeroizing};
 use secp256k1::{Secp256k1, Message, SecretKey, PublicKey};
 use sha2::{Sha256, Digest};
@@ -51,16 +51,16 @@ pub fn derive_key_argon2id(password: &str, salt_hex: &str, m_cost: u32, t_cost: 
     Ok(res)
 }
 
-/// Zero-Trust Two-Tier Encrypt with Password using Rust AES-256-GCM.
+/// Zero-Trust Two-Tier Encrypt with Password using Rust XChaCha20-Poly1305.
 #[wasm_bindgen]
 pub fn encrypt_with_password_rust(plaintext: &str, password: &str, context: &str) -> Result<JsValue, JsValue> {
     let mut secret_plain = Zeroizing::new(plaintext.as_bytes().to_vec());
     let mut secret_pwd = Zeroizing::new(password.as_bytes().to_vec());
     
-    // Generate secure random salt (16 bytes) and KEK IV (12 bytes)
+    // Generate secure random salt (16 bytes) and KEK IV (24 bytes for XChaCha20)
     let mut salt = [0u8; 16];
-    let mut kek_iv = [0u8; 12];
-    let mut dek_iv = [0u8; 12];
+    let mut kek_iv = [0u8; 24];
+    let mut dek_iv = [0u8; 24];
     let mut random_dek = [0u8; 32];
     
     getrandom::getrandom(&mut salt).map_err(|e| JsValue::from_str(&format!("RNG salt error: {}", e)))?;
@@ -77,12 +77,12 @@ pub fn encrypt_with_password_rust(plaintext: &str, password: &str, context: &str
     argon2.hash_password_into(&secret_pwd, &salt, &mut kek_bytes)
         .map_err(|e| JsValue::from_str(&format!("KDF Hash error: {}", e)))?;
         
-    // Import keys into AES-GCM engines
-    let kek_cipher = Aes256Gcm::new_from_slice(&kek_bytes)
+    // Import keys into XChaCha20Poly1305 engines
+    let kek_cipher = XChaCha20Poly1305::new_from_slice(&kek_bytes)
         .map_err(|e| JsValue::from_str(&format!("Cipher initialization error: {}", e)))?;
     kek_bytes.zeroize();
     
-    let dek_cipher = Aes256Gcm::new_from_slice(&random_dek)
+    let dek_cipher = XChaCha20Poly1305::new_from_slice(&random_dek)
         .map_err(|e| JsValue::from_str(&format!("DEK initialization error: {}", e)))?;
         
     // 1. Encrypt Payload with DEK (Data Encryption Key) with associated AAD context
@@ -120,7 +120,7 @@ pub fn encrypt_with_password_rust(plaintext: &str, password: &str, context: &str
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
 }
 
-/// Zero-Trust Two-Tier Decrypt with Password using Rust AES-256-GCM.
+/// Zero-Trust Two-Tier Decrypt with Password using Rust XChaCha20-Poly1305.
 #[wasm_bindgen]
 pub fn decrypt_with_password_rust(ciphertext: &str, password: &str, salt_hex: &str, iv_hex: &str, context: &str) -> Result<String, JsValue> {
     let mut secret_pwd = Zeroizing::new(password.as_bytes().to_vec());
@@ -150,7 +150,7 @@ pub fn decrypt_with_password_rust(ciphertext: &str, password: &str, salt_hex: &s
     argon2.hash_password_into(&secret_pwd, &salt, &mut kek_bytes)
         .map_err(|e| JsValue::from_str(&format!("KDF Hash error: {}", e)))?;
         
-    let kek_cipher = Aes256Gcm::new_from_slice(&kek_bytes)
+    let kek_cipher = XChaCha20Poly1305::new_from_slice(&kek_bytes)
         .map_err(|e| JsValue::from_str(&format!("Cipher initialization error: {}", e)))?;
     kek_bytes.zeroize();
     
@@ -163,7 +163,7 @@ pub fn decrypt_with_password_rust(ciphertext: &str, password: &str, salt_hex: &s
         .map_err(|e| JsValue::from_str(&format!("DEK decryption error: {}", e)))?;
         
     // Decrypt the payload using the decrypted DEK and dek_iv
-    let dek_cipher = Aes256Gcm::new_from_slice(&dek_bytes)
+    let dek_cipher = XChaCha20Poly1305::new_from_slice(&dek_bytes)
         .map_err(|e| JsValue::from_str(&format!("DEK initialization error: {}", e)))?;
     dek_bytes.zeroize();
     

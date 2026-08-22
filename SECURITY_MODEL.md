@@ -27,24 +27,16 @@ An internal security assessment confirms the following zero-trust constraints ac
 
 ## 1. Cryptographic Primitives
 
-### Key Derivation Function (KDF): Argon2id
-The wallet uses **Argon2id** (via `hash-wasm`) to derive a secure cryptographic key from the user's master password. Argon2id is the RFC 9106 recommended memory-hard key derivation function, providing resistance against GPU/ASIC hardware brute-force attacks.
+### Key Derivation & Encryption: Rusty Kaspa SDK
+The wallet uses the official **Rusty Kaspa SDK (`@kasdk/web`)** for password-based encryption and decryption. This implementation provides high-performance, community-vetted cryptographic standards directly from the core Kaspa Rust codebase.
 
-**Argon2id Parameters (`v1.0.0-argon2id-aes256gcm`):**
-Argon2id parameters are selected based on measured derivation cost on supported devices and are versioned for future upgrades:
-* **Iterations (Time Cost):** 6 passes
-* **Memory Size:** 128 MiB (131,072 KiB)
-* **Parallelism:** 1 lane/thread
-* **Hash Length:** 32 bytes (yielding a 256-bit key for AES-256)
-* **Salt:** Cryptographically secure 16-byte random salt (`window.crypto.getRandomValues`) generated per wallet.
+* **Symmetric Encryption: XChaCha20-Poly1305 with AAD**
+  All stored sensitive payload data (e.g., encrypted mnemonics) is protected using **XChaCha20-Poly1305** provided by the official Kaspa SDK.
 
-### Symmetric Encryption: AES-256-GCM with AAD
-All stored sensitive payload data (e.g. encrypted mnemonics) is protected using **AES-256 in Galois/Counter Mode (GCM)** via the native Web Crypto API (`window.crypto.subtle`).
-
-* **Key Management:** Derived on-demand from the user's password via Argon2id. The master password itself is never saved or logged.
-* **Nonce/IV Strategy:** Every AES-GCM encryption operation generates a fresh 96-bit (12-byte) cryptographically random IV; IV reuse under the same key is prohibited.
-* **Context-Bound Authenticated Data (AAD):** AES-GCM provides authenticated encryption. Kaspriv binds ciphertext to context headers (e.g., `KASPRIV-WALLET-v1|KASPA-MAINNET|MNEMONIC`). Decryption fails if ciphertext, IV, or AAD headers are tampered with.
-* **Password Authentication Model:** Authentication relies on AES-GCM decryption success/failure. The GCM authentication result effectively verifies whether the derived key/password is correct without storing a separate plaintext password verifier.
+* **Password Authentication & Binding:**
+  * **Key Derivation:** The SDK handles password-based key derivation internally. The master password itself is never saved or logged.
+  * **Context-Bound Authenticated Data (AAD):** XChaCha20-Poly1305 provides authenticated encryption with support for Additional Authenticated Data (AAD). Kaspriv binds ciphertext to context headers (e.g., `KASPRIV_ENCRYPTION_V1`). Decryption fails if the password is incorrect or if the ciphertext/AAD headers are tampered with.
+  * **Password Authentication Model:** Authentication relies on the success/failure of the SDK's `decryptXChaCha20Poly1305` function.
 
 ---
 
