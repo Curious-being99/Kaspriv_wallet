@@ -86,11 +86,15 @@ jobs:
       - name: Stage APK Files
         run: |
           mkdir -p release-apks
-          # Find all release apk files and copy them (preferring release over unsigned)
-          find android/app/build/outputs/apk/release/ -name "app-release.apk" -exec cp {} release-apks/KasPriv-Wallet-Release.apk \; || \
-          find android/app/build/outputs/apk/release/ -name "app-release-unsigned.apk" -exec cp {} release-apks/KasPriv-Wallet-Release.apk \; || true
-          # Find all debug apk files and copy them
-          find android/app/build/outputs/apk/debug/ -name "app-debug.apk" -exec cp {} release-apks/KasPriv-Wallet-Debug.apk \; || true
+          # Check if build directory exists before searching
+          if [ -d "android/app/build/outputs/apk" ]; then
+            echo "Build outputs found. Staging APKs..."
+            find android/app/build/outputs/apk -name "app-release.apk" -exec cp {} release-apks/KasPriv-Wallet-Release.apk \; || true
+            find android/app/build/outputs/apk -name "app-release-unsigned.apk" -exec cp {} release-apks/KasPriv-Wallet-Release.apk \; || true
+            find android/app/build/outputs/apk -name "app-debug.apk" -exec cp {} release-apks/KasPriv-Wallet-Debug.apk \; || true
+          else
+            echo "Build outputs directory not found. Skipping staging."
+          fi
           ls -lh release-apks/
 
       - name: Upload APK Artifacts
