@@ -77,9 +77,11 @@ jobs:
       - name: Build Android APK
         run: |
           cd android
-          ./gradlew assembleDebug assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace 2>&1 | tee ../gradle.log || {
-            echo "========== GRADLE ERROR SUMMARY =========="
-            grep -A 20 -B 5 "FAILURE: Build failed with an exception" ../gradle.log || tail -n 80 ../gradle.log
+          # Run with --info and --stacktrace to expose the hidden error and print the full log on failure
+          ./gradlew assembleDebug assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace --info 2>&1 | tee ../gradle.log || {
+            echo "========== FULL GRADLE LOG START =========="
+            cat ../gradle.log
+            echo "========== FULL GRADLE LOG END =========="
             exit 1
           }
 
