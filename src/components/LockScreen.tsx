@@ -24,24 +24,28 @@ export const LockScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Auto-activate Virtual Keyboard when LockScreen is shown, clear when unlocked
+  // Auto-trigger Biometrics if enabled, or Virtual Keyboard when LockScreen is shown
   useEffect(() => {
     if (isLocked && wallets.length > 0) {
       setPassword('');
       setError(null);
-      openKeyboard({
-        value: '',
-        onChange: (val) => {
-          setPassword(val);
-          setError(null);
-        },
-      });
+      if (isBiometricsEnabled) {
+        handleBiometricUnlock();
+      } else {
+        openKeyboard({
+          value: '',
+          onChange: (val) => {
+            setPassword(val);
+            setError(null);
+          },
+        });
+      }
     } else {
       setPassword('');
       closeKeyboard();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocked, wallets.length]);
+  }, [isLocked, wallets.length, isBiometricsEnabled]);
 
   if (!isLocked || wallets.length === 0) return null;
 

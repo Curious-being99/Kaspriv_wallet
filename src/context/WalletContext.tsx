@@ -3817,7 +3817,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return { success: true, decryptedPassword: authRes.decryptedPassword };
       }
 
-      return { success: true, decryptedPassword: password || undefined };
+      return { success: false, error: 'Hardware biometric vault failed to release decryption key.' };
     } catch (err: any) {
       const isExpectedCancellation =
         err?.name === 'NotAllowedError' ||
