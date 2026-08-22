@@ -59,6 +59,7 @@ export const WalletSetupModal: React.FC = () => {
   const [showSetupDuressPassword, setShowSetupDuressPassword] = useState(false);
   const [activeDuressField, setActiveDuressField] = useState<'primary' | 'confirm'>('primary');
   const [pendingFlow, setPendingFlow] = useState<'create' | 'import-seed' | 'import-address' | 'import-kpub' | 'none'>('none');
+  const [isCreating, setIsCreating] = useState(false);
 
   // Preview Address
   const [previewAddress, setPreviewAddress] = useState('');
@@ -229,6 +230,24 @@ export const WalletSetupModal: React.FC = () => {
         style={{ paddingBottom: isKeyboardOpen ? '220px' : '' }}
       >
         <AnimatePresence mode="wait">
+          {isCreating && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[60] bg-[#090D12] flex flex-col items-center justify-center p-8 text-center"
+            >
+              <div className="relative mb-6">
+                <div className="w-16 h-16 border-4 border-[#70C7BA]/20 border-t-[#70C7BA] rounded-full animate-spin" />
+                <Lock className="absolute inset-0 m-auto w-6 h-6 text-[#70C7BA]" />
+              </div>
+              <h3 className="text-lg font-black text-white tracking-tight">Securing Your Keys</h3>
+              <p className="text-xs text-slate-400 mt-2 max-w-[240px] leading-relaxed">
+                Deriving high-entropy addresses and encrypting your seed phrase with XChaCha20-Poly1305.
+              </p>
+            </motion.div>
+          )}
+
           {/* MODE: CHOOSE */}
           {mode === 'choose' && (
             <motion.div
@@ -1094,27 +1113,41 @@ export const WalletSetupModal: React.FC = () => {
                       const kpub = kpubInput.trim();
                       const addr = addressInput.trim();
 
-                      try {
-                        setIsWalletSetupOpen(false);
-                        resetState();
+      try {
+        setIsCreating(true);
+        const flow = pendingFlow;
+        const pass = setupPassword;
+        const duressPass = setupDuressPassword.trim() || undefined;
+        const name = sanitizeWalletName(walletName.trim(), flow === 'create' ? 'New Kaspa Wallet' : flow === 'import-seed' ? 'Imported Wallet' : 'Watch-Only');
+        const words = flow === 'create' ? [...generatedWords] : cleanMnemonic(importWordsText).split(' ');
+        const passInput = passphraseInput.trim() || undefined;
+        const addrType = addressType;
+        const kpub = kpubInput.trim();
+        const addr = addressInput.trim();
 
-                        if (flow === 'create') {
-                          await createNewWallet(name, words, passInput, addrType, pass, duressPass);
-                        } else if (flow === 'import-seed') {
-                          await importSeedWallet(name, words, passInput, addrType, pass, duressPass);
-                        } else if (flow === 'import-address' || (flow as string) === 'import-kpub') {
-                          if ((flow as string) === 'import-kpub') {
-                            await importKpubWallet(name || 'Watch-Only Kpub', kpub, addrType, pass, duressPass);
-                          } else {
-                            await importKpubWallet(name || 'Live Address Tracker', addr, addrType, pass, duressPass);
-                          }
-                          await setPassword(pass);
-                          if (duressPass) {
-                            await setDuressPassword(duressPass);
-                          }
-                        }
-                        setIsLocked(true);
-                      } finally {
+        if (flow === 'create') {
+          await createNewWallet(name, words, passInput, addrType, pass, duressPass);
+        } else if (flow === 'import-seed') {
+          await importSeedWallet(name, words, passInput, addrType, pass, duressPass);
+        } else if (flow === 'import-address' || (flow as string) === 'import-kpub') {
+          if ((flow as string) === 'import-kpub') {
+            await importKpubWallet(name || 'Watch-Only Kpub', kpub, addrType, pass, duressPass);
+          } else {
+            await importKpubWallet(name || 'Live Address Tracker', addr, addrType, pass, duressPass);
+          }
+          await setPassword(pass);
+          if (duressPass) {
+            await setDuressPassword(duressPass);
+          }
+          setIsLocked(true);
+        }
+        
+        setIsWalletSetupOpen(false);
+        resetState();
+      } catch (err) {
+        showToast('Failed to create wallet', 'error');
+        setIsCreating(false);
+      } finally {
                         wipeStringArray(words);
                         setGeneratedWords([]);
                         setImportWordsText('');

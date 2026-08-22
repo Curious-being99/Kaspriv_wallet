@@ -3563,6 +3563,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (passwordValid) {
       setPasswordState(cleanInput);
       setIsLocked(false);
+      
+      // Atomic Bridge: Ensure we refresh the wallet data immediately after unlocking
+      // This bridges the gap between encrypted state and decrypted UI
+      setTimeout(() => {
+        refreshBalance();
+      }, 0);
+
       showToast('Wallet unlocked', 'success');
       return true;
     }

@@ -7,6 +7,7 @@ import { motion } from 'motion/react';
 export const MainCard: React.FC = () => {
   const {
     activeWallet,
+    wallets,
     marketData,
     currency,
     fiatRate,
@@ -16,11 +17,18 @@ export const MainCard: React.FC = () => {
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
-  if (!activeWallet) {
+  if (!activeWallet || activeWallet.id === 'dummy') {
     return (
-      <div className="w-full mx-auto px-4 py-8 text-center text-slate-500 text-xs">
-        Please unlock or import a wallet to view balance
-      </div>
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="w-full max-w-xl mx-auto rounded-3xl border border-slate-800 bg-slate-900/40 p-12 backdrop-blur-md flex flex-col items-center justify-center space-y-4"
+      >
+        <div className="w-10 h-10 border-4 border-[#70C7BA]/20 border-t-[#70C7BA] rounded-full animate-spin" />
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+          {wallets.length > 0 ? 'Decrypting Session...' : 'Preparing Secure Vault...'}
+        </p>
+      </motion.div>
     );
   }
 
