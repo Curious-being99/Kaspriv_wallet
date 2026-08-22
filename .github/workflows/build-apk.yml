@@ -75,17 +75,19 @@ jobs:
           chmod +x android/gradlew
 
       - name: Build Android APK
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           cd android
           
           # Handle Production Signing if Secrets are present
-          if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
+          if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
             echo "Signing secret detected. Recreating keystore..."
-            printf "%s" "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > app/release.keystore
+            echo "$RELEASE_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > app/release.keystore
             export RELEASE_STORE_FILE="release.keystore"
-            export RELEASE_STORE_PASSWORD="${{ secrets.RELEASE_STORE_PASSWORD }}"
-            export RELEASE_KEY_ALIAS="${{ secrets.RELEASE_KEY_ALIAS }}"
-            export RELEASE_KEY_PASSWORD="${{ secrets.RELEASE_KEY_PASSWORD }}"
           else
             echo "No signing secret found. Falling back to debug signing for this build."
           fi
