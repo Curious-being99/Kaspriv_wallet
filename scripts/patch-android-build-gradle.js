@@ -50,8 +50,16 @@ if (fs.existsSync(gradleFile)) {
     modified = true;
   }
 
+  if (!appGradle.includes('room.incremental')) {
+    appGradle = appGradle.replace(
+      /defaultConfig\s*\{/,
+      `defaultConfig {\n        javaCompileOptions {\n            annotationProcessorOptions {\n                arguments += ["room.incremental":"false"]\n            }\n        }\n`
+    );
+    modified = true;
+  }
+
   if (!appGradle.includes('compilerArgs') && !appGradle.includes('forkOptions')) {
-    appGradle += `\n\ntasks.withType(JavaCompile).configureEach {\n    options.fork = true\n    options.forkOptions.jvmArgs.addAll([\n        '--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED'\n    ])\n}\n`;
+    appGradle += `\n\ntasks.withType(JavaCompile).configureEach {\n    options.fork = true\n    options.forkOptions.jvmArgs = [\n        '--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED'\n    ]\n}\n`;
     modified = true;
   }
 
