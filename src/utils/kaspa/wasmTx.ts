@@ -1,11 +1,12 @@
 // Parallel Kaspa Transaction Builder using the Official Rusty Kaspa WASM SDK
 import initKaspaWasm, { Transaction, PrivateKey, ScriptPublicKey, signTransaction, Address, payToAddressScript } from '@kasdk/web';
+import wasmUrl from '@kasdk/web/kaspa_bg.wasm?url';
 
 let wasmInitialized = false;
 async function ensureWasm() {
   if (!wasmInitialized) {
     try {
-      await initKaspaWasm(); // Initialize the WASM module
+      await initKaspaWasm({ module_or_path: wasmUrl }); // Initialize the WASM module
     } catch (e) {
       // Ignore if already initialized
     }

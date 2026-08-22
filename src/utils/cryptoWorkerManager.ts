@@ -1,4 +1,5 @@
 import MyWorker from './crypto.worker?worker';
+import { isAndroid } from './platform';
 
 interface WorkerTask {
   resolve: (value: any) => void;
@@ -62,7 +63,7 @@ class CryptoWorkerManager {
       const id = `${Date.now()}-${this.nextTaskId++}`;
       this.tasks.set(id, { resolve, reject });
       
-      const isAndroidAPK = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.();
+      const isAndroidAPK = isAndroid();
       const enrichedPayload = { ...payload, isAndroidAPK };
       
       this.worker!.postMessage({ id, action, payload: enrichedPayload });

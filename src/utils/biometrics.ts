@@ -1,6 +1,7 @@
 import { BiometricAuth, BiometryType } from '@aparajita/capacitor-biometric-auth';
 import { encryptWithPassword, decryptWithPassword } from './crypto';
 import { HardwareVault } from '../plugins/HardwareVault';
+import { isNative } from './platform';
 
 export interface BiometricCredentialRecord {
   credentialId: string; // base64url or native credential handle
@@ -51,7 +52,7 @@ export async function isBiometricsSupported(): Promise<boolean> {
 
     // 2. Check Native Android / iOS Container (Capacitor or Native Bridge)
     const isNativeContainer =
-      !!(window as any).Capacitor?.isNativePlatform?.() ||
+      isNative() ||
       !!(window as any).AndroidNativeBiometrics ||
       !!(window as any).webkit?.messageHandlers?.biometrics;
 
@@ -118,7 +119,7 @@ export async function registerBiometricUnlock(
   (window as any).isBiometricPromptActive = true;
   try {
     const isNativeContainer =
-      !!(window as any).Capacitor?.isNativePlatform?.() ||
+      isNative() ||
       !!(window as any).AndroidNativeBiometrics;
 
     // --- 1. Native APK / Mobile Container Path (HardwareVault BiometricPrompt) ---
@@ -298,7 +299,7 @@ export async function authenticateWithBiometrics(
   try {
     const isNativeContainer =
       record.credentialId?.startsWith('native-apk-') ||
-      !!(window as any).Capacitor?.isNativePlatform?.() ||
+      isNative() ||
       !!(window as any).AndroidNativeBiometrics;
 
     // --- 1. Native APK / Mobile Container Path ---

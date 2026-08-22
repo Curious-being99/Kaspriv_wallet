@@ -93,11 +93,13 @@ export const MainLandingPage: React.FC = () => {
     fiatRate,
     showToast,
     isPasswordEnabled,
+    isLocked,
     setIsLocked,
     setPassword,
     indexingState,
   } = useWallet();
 
+  const [isCreating, setIsCreating] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'create' | 'import-seed' | 'import-address' | 'setup-password' | 'setup-duress'>('home');
 
   // Create Wallet State - pre-filled real values instead of placeholders
@@ -254,6 +256,7 @@ export const MainLandingPage: React.FC = () => {
   }, [activeTab]);
 
   if (!isLoggedOut && (wallets.length > 0 || indexingState?.isIndexing)) return null;
+  if (wallets.length > 0 && isLocked) return null;
 
   const AddressTypeSelector = () => (
     <div className="space-y-3">
@@ -1117,10 +1120,8 @@ export const MainLandingPage: React.FC = () => {
                     const addrType = addressType;
                     const addr = addressInput.trim();
 
+                    setIsCreating(true);
                     try {
-                      resetState();
-                      setIsLoggedOut(false);
-
                       if (flow === 'create') {
                         await createNewWallet(name, words, passInput, addrType, pass, duressPass);
                       } else if (flow === 'import-seed') {
@@ -1129,9 +1130,12 @@ export const MainLandingPage: React.FC = () => {
                         await importKpubWallet(name, addr, addrType, pass, duressPass);
                       }
                       
-                      setIsLocked(true);
                       setIsLoggedOut(false);
+                      resetState();
+                    } catch (err) {
+                      showToast('Failed to create wallet', 'error');
                     } finally {
+                      setIsCreating(false);
                       wipeStringArray(words);
                       setCreatedWords([]);
                       setImportWordsText('');
@@ -1171,10 +1175,8 @@ export const MainLandingPage: React.FC = () => {
                     const addrType = addressType;
                     const addr = addressInput.trim();
 
+                    setIsCreating(true);
                     try {
-                      resetState();
-                      setIsLoggedOut(false);
-
                       if (flow === 'create') {
                         await createNewWallet(name, words, passInput, addrType, pass);
                       } else if (flow === 'import-seed') {
@@ -1183,9 +1185,12 @@ export const MainLandingPage: React.FC = () => {
                         await importKpubWallet(name, addr, addrType, pass);
                       }
                       
-                      setIsLocked(true);
                       setIsLoggedOut(false);
+                      resetState();
+                    } catch (err) {
+                      showToast('Failed to create wallet', 'error');
                     } finally {
+                      setIsCreating(false);
                       wipeStringArray(words);
                       setCreatedWords([]);
                       setImportWordsText('');
@@ -1205,6 +1210,26 @@ export const MainLandingPage: React.FC = () => {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Creation Loading Modal Overlay */}
+      <AnimatePresence>
+        {isCreating && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-[#090D12]/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center space-y-4"
+          >
+            <div className="w-12 h-12 border-4 border-[#70C7BA]/20 border-t-[#70C7BA] rounded-full animate-spin" />
+            <div className="space-y-1 max-w-xs">
+              <h4 className="text-sm font-bold text-slate-100">Securing Your Keys</h4>
+              <p className="text-xs text-slate-400">
+                Deriving high-entropy addresses and encrypting your seed phrase...
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Footer */}
       <AnimatePresence>

@@ -1135,11 +1135,6 @@ export const WalletSetupModal: React.FC = () => {
           } else {
             await importKpubWallet(name || 'Live Address Tracker', addr, addrType, pass, duressPass);
           }
-          await setPassword(pass);
-          if (duressPass) {
-            await setDuressPassword(duressPass);
-          }
-          setIsLocked(true);
         }
         
         setIsWalletSetupOpen(false);

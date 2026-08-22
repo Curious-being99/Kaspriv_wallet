@@ -31,8 +31,11 @@ import {
   Fingerprint,
   Vibrate,
   Bell,
+  Smartphone,
+  Layers,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { isAndroid, isWeb } from '../utils/platform';
 
 export const MobileSettingsView: React.FC = () => {
   const {
@@ -168,7 +171,7 @@ export const MobileSettingsView: React.FC = () => {
 
   const currencies: CurrencyType[] = ['USD', 'EUR', 'GBP', 'BTC'];
   const autoLockOptions = [
-    { label: 'In', value: 0 },
+    { label: 'Auto', value: 0 },
     { label: '1m', value: 1 },
     { label: '5m', value: 5 },
     { label: '10m', value: 10 },
@@ -601,7 +604,7 @@ export const MobileSettingsView: React.FC = () => {
             <div className="flex items-center justify-between px-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inactivity Timer</label>
               <span className="text-[10px] font-black text-[#70C7BA] uppercase">
-                {autoLockDuration === 0 ? 'Immediate' : `${autoLockDuration} Minutes`}
+                {autoLockDuration === 0 ? 'Auto' : `${autoLockDuration} Minutes`}
               </span>
             </div>
             <div className="grid grid-cols-5 gap-1.5">
@@ -937,6 +940,21 @@ export const MobileSettingsView: React.FC = () => {
           </div>
           <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-200" />
         </a>
+
+        <div className="p-3 rounded-2xl bg-[#090D12] border border-[#212B38]/50 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-3">
+            <Smartphone className="w-4 h-4 text-[#70C7BA]" />
+            <div>
+              <span className="font-semibold text-slate-200">Runtime Architecture</span>
+              <span className="block text-[10px] text-slate-400">
+                {isAndroid() ? 'Native Android Container (Capacitor / Room)' : isWeb() ? 'Web / Browser PWA Isolated Context' : 'Native Mobile Container'}
+              </span>
+            </div>
+          </div>
+          <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#70C7BA]/10 text-[#70C7BA] font-bold border border-[#70C7BA]/20">
+            {isAndroid() ? 'APK Native' : 'Web Runtime'}
+          </span>
+        </div>
 
         <button
           onClick={() => setShowTerms(!showTerms)}

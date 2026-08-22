@@ -1,12 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
+import { unifiedAuthService } from '../services/unifiedAuthService';
 import { Lock, Unlock, ShieldAlert, Eye, EyeOff, Fingerprint } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hapticSuccess, hapticError, hapticMedium } from '../utils/haptics';
 
 export const LockScreen: React.FC = () => {
-  const { unlockWallet, setIsLocked, isLocked, isBiometricsEnabled, unlockWithBiometrics } = useWallet();
+  const {
+    unlockWallet,
+    setIsLocked,
+    isLocked,
+    wallets,
+    isBiometricsEnabled,
+    unlockWithBiometrics,
+    setActiveBottomTab,
+    clearPendingLockFlags,
+  } = useWallet();
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
   const [password, setPassword] = useState('');
   const [isDecrypting, setIsDecrypting] = useState(false);
@@ -16,7 +26,7 @@ export const LockScreen: React.FC = () => {
 
   // Auto-activate Virtual Keyboard when LockScreen is shown, clear when unlocked
   useEffect(() => {
-    if (isLocked) {
+    if (isLocked && wallets.length > 0) {
       setPassword('');
       setError(null);
       openKeyboard({
@@ -31,9 +41,9 @@ export const LockScreen: React.FC = () => {
       closeKeyboard();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocked]);
+  }, [isLocked, wallets.length]);
 
-  if (!isLocked) return null;
+  if (!isLocked || wallets.length === 0) return null;
 
   const handleBiometricUnlock = async () => {
     if (isAuthenticatingBiometrics || isDecrypting) return;
@@ -44,7 +54,10 @@ export const LockScreen: React.FC = () => {
       const success = await unlockWithBiometrics();
       if (success) {
         hapticSuccess();
+        clearPendingLockFlags();
+        unifiedAuthService.completeUnlock('biometrics');
         setIsLocked(false);
+        setActiveBottomTab('home');
         closeKeyboard();
       } else {
         hapticError();
@@ -68,7 +81,10 @@ export const LockScreen: React.FC = () => {
       const success = await unlockWallet(password);
       if (success) {
         hapticSuccess();
+        clearPendingLockFlags();
+        unifiedAuthService.completeUnlock('password');
         setIsLocked(false);
+        setActiveBottomTab('home');
         closeKeyboard();
       } else {
         hapticError();

@@ -54,6 +54,8 @@ import {
   HapticType,
 } from '../utils/haptics';
 import { IsolatedSigner } from '../utils/IsolatedSigner';
+import { isNative } from '../utils/platform';
+import { unifiedAuthService, AuthState } from '../services/unifiedAuthService';
 import {
   kasToSompi,
   sompiToKas,
@@ -146,6 +148,8 @@ interface WalletContextType {
   password: string | null;
   isLocked: boolean;
   setIsLocked: (val: boolean) => void;
+  authState: AuthState;
+  clearPendingLockFlags: () => void;
   autoLockDuration: number;
   setAutoLockDuration: (val: number) => void;
   lockOnExit: boolean;
@@ -339,7 +343,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         // Request local notification permissions on app startup if native
         try {
-          if ((window as any).Capacitor?.isNativePlatform?.()) {
+          if (isNative()) {
             const permStatus = await LocalNotifications.checkPermissions();
             if (permStatus.display !== 'granted') {
               await LocalNotifications.requestPermissions();
@@ -387,7 +391,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           if (passwordEnabled || canary) {
             setIsPasswordEnabled(true);
             setIsLocked(true);
+            unifiedAuthService.lock('startup', true);
+          } else {
+            setIsLocked(false);
+            unifiedAuthService.completeUnlock('none');
           }
+        } else {
+          // No wallets exist (no create, import, or watch-only exists) -> do NOT lock
+          setIsLocked(false);
+          unifiedAuthService.completeUnlock('none');
         }
 
         const lockDuration = await getSetting<number>('auto_lock_duration');
@@ -525,7 +537,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const triggerNativeNotification = React.useCallback(async (title: string, body: string) => {
     if (!isNotificationsEnabledRef.current) return;
     try {
-      if ((window as any).Capacitor?.isNativePlatform?.()) {
+      if (isNative()) {
         const hasPerm = await LocalNotifications.checkPermissions();
         if (hasPerm.display === 'granted') {
           await LocalNotifications.schedule({
@@ -586,12 +598,30 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isBiometricsEnabled, setIsBiometricsEnabled] = useState<boolean>(false);
   const [password, setPasswordState] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState<boolean>(false);
+  const [authState, setAuthState] = useState<AuthState>(unifiedAuthService.getState());
   const [autoLockDuration, setAutoLockDuration] = useState<number>(0);
   const [lockOnExit, setLockOnExit] = useState<boolean>(true);
 
-  // Auto-lock timer logic
+  // Sync with UnifiedAuthService state
   useEffect(() => {
-    if (!isPasswordEnabled || isLocked) return;
+    const unsub = unifiedAuthService.subscribe((payload) => {
+      setAuthState(payload.state);
+      if (payload.state === 'UNLOCKED') {
+        setIsLocked(false);
+      } else if (payload.state === 'LOCKED') {
+        setIsLocked(true);
+      }
+    });
+    return unsub;
+  }, []);
+
+  const clearPendingLockFlags = React.useCallback(() => {
+    unifiedAuthService.clearPendingLockFlags();
+  }, []);
+
+  // Auto-lock timer logic with unified grace period awareness
+  useEffect(() => {
+    if (!isPasswordEnabled || isLocked || wallets.length === 0) return;
 
     let timeoutId: any;
 
@@ -599,15 +629,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (timeoutId) clearTimeout(timeoutId);
       if (autoLockDuration > 0) {
         timeoutId = setTimeout(() => {
-          lockWalletRef.current();
+          if (!unifiedAuthService.isGracePeriodActive()) {
+            lockWalletRef.current();
+          }
         }, autoLockDuration * 60 * 1000);
       }
     };
 
     const handleVisibilityChange = () => {
       if (lockOnExit && document.visibilityState === 'hidden') {
+        if (unifiedAuthService.isGracePeriodActive()) {
+          return;
+        }
         setTimeout(() => {
-          if (document.visibilityState === 'hidden') {
+          if (document.visibilityState === 'hidden' && !unifiedAuthService.isGracePeriodActive()) {
             lockWalletRef.current();
           }
         }, 2000); // 2 second delay
@@ -622,7 +657,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (lockOnExit) {
       document.addEventListener('visibilitychange', handleVisibilityChange);
       CapacitorApp.addListener('appStateChange', (state) => {
-        if (!state.isActive) {
+        if (!state.isActive && !unifiedAuthService.isGracePeriodActive()) {
           lockWalletRef.current();
         }
       }).then((handle) => {
@@ -646,7 +681,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         capAppListener.remove();
       }
     };
-  }, [isPasswordEnabled, autoLockDuration, lockOnExit, isLocked]);
+  }, [isPasswordEnabled, autoLockDuration, lockOnExit, isLocked, wallets.length]);
 
   // Settings persistence effects
   useEffect(() => {
@@ -699,10 +734,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       await clearAllWalletsFromDB();
     } catch (e) {}
     
-    if (isPasswordEnabled) {
-      setIsLocked(true);
-      setPasswordState(null);
-    }
+    // If no wallets remain, do NOT lock
+    setIsLocked(false);
+    unifiedAuthService.completeUnlock('none');
+    setPasswordState(null);
     showToast('Logged out. All wallet data cleared successfully.', 'info');
   };
 
@@ -864,8 +899,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setToast(null);
   };
 
-  const lockWallet = React.useCallback(() => {
+  const lockWallet = React.useCallback((force: boolean = false) => {
+    if (wallets.length === 0) return; // Do NOT lock if no wallet exists (no create, import, or watch-only)
     if (isPasswordEnabled) {
+      if (!unifiedAuthService.lock('user_or_event', force)) {
+        return;
+      }
       setPasswordState(null);  // clear active password from memory
       setIsLocked(true);
       setWallets((prevWallets) =>
@@ -886,7 +925,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       );
       showToast('Wallet locked & memory zeroized', 'info');
     }
-  }, [isPasswordEnabled, showToast]);
+  }, [isPasswordEnabled, showToast, wallets.length]);
 
   const lockWalletRef = React.useRef(lockWallet);
   useEffect(() => {
@@ -1989,7 +2028,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     } finally {
       if (password) {
         setIsPasswordEnabled(true);
-        setPasswordState(password);
+        setPasswordState(null);
         setIsLocked(true);
       }
       setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
@@ -2075,11 +2114,17 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await setPassword(password, [newW]);
         setIsLocked(true);
         setPasswordState(null);
+        unifiedAuthService.lock('creation', true);
+      } else {
+        setIsLocked(false);
+        unifiedAuthService.completeUnlock('none');
       }
 
       if (duressPassword) {
         await setDuressPassword(duressPassword);
       }
+
+      setActiveBottomTab('home');
 
       isRefreshingBalance.current = false;
       showToast(`Created wallet '${newW.name}'`, 'success');
@@ -2372,7 +2417,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     } finally {
       if (password) {
         setIsPasswordEnabled(true);
-        setPasswordState(password);
+        setPasswordState(null);
         setIsLocked(true);
       }
       setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
@@ -2485,12 +2530,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await setPassword(password, [newW]);
         setIsLocked(true);
         setPasswordState(null);
+        unifiedAuthService.lock('creation', true);
+      } else {
+        setIsLocked(false);
+        unifiedAuthService.completeUnlock('none');
       }
 
       if (duressPassword) {
         await setDuressPassword(duressPassword);
       }
       
+      setActiveBottomTab('home');
+
       isRefreshingBalance.current = false;
       showToast(`Restored Kaspa Wallet '${newW.name}'! Found ${formatKas(scanRes.totalBalanceSompi)} KAS on chain index.`, 'success');
       setTimeout(() => { refreshBalance(); }, 100);
@@ -2580,10 +2631,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       await setPassword(password, [newW]);
       setIsLocked(true);
       setPasswordState(null);
+      unifiedAuthService.lock('creation', true);
+    } else {
+      setIsLocked(false);
+      unifiedAuthService.completeUnlock('none');
     }
     if (duressPassword) {
       await setDuressPassword(duressPassword);
     }
+
+    setActiveBottomTab('home');
 
     isRefreshingBalance.current = false;
     showToast(`Imported Watch-Only Kaspa Address / Kpub`, 'success');
@@ -3308,8 +3365,23 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
       
       try {
-        const walletsToEncrypt = customWalletsList || wallets;
-        const updatedWallets = await Promise.all(walletsToEncrypt.map(async (w) => {
+        const existingWallets = wallets.length > 0 ? wallets : await getWalletsFromDB();
+        let targetList = [...existingWallets];
+        if (customWalletsList && customWalletsList.length > 0) {
+          for (const cw of customWalletsList) {
+            const idx = targetList.findIndex(w => w.id === cw.id);
+            if (idx >= 0) {
+              targetList[idx] = cw;
+            } else {
+              targetList.push(cw);
+            }
+          }
+        }
+        if (targetList.length === 0 && customWalletsList) {
+          targetList = customWalletsList;
+        }
+
+        const updatedWallets = await Promise.all(targetList.map(async (w) => {
           let encryptedMnemonic = w.encryptedMnemonic;
           let encryptedPassphrase = w.encryptedPassphrase;
           
@@ -3507,39 +3579,35 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       const duressCanary = await getSetting<{ ciphertext: string; salt: string; iv: string }>('wallet_duress_canary');
       if (duressCanary) {
-        try {
-          const decryptedDuress = await decryptWithPassword(
-            duressCanary.ciphertext,
-            duressCanary.salt,
-            duressCanary.iv,
-            cleanInput,
-            "KASPRIV-WALLET-v1|KASPA-MAINNET|DURESS"
-          );
-          if (decryptedDuress === "kaspriv-duress-canary") {
-            // DURESS PASSWORD DETECTED -> INSTANT SECURE PURGE & LOGOUT
-            // Return false to avoid "success unlock" semantics / animations in UI
-            await executePanicWipe();
-            return false;
-          }
-        } catch {
-          // Not duress password, proceed to normal password check
+        const isDuress = await unifiedAuthService.verifyDuressCanaryChaCha20(
+          duressCanary.ciphertext,
+          duressCanary.salt,
+          duressCanary.iv,
+          cleanInput
+        );
+        if (isDuress) {
+          // DURESS PASSWORD DETECTED -> INSTANT SECURE PURGE & LOGOUT
+          await executePanicWipe();
+          return false;
         }
       }
     } catch (err) {
       console.error('Error during duress check:', err);
     }
 
-    // 2. Normal Password Verification
+    // 2. Normal Password Verification via ChaCha20-Poly1305 bridge
     let passwordValid = false;
     const canaryObj = await getSetting<{ ciphertext: string; salt: string; iv: string }>('wallet_password_canary') || await getSetting<{ ciphertext: string; salt: string; iv: string }>('wallet_pin_canary');
     
     if (canaryObj) {
-      try {
-        const decryptedCanary = await decryptWithPassword(canaryObj.ciphertext, canaryObj.salt, canaryObj.iv, cleanInput, "KASPRIV-WALLET-v1|KASPA-MAINNET|CANARY");
-        if (decryptedCanary === "kaspriv-canary") {
-          passwordValid = true;
-        }
-      } catch (err) {
+      passwordValid = await unifiedAuthService.verifyCanaryChaCha20(
+        canaryObj.ciphertext,
+        canaryObj.salt,
+        canaryObj.iv,
+        cleanInput,
+        "KASPRIV-WALLET-v1|KASPA-MAINNET|CANARY"
+      );
+      if (!passwordValid) {
         return false;
       }
     } else {
@@ -3548,31 +3616,67 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (firstW) {
         try {
           if (firstW.encryptedMnemonic) {
-            await decryptWithPassword(firstW.encryptedMnemonic.ciphertext, firstW.encryptedMnemonic.salt, firstW.encryptedMnemonic.iv, cleanInput, buildAadContext('MNEMONIC', firstW.id));
+            await unifiedAuthService.decryptChaCha20(
+              firstW.encryptedMnemonic.ciphertext, 
+              firstW.encryptedMnemonic.salt, 
+              firstW.encryptedMnemonic.iv, 
+              cleanInput, 
+              buildAadContext('MNEMONIC', firstW.id)
+            );
           }
           passwordValid = true;
         } catch (err) {
           return false;
         }
       } else {
-        // If no wallets and no canary, we consider it "unlocked" for now (shouldn't happen)
+        // If no wallets and no canary, we consider it "unlocked" for now
         passwordValid = true;
       }
     }
 
     if (passwordValid) {
+      unifiedAuthService.completeUnlock('password');
       setPasswordState(cleanInput);
       setIsLocked(false);
+      setIsLoggedOut(false);
+      setIsWalletSetupOpen(false);
+      try {
+        await saveSetting('kaspa_is_logged_out', false);
+      } catch (e) {}
+
+      // Atomic Bridge: Ensure we have loaded wallets from DB into memory
+      let currentWallets = wallets;
+      if (!currentWallets || currentWallets.length === 0) {
+        try {
+          const savedWallets = await getWalletsFromDB();
+          if (savedWallets && savedWallets.length > 0) {
+            setWallets(savedWallets);
+            currentWallets = savedWallets;
+          }
+        } catch (e) {}
+      }
+
+      // Ensure active wallet ID is set
+      const currentActiveId = activeWalletId || (currentWallets && currentWallets.length > 0 ? currentWallets[0].id : '');
+      if (currentActiveId) {
+        setActiveWalletIdState(currentActiveId);
+        try {
+          await saveSetting('kaspa_active_wallet_id', currentActiveId);
+        } catch (e) {}
+      }
       
+      // Ensure the navigation stack points to the main wallet viewport
+      setActiveBottomTab('home');
+
       // Atomic Bridge: Ensure we refresh the wallet data immediately after unlocking
-      // This bridges the gap between encrypted state and decrypted UI
       setTimeout(() => {
-        refreshBalance();
+        refreshBalance({ force: true });
       }, 0);
 
       showToast('Wallet unlocked', 'success');
       return true;
     }
+    unifiedAuthService.failAuthentication('Incorrect password');
     return false;
   };
 
@@ -3631,35 +3735,47 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const unlockWithBiometrics = async (): Promise<boolean> => {
     try {
+      unifiedAuthService.beginAuthentication('biometrics');
       const bioRecord = await getSetting<BiometricCredentialRecord>('wallet_biometric_credential');
       if (!bioRecord) {
+        unifiedAuthService.failAuthentication('Biometric credentials not found');
         showToast('Biometric credentials not found', 'error');
         return false;
       }
 
       const authRes = await authenticateWithBiometrics(bioRecord);
       if (!authRes.success) {
+        unifiedAuthService.failAuthentication(authRes.error || 'Biometric authentication failed');
         return false;
       }
 
       if (authRes.decryptedPassword) {
         const ok = await unlockWallet(authRes.decryptedPassword);
-        if (ok && authRes.isLegacyRecord) {
-          try {
-            const upgradedRecord = await registerBiometricUnlock(authRes.decryptedPassword);
-            await saveSetting('wallet_biometric_credential', upgradedRecord);
-          } catch {
-            // Legacy migration retry deferred
+        if (ok) {
+          unifiedAuthService.completeUnlock('biometrics');
+          if (authRes.isLegacyRecord) {
+            try {
+              const upgradedRecord = await registerBiometricUnlock(authRes.decryptedPassword);
+              await saveSetting('wallet_biometric_credential', upgradedRecord);
+            } catch {
+              // Legacy migration retry deferred
+            }
           }
         }
         return ok;
       } else if (authRes.mode === 'presence') {
         if (password) {
-          return await unlockWallet(password);
+          const ok = await unlockWallet(password);
+          if (ok) {
+            unifiedAuthService.completeUnlock('biometrics');
+          }
+          return ok;
         }
+        unifiedAuthService.failAuthentication('Presence verified, password required');
         showToast('Biometrics verified (Presence mode). Please enter password to complete unlock.', 'info');
         return false;
       }
+      unifiedAuthService.failAuthentication('Biometric authentication failed');
       return false;
     } catch (err: any) {
       const isExpectedCancellation =
@@ -3670,6 +3786,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         err?.message?.toLowerCase().includes('canceled') ||
         err?.message?.toLowerCase().includes('timed out') ||
         err?.message?.toLowerCase().includes('not allowed');
+
+      unifiedAuthService.failAuthentication(err?.message || 'Biometric verification failed');
 
       if (!isExpectedCancellation) {
         console.warn('Biometric unlock notice:', err?.message || err);
@@ -3851,6 +3969,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         password,
         isLocked,
         setIsLocked,
+        authState,
+        clearPendingLockFlags,
         autoLockDuration,
         setAutoLockDuration,
         lockOnExit,
