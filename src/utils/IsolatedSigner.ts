@@ -389,24 +389,27 @@ export class IsolatedSigner {
     passphrase: string | undefined,
     intentInput: UnsignedTxIntent,
     addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
-    redeemScriptHex?: string
+    redeemScriptHex?: string,
+    skipWorker = false
   ): Promise<{
     success: boolean;
     transaction?: any;
     error?: string;
   }> {
     try {
-      const { cryptoWorkerManager, serializeWithBigInt, deserializeWithBigInt } = await import('./cryptoWorkerManager');
-      if (cryptoWorkerManager.isSupported()) {
-        const serializedIntent = serializeWithBigInt(intentInput);
-        const res = await cryptoWorkerManager.runTask<any>('signTransactionIsolated', {
-          serializedIntent,
-          mnemonic,
-          passphrase,
-          addressType,
-          redeemScriptHex
-        });
-        return deserializeWithBigInt(res);
+      if (!skipWorker) {
+        const { cryptoWorkerManager, serializeWithBigInt, deserializeWithBigInt } = await import('./cryptoWorkerManager');
+        if (cryptoWorkerManager.isSupported()) {
+          const serializedIntent = serializeWithBigInt(intentInput);
+          const res = await cryptoWorkerManager.runTask<any>('signTransactionIsolated', {
+            serializedIntent,
+            mnemonic,
+            passphrase,
+            addressType,
+            redeemScriptHex
+          });
+          return deserializeWithBigInt(res);
+        }
       }
     } catch (err: any) {
       console.warn('Worker signTransactionIsolated failed, falling back to local thread:', err);

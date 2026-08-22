@@ -27,7 +27,8 @@ self.addEventListener('message', async (e: MessageEvent) => {
         passphrase,
         intent,
         addressType,
-        redeemScriptHex
+        redeemScriptHex,
+        true
       );
       
       // Serialize BigInts back to main thread
