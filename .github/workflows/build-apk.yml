@@ -77,17 +77,26 @@ jobs:
       - name: Build Android APK
         run: |
           cd android
-          echo "Listing Gradle Wrapper files:"
-          ls -l gradle/wrapper/
-          echo "Listing gradlew permissions:"
-          ls -l gradlew
-          # Run with --info and --stacktrace to expose the hidden error and print the full log on failure
-          ./gradlew assembleDebug assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace --info 2>&1 | tee ../gradle.log || {
-            echo "========== FULL GRADLE LOG START =========="
-            cat ../gradle.log
-            echo "========== FULL GRADLE LOG END =========="
+          echo "Current working directory: $(pwd)"
+          echo "Java version:"
+          java -version
+          echo "Gradle version:"
+          ./gradlew --version
+          
+          echo "Starting Gradle Build..."
+          # Attempt to build, capturing EVERYTHING, no matter the exit code
+          ./gradlew assembleDebug assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace --info > ../gradle_full.log 2>&1
+          
+          # Print the full log regardless of success/failure so it's in the GitHub Actions UI
+          echo "========== FULL GRADLE LOG START =========="
+          cat ../gradle_full.log
+          echo "========== FULL GRADLE LOG END =========="
+          
+          # Now check if it actually succeeded
+          if [ ! -d "app/build/outputs/apk" ]; then
+            echo "Build FAILED: APK output directory was not created."
             exit 1
-          }
+          fi
 
       - name: Stage APK Files
         run: |
