@@ -103,7 +103,7 @@ jobs:
           echo "Starting Gradle Build..."
           # Attempt to build, capturing EVERYTHING, no matter the exit code
           # We use '|| true' or similar to ensure we reach the 'cat' command even on failure
-          ./gradlew assembleDebug assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace --info > ../gradle_full.log 2>&1 || BUILD_FAILED=true
+          ./gradlew assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace --info > ../gradle_full.log 2>&1 || BUILD_FAILED=true
           
           # Print the full log regardless of success/failure so it's in the GitHub Actions UI
           echo "========== FULL GRADLE LOG START =========="
@@ -126,8 +126,6 @@ jobs:
           # Find all release apk files and copy them (preferring release over unsigned)
           find android/app/build/outputs/apk -name "app-release.apk" -exec cp {} release-apks/KasPriv-Wallet-Release.apk \; || true
           find android/app/build/outputs/apk -name "app-release-unsigned.apk" -exec cp {} release-apks/KasPriv-Wallet-Release.apk \; || true
-          # Find all debug apk files and copy them
-          find android/app/build/outputs/apk -name "app-debug.apk" -exec cp {} release-apks/KasPriv-Wallet-Debug.apk \; || true
           ls -lh release-apks/
 
       - name: Upload APK Artifacts
@@ -144,7 +142,7 @@ jobs:
           RELEASE_TITLE="KasPriv Wallet APK v1.2.0 (Build ${{ github.run_number }})"
           gh release create "$TAG_NAME" release-apks/* \
             --title "$RELEASE_TITLE" \
-            --notes "Official KasPriv Android APK build (Release and Debug packages) with native Kaspa adaptive launcher icons." \
+            --notes "Official KasPriv Android APK build (Production Release) with native Kaspa adaptive launcher icons." \
             --latest || echo "Release creation completed."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
