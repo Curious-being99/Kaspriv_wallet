@@ -118,22 +118,23 @@ export function buildAadContext(kind: 'MNEMONIC' | 'PASSPHRASE' | 'CANARY' | str
 /**
  * Encrypts a plaintext string using a two-tier key hierarchy (DEK wrapped by KEK).
  */
-export async function encryptWithPassword(plaintext: string, password: string, context: string = 'KASPRIV_ENCRYPTION_V1'): Promise<{ ciphertext: string; salt: string; iv: string }> {
+export async function encryptWithPassword(plaintext: string, password: string, _context: string = 'KASPRIV_ENCRYPTION_V1'): Promise<{ ciphertext: string; salt: string; iv: string }> {
   // Use official Rusty Kaspa SDK for XChaCha20Poly1305 encryption
-  const ciphertext = encryptXChaCha20Poly1305(plaintext, password, context);
+  // Note: High-level SDK helper currently takes 2 arguments (plaintext, password).
+  const ciphertext = encryptXChaCha20Poly1305(plaintext, password);
   // Note: Official SDK handles nonce/salt generation internally. 
-  // Returning empty strings for legacy compatibility if required by caller, 
-  // but updating interfaces is recommended.
+  // Returning empty strings for legacy compatibility if required by caller.
   return { ciphertext, salt: '', iv: '' };
 }
 
 export async function decryptWithPassword(
   ciphertextHex: string, 
-  saltHex: string, 
-  ivHex: string, 
+  _saltHex: string, 
+  _ivHex: string, 
   password: string, 
-  context: string = AAD_CONTEXT
+  _context: string = AAD_CONTEXT
 ): Promise<string> {
   // Use official Rusty Kaspa SDK for XChaCha20Poly1305 decryption
-  return decryptXChaCha20Poly1305(ciphertextHex, password, context);
+  // Note: High-level SDK helper currently takes 2 arguments (ciphertext, password).
+  return decryptXChaCha20Poly1305(ciphertextHex, password);
 }
