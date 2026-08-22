@@ -81,7 +81,7 @@ jobs:
           # Handle Production Signing if Secrets are present
           if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
             echo "Signing secret detected. Recreating keystore..."
-            echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > app/release.keystore
+            printf "%s" "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > app/release.keystore
             export RELEASE_STORE_FILE="release.keystore"
             export RELEASE_STORE_PASSWORD="${{ secrets.RELEASE_STORE_PASSWORD }}"
             export RELEASE_KEY_ALIAS="${{ secrets.RELEASE_KEY_ALIAS }}"
