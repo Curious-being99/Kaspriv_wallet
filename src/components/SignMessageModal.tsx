@@ -197,7 +197,7 @@ export const SignMessageModal: React.FC = () => {
 
           <button
             onClick={handleSign}
-            disabled={!message.trim() || (isPasswordEnabled && !activeWallet.mnemonic && passwordInput.length < 8)}
+            disabled={!message.trim() || (isPasswordEnabled && !isBiometricsEnabled && !activeWallet.mnemonic && passwordInput.length < 8)}
             className="w-full py-3 rounded-xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#0B151E] font-bold text-sm transition-all shadow-lg active:scale-95 disabled:opacity-50"
           >
             Sign Message

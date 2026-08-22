@@ -3707,10 +3707,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       await saveSetting('wallet_biometric_credential', bioRecord);
       await saveSetting('wallet_biometrics_enabled', true);
       setIsBiometricsEnabled(true);
-      if (bioRecord.mode === 'prf') {
+      if (bioRecord.mode === 'keystore' || bioRecord.credentialId?.startsWith('keystore:')) {
+        showToast('Native Biometric Hardware Authentication enabled!', 'success');
+      } else if (bioRecord.mode === 'prf') {
         showToast('Native Biometric Authentication enabled (Hardware PRF Mode)!', 'success');
       } else {
-        showToast('Native Biometric Authentication enabled (Hardware Presence Mode)!', 'success');
+        showToast('Native Biometric Authentication enabled!', 'success');
       }
       return true;
     } catch (err: any) {

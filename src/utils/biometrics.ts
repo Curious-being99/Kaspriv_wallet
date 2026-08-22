@@ -298,6 +298,7 @@ export async function authenticateWithBiometrics(
   (window as any).isBiometricPromptActive = true;
   try {
     const isNativeContainer =
+      record.credentialId?.startsWith('keystore:') ||
       record.credentialId?.startsWith('native-apk-') ||
       isNative() ||
       !!(window as any).AndroidNativeBiometrics;

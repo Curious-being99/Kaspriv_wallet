@@ -445,6 +445,11 @@ export const SendModal: React.FC = () => {
     closeKeyboard();
     setPasswordError(null);
 
+    if (isBiometricsEnabled && passwordInput.trim().length < 8) {
+      await handleBiometricSign();
+      return;
+    }
+
     if (isPasswordEnabled) {
       if (passwordInput.length < 8) {
         setPasswordError('Please enter your wallet password (min 8 chars)');
@@ -1037,39 +1042,42 @@ export const SendModal: React.FC = () => {
 
             {/* Wallet Password Lock if enabled */}
             {isPasswordEnabled && (
-              <div className="p-2.5 rounded-xl bg-[#0B151E] space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
-                  Wallet Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter password to sign"
-                    value={passwordInput}
-                    onFocus={() => openKeyboard({ value: passwordInput, onChange: handlePasswordChange })}
-                    onClick={() => openKeyboard({ value: passwordInput, onChange: handlePasswordChange })}
-                    inputMode="none" onChange={() => {}}
-                    className={`w-full px-3 py-2 rounded-lg bg-[#090D12] ${passwordError ? 'border border-rose-500' : 'focus:border-[#70C7BA]'} text-sm text-slate-100 outline-none transition-colors pr-10 cursor-pointer`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-2 text-slate-400 hover:text-slate-200"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
+              <div className="p-2.5 rounded-xl bg-[#0B151E] space-y-2">
                 {isBiometricsEnabled && (
                   <button
                     type="button"
                     onClick={handleBiometricSign}
                     disabled={isSending || isAuthenticatingBiometrics}
-                    className="w-full flex items-center justify-center gap-1.5 py-1 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer mt-1"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#70C7BA]/15 hover:bg-[#70C7BA]/25 text-[#70C7BA] border border-[#70C7BA]/30 text-xs font-bold transition-all cursor-pointer shadow-md shadow-[#70C7BA]/10 active:scale-[0.98]"
                   >
-                    <Fingerprint className="w-3.5 h-3.5 text-[#70C7BA]" />
-                    <span>Tap to unlock with Biometrics</span>
+                    <Fingerprint className="w-4 h-4 text-[#70C7BA]" />
+                    <span>{isAuthenticatingBiometrics ? 'Verifying Hardware Biometrics...' : 'Authorize & Sign with Hardware Biometrics'}</span>
                   </button>
                 )}
+
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                    {isBiometricsEnabled ? 'Or Enter Wallet Password' : 'Wallet Password'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter password to sign"
+                      value={passwordInput}
+                      onFocus={() => openKeyboard({ value: passwordInput, onChange: handlePasswordChange })}
+                      onClick={() => openKeyboard({ value: passwordInput, onChange: handlePasswordChange })}
+                      inputMode="none" onChange={() => {}}
+                      className={`w-full px-3 py-2 rounded-lg bg-[#090D12] ${passwordError ? 'border border-rose-500' : 'focus:border-[#70C7BA]'} text-sm text-slate-100 outline-none transition-colors pr-10 cursor-pointer`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-2 text-slate-400 hover:text-slate-200"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1081,9 +1089,9 @@ export const SendModal: React.FC = () => {
                     ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
                     : passwordError
                     ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                    : passwordInput.length < 8
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : isBiometricsEnabled || passwordInput.length >= 8
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
                   : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
               }`}
             >
@@ -1093,10 +1101,10 @@ export const SendModal: React.FC = () => {
                     <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
                   ) : passwordError ? (
                     <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                  ) : passwordInput.length < 8 ? (
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  ) : (
+                  ) : isBiometricsEnabled || passwordInput.length >= 8 ? (
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                   )
                 ) : (
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -1107,6 +1115,10 @@ export const SendModal: React.FC = () => {
                       ? 'Decrypting wallet credentials in RAM & broadcasting...'
                       : passwordError
                       ? passwordError
+                      : isBiometricsEnabled
+                      ? passwordInput.length >= 8
+                        ? 'Password entered. Ready to sign & broadcast.'
+                        : 'Hardware biometric security active. Click button below or scan fingerprint.'
                       : passwordInput.length < 8
                       ? 'Please enter your wallet password (min 8 chars)'
                       : 'Password entered. Click below to sign & broadcast.'
@@ -1120,9 +1132,9 @@ export const SendModal: React.FC = () => {
               <button
                 type="button"
                 onClick={handleExecuteSend}
-                disabled={isSending || (isPasswordEnabled && passwordInput.length < 8)}
+                disabled={isSending || (isPasswordEnabled && !isBiometricsEnabled && passwordInput.length < 8)}
                 className={`w-full py-3 px-4 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-2 ${
-                  !isSending && (!isPasswordEnabled || passwordInput.length >= 8)
+                  !isSending && (!isPasswordEnabled || isBiometricsEnabled || passwordInput.length >= 8)
                     ? 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#0B151E] shadow-lg shadow-[#70C7BA]/20 cursor-pointer active:scale-[0.99]'
                     : 'bg-[#1C2F42] text-slate-500 cursor-not-allowed shadow-none'
                 }`}
