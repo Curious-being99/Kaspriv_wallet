@@ -223,7 +223,7 @@ export const SendModal: React.FC = () => {
 
   const addrType = activeWallet?.addressType || (activeWallet?.receiveAddress?.includes(':p') ? 'P2SH' : 'P2PKH');
   const numericAmount = parseFloat(amountInput) || 0;
-  const targetSompi = kasToSompi(numericAmount);
+  const targetSompi = kasToSompi(amountInput);
 
   // Dynamically calculate how many UTXOs are needed to fund numericAmount
   const dynamicFeeInfo = useMemo(() => {
@@ -387,8 +387,8 @@ export const SendModal: React.FC = () => {
 
             const res = await sendKaspa(
               toAddress,
-              numericAmount,
-              selectedFee,
+              amountInput || numericAmount,
+              selectedFee.toString(),
               note,
               mnemonicToUse,
               passphraseToUse,
@@ -476,8 +476,8 @@ export const SendModal: React.FC = () => {
 
         const res = await sendKaspa(
           toAddress,
-          numericAmount,
-          selectedFee,
+          amountInput || numericAmount,
+          selectedFee.toString(),
           note,
           mnemonicToUse,
           passphraseToUse,

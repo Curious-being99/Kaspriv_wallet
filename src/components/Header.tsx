@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
+import { useKeyboard } from '../context/KeyboardContext';
 import { sanitizeWalletName } from '../utils/kaspa';
 import { ChevronDown, Check, Plus, Lock, Edit2, Wallet as WalletIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -14,6 +15,8 @@ export const Header: React.FC = () => {
     isPasswordEnabled,
     lockWallet,
   } = useWallet();
+
+  const { openKeyboard } = useKeyboard();
 
   const [isWalletMenuOpen, setIsWalletMenuOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);

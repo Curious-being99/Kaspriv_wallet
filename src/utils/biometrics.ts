@@ -23,6 +23,16 @@ export interface BiometricAuthResult {
   isLegacyRecord?: boolean;
 }
 
+export async function deleteNativeKeystoreAlias(): Promise<void> {
+  try {
+    if (typeof HardwareVault?.deleteKey === 'function') {
+      await HardwareVault.deleteKey({ alias: 'kaspriv_biometric_keystore_alias' });
+    }
+    await (BiometricAuth as any).deleteCredentials?.({ server: 'kaspriv-wallet' }).catch(() => {});
+    await (BiometricAuth as any).clearCredentials?.().catch(() => {});
+  } catch {}
+}
+
 /**
  * Check if the current device/browser or native mobile APK container supports
  * native platform biometrics (Android BiometricPrompt, iOS Touch ID/Face ID, Windows Hello, WebAuthn).
@@ -381,7 +391,7 @@ export async function authenticateWithBiometrics(
       rpId: window.location.hostname,
       allowCredentials: [
         {
-          id: credentialIdBuffer,
+          id: credentialIdBuffer as unknown as BufferSource,
           type: 'public-key',
           transports: ['internal'],
         },

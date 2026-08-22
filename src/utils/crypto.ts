@@ -28,8 +28,8 @@ async function tryGetRustWasm() {
   try {
     // Dynamic import to avoid missing files compilation issues during dev
     // and automatically link once wasm-pack build output is populated
-    const targetWasmModulePath = './rust-wasm/kaspriv_rust_crypto';
-    wasmModule = await import(/* @vite-ignore */ targetWasmModulePath as any);
+    // Allow Vite to statically analyze and bundle the fallback implementation
+    wasmModule = await import('../../rust-wasm/kaspriv_rust_crypto/index.ts');
   } catch (err) {
     // Rust core wasm not compiled yet, which is normal before local compiling
   }

@@ -9,6 +9,7 @@ import {
   MarketData,
   Contact,
 } from '../types';
+import { KaspaUtxo } from '../utils/kaspa/api';
 import { safeStringify } from '../utils/json';
 import { runDatabaseMigrations } from '../utils/dbMigration';
 import {
@@ -39,6 +40,7 @@ import {
   isBiometricsSupported as checkBiometricsSupported,
   registerBiometricUnlock,
   authenticateWithBiometrics,
+  deleteNativeKeystoreAlias,
   BiometricCredentialRecord,
 } from '../utils/biometrics';
 import {
@@ -95,6 +97,7 @@ export interface IndexingState {
 }
 
 interface WalletContextType {
+  showToast: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
   // Wallet State
   indexingState: IndexingState;
   dismissIndexing: () => void;
@@ -111,8 +114,8 @@ interface WalletContextType {
   utxos: UTXO[];
   sendKaspa: (
     toAddress: string,
-    amountKas: number,
-    feeKas: number,
+    amountKas: number | string,
+    feeKas: number | string,
     note?: string,
     providedSeedPhrase?: string,
     providedPassphrase?: string,
@@ -222,7 +225,7 @@ interface WalletContextType {
   setIsNotificationsEnabled: (enabled: boolean) => void;
 
   dismissToast: () => void;
-  toast: { message: string; type: 'success' | 'error' | 'info' } | null;
+  toast: { message: string; type: 'success' | 'error' | 'info' | 'warning' } | null;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -756,10 +759,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   }, []);
 
   // Toast
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
   const toastTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  const showToast = React.useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showToast = React.useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
     if (toastTimeoutRef.current) {
       clearTimeout(toastTimeoutRef.current);
     }
@@ -2590,8 +2593,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const sendKaspa = async (
     toAddress: string,
-    amountKas: number,
-    feeKas: number,
+    amountKas: number | string,
+    feeKas: number | string,
     note?: string,
     providedSeedPhrase?: string,
     providedPassphrase?: string,
@@ -2654,7 +2657,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       // Ensure minimum fee for node compute mass
       const minFeeKas = addrType === 'P2SH' || activeWallet.receiveAddress?.includes(':p') ? 0.001 : 0.0001;
-      const effectiveFeeKas = Math.max(feeKas, minFeeKas);
+      const effectiveFeeKas = Math.max(Number(feeKas) || 0, minFeeKas);
 
       let amountSompi = kasToSompi(amountKas);
       const feeSompi = kasToSompi(effectiveFeeKas);
@@ -2662,7 +2665,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       if (activeWallet.balanceSompi < totalSompiNeeded && (!selectedUtxoOutpoints || selectedUtxoOutpoints.length === 0)) {
         // If user specified an amount close to or equal to their balance (e.g. 0.01 KAS with 0.01 balance), auto-deduct fee from amount
-        if (activeWallet.balanceSompi >= feeSompi && amountKas >= sompiToKas(activeWallet.balanceSompi) * 0.95) {
+        if (activeWallet.balanceSompi >= feeSompi && Number(amountKas) >= sompiToKas(activeWallet.balanceSompi) * 0.95) {
           amountSompi = activeWallet.balanceSompi - feeSompi;
           totalSompiNeeded = activeWallet.balanceSompi;
         } else {
@@ -2742,9 +2745,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // Never spend already broadcasted/pending outpoints
         if (activeSpentSet.has(outpoint)) return false;
 
-        // If manual Coin Control selection is used, only include matching selected outpoints
+        // If manual Coin Control selection is used, only include matching selected outpoints, and reject if frozen/locked
         if (manualSelectedSet) {
-          return manualSelectedSet.has(outpoint);
+          if (!manualSelectedSet.has(outpoint)) return false;
+          if (lockedSet.has(outpoint)) return false;
+          return true;
         }
 
         // Otherwise in auto-selection, skip frozen/locked UTXOs
@@ -2814,7 +2819,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       // If user specified Max send or balance is just short of the fee, adjust final amount
       if (accumulatedSum < totalNeededWithBump) {
-        if (accumulatedSum > finalFeeSompi && (amountKas >= sompiToKas(activeWallet.balanceSompi) * 0.85 || accumulatedSum >= amountSompi)) {
+        if (accumulatedSum > finalFeeSompi && (Number(amountKas) >= sompiToKas(activeWallet.balanceSompi) * 0.85 || accumulatedSum >= amountSompi)) {
           finalAmountSompi = accumulatedSum - finalFeeSompi;
           totalNeededWithBump = accumulatedSum;
           console.warn(`[Fee Scaling] Adjusted sendable amount to ${sompiToKas(finalAmountSompi)} KAS to safely cover network relay fee of ${sompiToKas(finalFeeSompi)} KAS for ${selectedUtxos.length} UTXOs.`);
@@ -2901,7 +2906,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         amountSompi: finalAmountSompi,
         feeSompi: finalFeeSompi,
         utxos: selectedUtxos,
-        note
+        note,
+        lockedUtxoOutpoints: activeWallet.lockedUtxoOutpoints || []
       };
 
       if (!seedToUse) {
@@ -2921,7 +2927,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
 
         // 3. Broadcast
-        const broadcastResult = await broadcastKaspaTransaction(signerResult.transaction);
+        const broadcastResult = await broadcastKaspaTransaction(signerResult.transaction, network);
 
         if (broadcastResult.success) {
           showToast(`Transaction sent! TXID: ${shortenAddress(broadcastResult.txId!)}`, 'success');
@@ -3126,13 +3132,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       });
 
-      // Filter out UTXOs that are in our spentUtxoOutpoints
+      // Filter out UTXOs that are in our spentUtxoOutpoints or locked/frozen
       const activeSpentSet = new Set(spentUtxoOutpoints);
+      const lockedSet = new Set(activeWallet.lockedUtxoOutpoints || []);
       const filteredUtxos = utxosResponse.filter((u: any) => {
         const txid = u.outpoint?.transactionId || u.transaction_id || u.txid || '';
         const vout = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index ?? u.vout ?? 0);
         const outpoint = `${txid}:${vout}`;
-        return !activeSpentSet.has(outpoint);
+        if (activeSpentSet.has(outpoint)) return false;
+        if (lockedSet.has(outpoint)) return false;
+        return true;
       });
 
       if (filteredUtxos.length < 2) {
@@ -3169,6 +3178,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         feeSompi: feeSompi,
         utxos: utxosToCompound,
         note: 'Compounded UTXOs',
+        lockedUtxoOutpoints: activeWallet.lockedUtxoOutpoints || []
       };
 
       try {
@@ -3184,7 +3194,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           return { success: false };
         }
 
-        const broadcastResult = await broadcastKaspaTransaction(signerResult.transaction);
+        const broadcastResult = await broadcastKaspaTransaction(signerResult.transaction, network);
         
         if (broadcastResult.success) {
           showToast(`Compounding initiated for ${utxosToCompound.length} UTXOs!`, 'success');
@@ -3343,6 +3353,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       await removeSetting('wallet_password_canary');
       await removeSetting('wallet_biometric_credential');
       await saveSetting('wallet_biometrics_enabled', false);
+      await deleteNativeKeystoreAlias();
       setIsLocked(false);
       
       if (activePassword) {
@@ -3603,6 +3614,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       await removeSetting('wallet_biometric_credential');
       await saveSetting('wallet_biometrics_enabled', false);
+      await deleteNativeKeystoreAlias();
       setIsBiometricsEnabled(false);
       showToast('Biometric authentication disabled', 'info');
     } catch (err) {

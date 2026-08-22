@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
-    "build": "vite build && node scripts/copy-android-icons.js",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build && node scripts/copy-android-icons.js",
     "lint": "eslint .",
     "preview": "vite preview",
-    "cap:build": "vite build && cap sync && node scripts/patch-android-build-gradle.js && node scripts/copy-android-icons.js",
+    "cap:build": "npm run typecheck && vite build && cap sync && node scripts/patch-android-build-gradle.js && node scripts/copy-android-icons.js",
     "cap:sync": "cap sync && node scripts/patch-android-build-gradle.js && node scripts/copy-android-icons.js"
   },
   "dependencies": {
@@ -17,6 +18,8 @@
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.0",
     "@capacitor/local-notifications": "^8.3.1",
+    "@kasdk/nodejs": "^0.15.2",
+    "@kasdk/web": "^0.15.2",
     "@kaspa/core-lib": "1.6.5",
     "@noble/hashes": "2.2.0",
     "@noble/secp256k1": "3.1.0",

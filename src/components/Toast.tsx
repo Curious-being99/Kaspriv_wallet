@@ -3,7 +3,7 @@ import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ToastProps {
-  toast: { message: string; type: 'success' | 'error' | 'info' } | null;
+  toast: { message: string; type: 'success' | 'error' | 'info' | 'warning' } | null;
   onDismiss?: () => void;
 }
 
@@ -26,6 +26,11 @@ export const Toast: React.FC<ToastProps> = ({ toast, onDismiss }) => {
           )}
           {toast.type === 'error' && (
             <div className="p-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30 flex-shrink-0">
+              <AlertCircle className="w-3.5 h-3.5" />
+            </div>
+          )}
+          {toast.type === 'warning' && (
+            <div className="p-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 flex-shrink-0">
               <AlertCircle className="w-3.5 h-3.5" />
             </div>
           )}

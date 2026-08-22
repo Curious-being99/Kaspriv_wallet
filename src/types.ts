@@ -1,4 +1,4 @@
-export type NetworkType = 'mainnet' | 'testnet-10' | 'devnet';
+export type NetworkType = 'mainnet' | 'testnet-10' | 'testnet-11' | 'devnet';
 
 export type CurrencyType = 'USD' | 'EUR' | 'GBP' | 'CAD' | 'AUD' | 'JPY' | 'BTC';
 
@@ -49,6 +49,8 @@ export interface UTXO {
   isLocked?: boolean;
   derivationPath?: string;
 }
+
+export type KaspaUtxo = UTXO;
 
 export interface CustomNodeConfig {
   id: string;

@@ -1,3 +1,5 @@
+import { blake2b } from '@noble/hashes/blake2.js';
+
 let GLOBAL_API_URL = (((typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env.VITE_KASPA_API_URL : undefined) || 'https://api.kaspa.org') as string;
 let GLOBAL_EXPLORER_URL = (((typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env.VITE_KASPA_EXPLORER_URL : undefined) || 'https://explorer.kaspa.org') as string;
 
@@ -13,13 +15,27 @@ const DEFAULT_TESTNET_NODES = [
   'https://api-testnet-10.kaspa.org',
 ];
 
-export function getCandidateApiUrls(preferredUrl?: string): string[] {
+export function getCandidateApiUrls(network: string = 'mainnet', preferredUrl?: string, allowFailover = false): string[] {
   const current = (preferredUrl || getKaspaApiUrl()).trim().replace(/\/+$/, '');
-  const isTestnet = current.includes('testnet');
-  const defaults = isTestnet ? DEFAULT_TESTNET_NODES : DEFAULT_MAINNET_NODES;
+  const isPrivateOrCustom = 
+    current.includes('.onion') ||
+    current.includes('localhost') ||
+    current.includes('127.0.0.1') ||
+    current.includes('10.') ||
+    current.includes('192.168.') ||
+    (!DEFAULT_MAINNET_NODES.includes(current) && !DEFAULT_TESTNET_NODES.includes(current));
 
   const candidateSet = new Set<string>();
   if (current) candidateSet.add(current);
+
+  // If it's a private/custom node and failover is NOT explicitly allowed, do not add public defaults
+  if (isPrivateOrCustom && !allowFailover) {
+    return Array.from(candidateSet);
+  }
+
+  const isTestnet = network.includes('testnet');
+  const defaults = isTestnet ? DEFAULT_TESTNET_NODES : DEFAULT_MAINNET_NODES;
+
   for (const fallback of defaults) {
     if (fallback) candidateSet.add(fallback.trim().replace(/\/+$/, ''));
   }
@@ -152,10 +168,11 @@ export async function pingKaspaNode(apiUrl: string): Promise<{ ok: boolean; late
   }
 }
 
-export async function fetchKaspaAddressBalance(address: string): Promise<bigint | null> {
+export async function fetchKaspaAddressBalance(address: string, network?: string): Promise<bigint | null> {
   if (!address) return null;
   const cleanAddr = address.trim();
-  const candidates = getCandidateApiUrls();
+  const inferredNetwork = network || (cleanAddr.startsWith('kaspatest') ? 'testnet' : (cleanAddr.startsWith('kaspadev') ? 'devnet' : 'mainnet'));
+  const candidates = getCandidateApiUrls(inferredNetwork);
 
   for (const baseUrl of candidates) {
     try {
@@ -256,10 +273,11 @@ export function validateAndCleanUtxo(raw: any): KaspaUtxo | null {
   return cleanUtxo;
 }
 
-export async function fetchKaspaAddressUtxos(address: string): Promise<KaspaUtxo[] | null> {
+export async function fetchKaspaAddressUtxos(address: string, network?: string): Promise<KaspaUtxo[] | null> {
   if (!address) return null;
   const cleanAddr = address.trim();
-  const candidates = getCandidateApiUrls();
+  const inferredNetwork = network || (cleanAddr.startsWith('kaspatest') ? 'testnet' : (cleanAddr.startsWith('kaspadev') ? 'devnet' : 'mainnet'));
+  const candidates = getCandidateApiUrls(inferredNetwork);
 
   for (const baseUrl of candidates) {
     try {
@@ -381,10 +399,12 @@ export async function fetchKaspaAddressesBalances(addresses: string[]): Promise<
   }
 }
 
-export async function fetchKaspaAddressesUtxos(addresses: string[]): Promise<KaspaUtxo[] | null> {
+export async function fetchKaspaAddressesUtxos(addresses: string[], network?: string): Promise<KaspaUtxo[] | null> {
   if (!addresses || addresses.length === 0) return [];
   const baseUrl = getKaspaApiUrl();
   const cleanAddresses = addresses.map(addr => addr.trim());
+  const inferredNetwork = network || (cleanAddresses[0]?.startsWith('kaspatest') ? 'testnet' : (cleanAddresses[0]?.startsWith('kaspadev') ? 'devnet' : 'mainnet'));
+  const candidates = getCandidateApiUrls(inferredNetwork);
 
   // 1. Try bulk POST endpoint only if not previously marked unsupported
   if (bulkUtxosSupported !== false) {
@@ -645,8 +665,8 @@ function extractKaspaError(data: any): string | null {
 /**
  * Broadcast Kaspa Transaction directly to candidate Kaspa REST endpoints with failover
  */
-export async function broadcastKaspaTransaction(txPayload: any): Promise<{ success: boolean; txId?: string; error?: string }> {
-  const candidateUrls = getCandidateApiUrls();
+export async function broadcastKaspaTransaction(txPayload: any, network: string = 'mainnet'): Promise<{ success: boolean; txId?: string; error?: string }> {
+  const candidateUrls = getCandidateApiUrls(network);
   const rawTx = txPayload?.transaction || txPayload;
   
   const formattedTx = {
@@ -662,16 +682,15 @@ export async function broadcastKaspaTransaction(txPayload: any): Promise<{ succe
     })) : [],
     outputs: Array.isArray(rawTx?.outputs) ? rawTx.outputs.map((outTx: any) => {
       const rawAmt = outTx?.amount;
-      let safeAmount: number | string;
+      let safeAmount: bigint;
       if (typeof rawAmt === 'bigint') {
-        safeAmount = rawAmt <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(rawAmt) : rawAmt.toString();
+        safeAmount = rawAmt;
       } else if (typeof rawAmt === 'number') {
-        safeAmount = Number.isSafeInteger(rawAmt) ? rawAmt : String(rawAmt);
+        safeAmount = BigInt(Math.floor(rawAmt));
       } else if (typeof rawAmt === 'string') {
-        const parsed = Number(rawAmt);
-        safeAmount = Number.isSafeInteger(parsed) ? parsed : rawAmt;
+        safeAmount = BigInt(rawAmt);
       } else {
-        safeAmount = 0;
+        safeAmount = 0n;
       }
 
       return {
@@ -687,6 +706,9 @@ export async function broadcastKaspaTransaction(txPayload: any): Promise<{ succe
   };
 
   const bodyPayload = { transaction: formattedTx };
+  
+  // Local TXID computation removed to avoid using fake TXID if node rejects
+
   let lastErrorMsg = 'Network connection failed while broadcasting transaction across all candidate endpoints';
 
   for (const baseUrl of candidateUrls) {
@@ -694,8 +716,8 @@ export async function broadcastKaspaTransaction(txPayload: any): Promise<{ succe
       const res = await fetchWithTimeout(`${baseUrl}/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload),
-      }, 10000, 0);
+        body: JSON.stringify(bodyPayload, (_, v) => typeof v === 'bigint' ? v.toString() + 'n' : v).replace(/"(-?\d+)n"/g, '$1'),
+      }, 30000, 0);
 
       const data = await res.json().catch(() => null);
       const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;
@@ -711,7 +733,7 @@ export async function broadcastKaspaTransaction(txPayload: any): Promise<{ succe
         if (rawErr) {
           if (rawErr.toLowerCase().includes('already in mempool') || rawErr.toLowerCase().includes('already accepted')) {
             console.log(`[Kaspa Node Broadcast] Transaction already accepted in mempool via ${baseUrl}`);
-            return { success: true, txId: rawTx?.inputs?.[0]?.previousOutpoint?.transactionId || 'mempool_accepted' };
+            return { success: true, txId: 'unknown' };
           } else if (rawErr.toLowerCase().includes('orphan')) {
             errorMsg = 'Orphan transaction: UTXO pending or not yet confirmed on-chain.';
           } else if (rawErr.toLowerCase().includes('fee')) {

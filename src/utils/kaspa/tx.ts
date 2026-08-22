@@ -1,3 +1,4 @@
+import { createSignedTransactionWasm } from './wasmTx';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { concatBytes } from '@noble/hashes/utils.js';
 import * as secp from '@noble/secp256k1';
@@ -64,7 +65,9 @@ export async function buildKaspaTransaction(
   const seenOutpoints = new Set<string>();
   for (const u of utxos) {
     const txId = String(u.outpoint?.transactionId || u.transactionId || '').toLowerCase();
-    const idx = Number(u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0));
+    const idx = Number(u.outpoint?.index !== undefined ? u.outpoint.index : (u.index ?? u.vout ?? -1));
+    if (!/^[0-9a-f]{64}$/.test(txId)) throw new Error('Invalid UTXO transaction ID');
+    if (!Number.isSafeInteger(idx) || idx < 0) throw new Error('Invalid UTXO index');
     const outpointKey = `${txId}:${idx}`;
     if (seenOutpoints.has(outpointKey)) {
       throw new Error(`Security Violation: Duplicate input outpoint detected in transaction build: ${outpointKey}`);
@@ -75,8 +78,8 @@ export async function buildKaspaTransaction(
   // Manual construction
   const inputs: any[] = utxos.map(u => ({
     previousOutpoint: {
-      transactionId: u.outpoint?.transactionId || u.transactionId || '0000000000000000000000000000000000000000000000000000000000000000',
-      index: Number(u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)),
+      transactionId: (u.outpoint?.transactionId || u.transactionId).toLowerCase(),
+      index: Number(u.outpoint?.index !== undefined ? u.outpoint.index : (u.index ?? u.vout)),
     },
     signatureScript: '',
     sequence: 0,
@@ -162,8 +165,14 @@ export async function signTransactionWithPrivateKeyBytes(
       if (privateKeyBytes instanceof Uint8Array) {
         activeKeyBytes = privateKeyBytes;
       } else {
-        const path = u.derivationPath || u.path || "m/44'/111111'/0'/0/0";
-        activeKeyBytes = privateKeyBytes[path] || Object.values(privateKeyBytes)[0];
+        const path = u.derivationPath || u.path;
+        if (!path) {
+          throw new Error(`CRITICAL: UTXO ${u.outpoint?.transactionId}:${u.outpoint?.index} is missing a derivation path.`);
+        }
+        activeKeyBytes = privateKeyBytes[path];
+        if (!activeKeyBytes) {
+          throw new Error(`CRITICAL: Private key for derivation path ${path} not found in key map. Failing closed to protect funds.`);
+        }
       }
 
       const pubKeyBytes = secp.schnorr.getPublicKey(activeKeyBytes);
@@ -235,6 +244,28 @@ export async function signTransactionWithPrivateKeyBytes(
 }
 
 export async function createSignedTransaction(
+  utxos: any[],
+  toAddress: string,
+  amountSompi: bigint,
+  changeAddress: string,
+  privateKeyBytes: Uint8Array,
+  feeSompi: bigint,
+  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  redeemScriptHex?: string,
+  lockTime: number = 0,
+  network: NetworkType = 'mainnet'
+) {
+  try {
+    const wasmTx = await createSignedTransactionWasm(utxos, toAddress, amountSompi, changeAddress, privateKeyBytes, feeSompi, addressType, redeemScriptHex, lockTime);
+    console.log("Successfully built transaction using Official Rusty Kaspa WASM SDK!");
+    return { transaction: wasmTx, id: "wasm-generated" };
+  } catch (err) {
+    console.error("Rusty Kaspa WASM TX generation failed, falling back to manual JS signer:", err);
+  }
+  return await createSignedTransactionFallback(utxos, toAddress, amountSompi, changeAddress, privateKeyBytes, feeSompi, addressType, redeemScriptHex, lockTime, network);
+}
+
+async function createSignedTransactionFallback(
   utxos: any[],
   toAddress: string,
   amountSompi: bigint,

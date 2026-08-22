@@ -51,28 +51,28 @@ export async function encrypt_with_password_rust(plaintext: string, password: st
   const contextBytes = enc.encode(context);
   const baseKey = await crypto.subtle.importKey(
     'raw',
-    kekBytes,
+    kekBytes as any,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
   );
-  const derivedKeyBytes = new Uint8Array(await crypto.subtle.sign('HMAC', baseKey, contextBytes));
+  const derivedKeyBytes = new Uint8Array(await crypto.subtle.sign('HMAC', baseKey, contextBytes as any));
   const aesKeyBytes = derivedKeyBytes.slice(0, 32);
 
   // 3. Encrypt Plaintext with AES-GCM
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
-    aesKeyBytes,
+    aesKeyBytes as any,
     { name: 'AES-GCM' },
     false,
     ['encrypt']
   );
   
   const ciphertextBuffer = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: iv as any },
     cryptoKey,
-    enc.encode(plaintext)
+    enc.encode(plaintext) as any
   );
 
   // Securely wipe intermediate sensitive keys
@@ -101,27 +101,27 @@ export async function decrypt_with_password_rust(ciphertextHex: string, password
   const contextBytes = enc.encode(context);
   const baseKey = await crypto.subtle.importKey(
     'raw',
-    kekBytes,
+    kekBytes as any,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
   );
-  const derivedKeyBytes = new Uint8Array(await crypto.subtle.sign('HMAC', baseKey, contextBytes));
+  const derivedKeyBytes = new Uint8Array(await crypto.subtle.sign('HMAC', baseKey, contextBytes as any));
   const aesKeyBytes = derivedKeyBytes.slice(0, 32);
 
   // 3. Decrypt with AES-GCM
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
-    aesKeyBytes,
+    aesKeyBytes as any,
     { name: 'AES-GCM' },
     false,
     ['decrypt']
   );
 
   const decryptedBuffer = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: iv as any },
     cryptoKey,
-    ciphertext
+    ciphertext as any
   );
 
   // Securely wipe intermediate sensitive keys

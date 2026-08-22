@@ -165,13 +165,6 @@ export const MobileSettingsView: React.FC = () => {
     }
   };
 
-  const handleCopySeed = () => {
-    if (!decryptedMnemonic) return;
-    navigator.clipboard.writeText(decryptedMnemonic);
-    setCopiedSeed(true);
-    showToast('Seed phrase copied to clipboard', 'success');
-    setTimeout(() => setCopiedSeed(false), 2000);
-  };
 
   const currencies: CurrencyType[] = ['USD', 'EUR', 'GBP', 'BTC'];
   const autoLockOptions = [
@@ -372,13 +365,6 @@ export const MobileSettingsView: React.FC = () => {
                     24-Word Seed Phrase
                   </span>
                   <div className="flex items-center gap-1">
-                    <button
-                      onClick={handleCopySeed}
-                      className="p-1.5 rounded-lg bg-[#090D12] text-slate-300 hover:text-[#70C7BA] text-[10px] flex items-center gap-1"
-                    >
-                      {copiedSeed ? <Check className="w-3.5 h-3.5 text-[#70C7BA]" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedSeed ? 'Copied' : 'Copy'}</span>
-                    </button>
                     <button
                       onClick={() => setShowSeed(false)}
                       className="p-1.5 rounded-lg bg-[#090D12] text-slate-400 hover:text-slate-200"

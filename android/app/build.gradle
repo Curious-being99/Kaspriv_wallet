@@ -35,10 +35,7 @@ android {
                 keyAlias System.getenv('RELEASE_KEY_ALIAS')
                 keyPassword System.getenv('RELEASE_KEY_PASSWORD')
             } else {
-                storeFile file('debug.keystore')
-                storePassword 'android'
-                keyAlias 'androiddebugkey'
-                keyPassword 'android'
+                throw new GradleException('Production release build requires a valid signing keystore. RELEASE_STORE_FILE property is missing!')
             }
         }
     }

@@ -54,6 +54,7 @@ export interface UnsignedTxIntent {
   utxos: any[];
   note?: string;
   lockTime?: number;
+  lockedUtxoOutpoints?: string[];
 }
 
 export interface VerificationResult {
@@ -131,6 +132,21 @@ export function verifyTransactionIntent(
 
   // 5. Verify total input balance covers output + fee
   const totalInputSompi = intent.utxos.reduce((acc, u) => {
+    const txId = String(u.outpoint?.transactionId || u.transactionId || u.txid || '').toLowerCase();
+    const index = Number(u.outpoint?.index !== undefined ? u.outpoint.index : (u.index ?? u.vout ?? -1));
+    
+    if (!txId || !/^[0-9a-f]{64}$/.test(txId)) {
+      throw new Error(`Security failure: Invalid UTXO transactionId format (${txId}).`);
+    }
+    if (!Number.isSafeInteger(index) || index < 0) {
+      throw new Error(`Security failure: Invalid UTXO outpoint index (${index}).`);
+    }
+    const outpointKey = `${txId}:${index}`;
+
+    if (intent.lockedUtxoOutpoints && intent.lockedUtxoOutpoints.includes(outpointKey)) {
+      throw new Error(`Security failure: Attempted to spend a frozen/locked UTXO (${outpointKey}).`);
+    }
+
     const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
     return acc + amt;
   }, 0n);
@@ -455,7 +471,13 @@ export class IsolatedSigner {
     // 4. Sign the transaction in a protected scope by deriving keys for each unique UTXO path.
     const uniquePaths = Array.from(
       new Set(
-        intent.utxos.map(u => u.derivationPath || u.path || "m/44'/111111'/0'/0/0")
+        intent.utxos.map(u => {
+          const p = u.derivationPath || u.path;
+          if (!p) {
+            throw new Error(`CRITICAL: UTXO ${u.outpoint?.transactionId}:${u.outpoint?.index} is missing a derivation path.`);
+          }
+          return p;
+        })
       )
     );
 

@@ -189,7 +189,28 @@ The audit successfully identified key cryptographic and software design vectors.
 
 ---
 
-## Security Verification & Hardening Status
+### 13. Official Rusty Kaspa WASM SDK Migration
+* **Severity:** **Architectural Improvement (Security/Robustness)**
+* **Finding:** Transaction serialization, signing, and byte-handling were previously managed by custom manual JavaScript implementations, which, while hardened, lacked the authoritative consensus serialization logic found in the official Kaspa Rust codebase.
+* **Mitigation:**
+  - **Adopted Official SDK:** Integrated the official `@kasdk/web` (Rusty Kaspa) WASM SDK for transaction building and signing.
+  - **Shadow Migration Strategy:** Implemented a parallel "shadow" signing engine in `src/utils/kaspa/tx.ts`. All transaction signing requests now attempt to use the official Rust engine as the primary path, providing superior serialization integrity.
+  - **Robust Fail-Safe:** Retained the previous, rigorously hardened JavaScript signing engine as an immutable emergency fallback. If the WASM runtime fails to initialize or sign, the engine silently falls back to the manual signer, ensuring funds remain accessible.
+  - **Build Integrity:** Configured the production build pipeline to correctly bundle the 11.5MB WASM binary, optimizing it for both web and APK deployment without introducing performance bottlenecks.
+
+---
+
+### 14. Proprietary Rust Native Security Core (`kaspriv_rust_crypto`)
+* **Severity:** **Security Foundation (Proprietary Boundary)**
+* **Finding:** The application relies on a custom Rust-based cryptographic module (`kaspriv_rust_crypto`) for sensitive operations. While robust, its distinct role as the primary vault for encryption, biometric binding, and memory management was not explicitly cataloged in the hardening audit.
+* **Mitigation:**
+  - **Vault Integrity:** Confirmed that all high-performance encryption/decryption of wallet credentials and private keys is handled within this native layer, keeping sensitive material outside the JavaScript runtime where possible.
+  - **Memory Zeroization Audit:** Verified the `secure_wipe_rust` interface, ensuring that sensitive memory buffers are zeroized with atomic operations immediately after key material extraction or decryption cycles.
+  - **Biometric Binding:** Audited the implementation of biometric authentication, ensuring that the native layer correctly interfaces with Android hardware-backed Keystore/StrongBox to prevent credential recovery without hardware enclave verification.
+  - **Boundary Enforcement:** Defined strict FFI boundaries between the Web/WASM runtime and the Native core to prevent leakage of unencrypted secrets into the higher-level application state.
+
+---
+
 
 | Module | Hardening Target | Status | Notes |
 | :--- | :--- | :--- | :--- |

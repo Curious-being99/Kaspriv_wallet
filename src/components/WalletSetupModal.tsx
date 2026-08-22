@@ -72,13 +72,6 @@ export const WalletSetupModal: React.FC = () => {
     setMode('create');
   };
 
-  const handleCopySeed = () => {
-    if (generatedWords.length === 0) return;
-    navigator.clipboard.writeText(generatedWords.join(' '));
-    setCopiedSeed(true);
-    showToast('Mnemonic copied to clipboard', 'success');
-    setTimeout(() => setCopiedSeed(false), 2000);
-  };
 
   const handleFinishCreate = async () => {
     hapticSelection();
@@ -480,13 +473,6 @@ export const WalletSetupModal: React.FC = () => {
                     </div>
                   </div>
 
-                  <button
-                    onClick={handleCopySeed}
-                    className="w-full py-2 rounded-xl bg-[#090D12]  hover:border-[#70C7BA] text-[10px] font-bold text-slate-200 flex items-center justify-center gap-1.5 transition-all"
-                  >
-                    {copiedSeed ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#70C7BA]" />}
-                    <span>{copiedSeed ? 'Mnemonic Copied' : 'Copy Mnemonic'}</span>
-                  </button>
 
                   <label className="flex items-center gap-2 p-2 rounded-lg bg-[#090D12]  cursor-pointer text-[10px] text-slate-300">
                     <input

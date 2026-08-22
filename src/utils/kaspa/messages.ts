@@ -51,10 +51,20 @@ export async function signKaspaMessage(
  */
 export function verifyKaspaMessage(message: string, signatureHex: string, publicKeyHex: string): boolean {
   try {
+    const parseHex = (hex: string) => {
+      const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+      if (!/^[0-9a-fA-F]*$/.test(clean) || clean.length % 2 !== 0) throw new Error('Invalid hex');
+      const bytes = new Uint8Array(clean.length / 2);
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+      }
+      return bytes;
+    };
+
     const msgBytes = new TextEncoder().encode(message);
     const msgHash = blake2b(msgBytes, { dkLen: 32 });
-    const sigBytes = new Uint8Array(signatureHex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
-    const pubKeyBytes = new Uint8Array(publicKeyHex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
+    const sigBytes = parseHex(signatureHex);
+    const pubKeyBytes = parseHex(publicKeyHex);
     const xOnly = pubKeyBytes.length === 33 ? pubKeyBytes.slice(1) : pubKeyBytes;
 
     return secp.schnorr.verify(sigBytes, msgHash, xOnly);
