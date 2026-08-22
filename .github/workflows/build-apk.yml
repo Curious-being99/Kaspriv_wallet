@@ -63,6 +63,9 @@ jobs:
 
       - name: Grant Execute Permissions for Gradle
         run: |
+          # Ensure a fresh, valid gradle wrapper is generated
+          rm -rf android/gradle/wrapper/gradle-wrapper.jar
+          ./android/gradlew wrapper --gradle-version 8.12
           chmod +x android/gradlew
 
       - name: Build Android APK
@@ -82,7 +85,8 @@ jobs:
             # Clean up other variables just in case of copy-paste spaces
             export RELEASE_KEY_ALIAS=$(echo "$RELEASE_KEY_ALIAS" | tr -d '[:space:]')
           else
-            echo "No signing secret found. Falling back to debug signing for this build."
+            echo "::error::No signing secret found. Aborting build to prevent insecure debug release."
+            exit 1
           fi
 
           echo "Current working directory: $(pwd)"
