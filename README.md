@@ -66,12 +66,12 @@ Before password verification, seed decryption, or private key derivation occurs,
 ## Threat Model
 
 ### Protected (Assuming Wallet Application is Uncompromised)
-* IndexedDB storage extraction (data encrypted at rest with AES-256-GCM).
+* IndexedDB storage extraction (data encrypted at rest with XChaCha20-Poly1305).
 * Plaintext credential persistence.
 * Ciphertext modification or context swapping (protected by AAD).
 * Incorrect network context or malformed transaction parameters (caught by intent verifier).
 * Accidental private-key retention in React state or global variables.
-* Offline password guessing (resisted by Argon2id memory-hard hashing and random salts).
+* Offline password guessing (resisted by memory-hard key derivation implemented within the Rusty Kaspa SDK).
 
 ### Not Guaranteed (Out of Scope)
 * Compromised operating system or rooted/fully compromised physical device.
@@ -88,7 +88,7 @@ Before password verification, seed decryption, or private key derivation occurs,
 * **Frontend:** React 18, TypeScript, Vite, Tailwind CSS
 * **Animations:** Motion (`motion/react`)
 * **Icons:** Lucide React
-* **Cryptography & Signing:** Web Crypto API (`window.crypto.subtle`), Rusty Kaspa SDK (`@kasdk/web`), `@noble/secp256k1`, `@scure/bip32`, `@scure/bip39`, `@noble/hashes`
+* **Cryptography & Signing:** Rusty Kaspa SDK (`@kasdk/web`), `@noble/secp256k1`, `@scure/bip32`, `@scure/bip39`, `@noble/hashes`
 * **Kaspa Core & Protocol:** Pure JavaScript / TypeScript signing engine and Bech32 address encoder, `@kaspa/core-lib`, direct real Kaspa node REST/RPC integration. Transaction, address, and fee logic follow Kaspa protocol rules with high-performance client-side Schnorr signing.
 
 ---
