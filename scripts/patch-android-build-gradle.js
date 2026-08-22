@@ -50,9 +50,14 @@ if (fs.existsSync(gradleFile)) {
     modified = true;
   }
 
+  if (!appGradle.includes('compilerArgs')) {
+    appGradle += `\n\ntasks.withType(JavaCompile).configureEach {\n    options.compilerArgs.addAll([\n        '--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED',\n        '--add-opens=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED'\n    ])\n}\n`;
+    modified = true;
+  }
+
   if (modified) {
     fs.writeFileSync(gradleFile, appGradle, 'utf8');
-    console.log('[Gradle Patch] Patched android/app/build.gradle with compileOptions and Room dependencies.');
+    console.log('[Gradle Patch] Patched android/app/build.gradle with compileOptions, Room dependencies, and compilerArgs.');
   }
 }
 
