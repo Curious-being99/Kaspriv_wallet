@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { decryptWithPassword, buildAadContext } from '../utils/crypto';
 import { IsolatedSigner } from '../utils/IsolatedSigner';
-import { X, FileCode, Check, Copy, Lock, Eye, EyeOff } from 'lucide-react';
+import { X, FileCode, Check, Copy, Lock, Eye, EyeOff, Fingerprint } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 
@@ -193,6 +193,18 @@ export const SignMessageModal: React.FC = () => {
                 </button>
               </div>
             </div>
+          )}
+
+          {isBiometricsEnabled && (
+            <button
+              type="button"
+              onClick={handleSign}
+              disabled={!message.trim()}
+              className="w-full flex items-center justify-center gap-1.5 py-1 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              <Fingerprint className="w-3.5 h-3.5 text-[#70C7BA]" />
+              <span>Tap to unlock with Biometrics</span>
+            </button>
           )}
 
           <button

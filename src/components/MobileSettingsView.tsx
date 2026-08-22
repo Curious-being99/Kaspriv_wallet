@@ -441,7 +441,7 @@ export const MobileSettingsView: React.FC = () => {
             </div>
           ) : !isBiometricsSupported ? (
             <div className="p-3 rounded-2xl bg-[#090D12] border border-[#212B38]/50 text-[10px] text-slate-400 leading-relaxed">
-              Platform biometric authenticator (WebAuthn) is not available or supported in this browser context.
+              Native biometric hardware (Android Keystore / Secure Enclave) is not available or supported in this browser context.
             </div>
           ) : isBiometricsEnabled ? (
             <div className="flex items-center justify-between p-3 rounded-2xl bg-[#090D12] border border-[#212B38]/50">

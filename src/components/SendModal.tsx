@@ -129,6 +129,17 @@ export const SendModal: React.FC = () => {
     }
   }, [isSendOpen, activeWallet, isPasswordEnabled, handleAddressChange]);
 
+  // Auto-trigger biometrics when confirmation step is shown
+  useEffect(() => {
+    if (isSendOpen && isConfirmingStep && isBiometricsEnabled && !successTx && !isSending) {
+      const timer = setTimeout(() => {
+        handleBiometricSign();
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSendOpen, isConfirmingStep, isBiometricsEnabled, successTx]);
+
   const getMnemonicForSigning = async (): Promise<string | null> => {
     if (activeWallet?.mnemonic) {
       return activeWallet.mnemonic;
@@ -1048,10 +1059,10 @@ export const SendModal: React.FC = () => {
                     type="button"
                     onClick={handleBiometricSign}
                     disabled={isSending || isAuthenticatingBiometrics}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#70C7BA]/15 hover:bg-[#70C7BA]/25 text-[#70C7BA] border border-[#70C7BA]/30 text-xs font-bold transition-all cursor-pointer shadow-md shadow-[#70C7BA]/10 active:scale-[0.98]"
+                    className="w-full flex items-center justify-center gap-1.5 py-1 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
                   >
-                    <Fingerprint className="w-4 h-4 text-[#70C7BA]" />
-                    <span>{isAuthenticatingBiometrics ? 'Verifying Hardware Biometrics...' : 'Authorize & Sign with Hardware Biometrics'}</span>
+                    <Fingerprint className="w-3.5 h-3.5 text-[#70C7BA]" />
+                    <span>Tap to unlock with Biometrics</span>
                   </button>
                 )}
 

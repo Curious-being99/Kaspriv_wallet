@@ -12,6 +12,7 @@ export const ScanModal: React.FC = () => {
     setIsSendOpen,
     network,
     showToast,
+    isLocked,
   } = useWallet();
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -24,6 +25,13 @@ export const ScanModal: React.FC = () => {
   const containerId = 'kaspriv-qr-reader';
   const isStoppingRef = useRef(false);
   const isStartingRef = useRef(false);
+
+  // Close the scanner immediately if the wallet gets locked
+  useEffect(() => {
+    if (isLocked && isScanOpen) {
+      setIsScanOpen(false);
+    }
+  }, [isLocked, isScanOpen, setIsScanOpen]);
 
   const stopScanner = React.useCallback(async () => {
     if (html5QrCodeRef.current && !isStoppingRef.current) {

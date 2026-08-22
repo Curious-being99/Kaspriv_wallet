@@ -3755,27 +3755,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const ok = await unlockWallet(authRes.decryptedPassword);
         if (ok) {
           unifiedAuthService.completeUnlock('biometrics');
-          if (authRes.isLegacyRecord) {
-            try {
-              const upgradedRecord = await registerBiometricUnlock(authRes.decryptedPassword);
-              await saveSetting('wallet_biometric_credential', upgradedRecord);
-            } catch {
-              // Legacy migration retry deferred
-            }
-          }
         }
         return ok;
-      } else if (authRes.mode === 'presence') {
-        if (password) {
-          const ok = await unlockWallet(password);
-          if (ok) {
-            unifiedAuthService.completeUnlock('biometrics');
-          }
-          return ok;
-        }
-        unifiedAuthService.failAuthentication('Presence verified, password required');
-        showToast('Biometrics verified (Presence mode). Please enter password to complete unlock.', 'info');
-        return false;
       }
       unifiedAuthService.failAuthentication('Biometric authentication failed');
       return false;
