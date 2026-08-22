@@ -86,14 +86,11 @@ jobs:
       - name: Stage APK Files
         run: |
           mkdir -p release-apks
-          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk release-apks/KasPriv-Wallet-Release.apk
-          elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
-            cp android/app/build/outputs/apk/release/app-release-unsigned.apk release-apks/KasPriv-Wallet-Release.apk
-          fi
-          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            cp android/app/build/outputs/apk/debug/app-debug.apk release-apks/KasPriv-Wallet-Debug.apk
-          fi
+          # Find all release apk files and copy them (preferring release over unsigned)
+          find android/app/build/outputs/apk/release/ -name "app-release.apk" -exec cp {} release-apks/KasPriv-Wallet-Release.apk \; || \
+          find android/app/build/outputs/apk/release/ -name "app-release-unsigned.apk" -exec cp {} release-apks/KasPriv-Wallet-Release.apk \; || true
+          # Find all debug apk files and copy them
+          find android/app/build/outputs/apk/debug/ -name "app-debug.apk" -exec cp {} release-apks/KasPriv-Wallet-Debug.apk \; || true
           ls -lh release-apks/
 
       - name: Upload APK Artifacts
