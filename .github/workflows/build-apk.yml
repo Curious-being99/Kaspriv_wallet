@@ -100,7 +100,8 @@ jobs:
           
           echo "Starting Gradle Build..."
           # Attempt to build, capturing EVERYTHING, no matter the exit code
-          ./gradlew assembleDebug assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace --info > ../gradle_full.log 2>&1
+          # We use '|| true' or similar to ensure we reach the 'cat' command even on failure
+          ./gradlew assembleDebug assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace --info > ../gradle_full.log 2>&1 || BUILD_FAILED=true
           
           # Print the full log regardless of success/failure so it's in the GitHub Actions UI
           echo "========== FULL GRADLE LOG START =========="
@@ -108,8 +109,8 @@ jobs:
           echo "========== FULL GRADLE LOG END =========="
           
           # Now check if it actually succeeded
-          if [ ! -d "app/build/outputs/apk" ]; then
-            echo "Build FAILED: APK output directory was not created."
+          if [ "$BUILD_FAILED" = "true" ] || [ ! -d "app/build/outputs/apk" ]; then
+            echo "Build FAILED: Gradle build returned an error or APK output directory was not created."
             exit 1
           fi
 
