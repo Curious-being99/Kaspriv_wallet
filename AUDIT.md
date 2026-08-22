@@ -185,7 +185,7 @@ The audit successfully identified key cryptographic and software design vectors.
 * **Finding:** `kasToSompi` previously performed `Math.round(kas * Number(SOMPI_PER_KAS))` on numeric inputs, exposing calculations to IEEE-754 precision errors. In addition, encrypted wallet records were fed directly to Argon2id without upfront format and length validation.
 * **Mitigation:**
   - **Zero Floating-Point Conversion:** Replaced all float math with string-based decimal splitting and exact `BigInt` scaling.
-  - **Pre-Argon2 Validation:** Added `validateEncryptedRecord` in `src/utils/crypto.ts` to validate ciphertext formats, salt/IV lengths, and boundaries prior to executing memory-hard key derivation.
+  - **Pre-Execution Validation:** Added `validateEncryptedRecord` in `src/utils/crypto.ts` to validate ciphertext formats and record boundaries prior to executing key derivation.
 
 ---
 
@@ -214,7 +214,7 @@ The audit successfully identified key cryptographic and software design vectors.
 
 | Module | Hardening Target | Status | Notes |
 | :--- | :--- | :--- | :--- |
-| `src/utils/crypto.ts` | Strict Hex & Record Format Validation | **ACTIVE / MITIGATED** | Odd-length/non-hex rejected; pre-Argon2 sanity validation active |
+| `src/utils/crypto.ts` | Strict Hex & Record Format Validation | **ACTIVE / MITIGATED** | Odd-length/non-hex rejected; pre-KDF sanity validation active |
 | `src/utils/kaspa/address.ts` | Canonical Bit-Alignment & Strict Colons | **ACTIVE / MITIGATED** | Zero padding verified; network prefixes strictly validated |
 | `src/utils/kaspa/units.ts` | Zero-Float String Decimal & BigInt Precision | **ACTIVE / MITIGATED** | Direct string splitting; no IEEE-754 rounding operations |
 | `src/utils/IsolatedSigner.ts` | Zero-Tolerance Intent & Output Verification | **ACTIVE / MITIGATED** | Network-aware scripts, duplicate input rejection, deep freeze |
@@ -237,7 +237,7 @@ The audit successfully identified key cryptographic and software design vectors.
    - The "no fallback" biometric enforcement strictly requires Android Keystore / StrongBox hardware backing for native builds. On web builds, WebAuthn PRF and user presence assertions are leveraged.
 
 4. **Hardware Key Wrapping Enclave Realities:**
-   - Hardware key wrapping is bound by the native mobile hardware security module (StrongBox/TEE). Software helpers provide authenticated context binding with Argon2id and AES-GCM.
+   - Hardware key wrapping is bound by the native mobile hardware security module (StrongBox/TEE). Software helpers provide authenticated context binding with XChaCha20-Poly1305 and authoritative SDK key derivation.
 
 ---
 

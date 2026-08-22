@@ -76,7 +76,7 @@ export function wipeStringArray(values: string[] | null | undefined): void {
  */
 
 // KDF & Cipher Specification Version
-export const KDF_SPEC_VERSION = 'v1.0.0-argon2id-aes256gcm';
+export const KDF_SPEC_VERSION = 'v1.1.0-rusty-kaspa-xchacha20poly1305';
 
 // AAD Context Binding
 export const AAD_CONTEXT = "KASPRIV-WALLET-v1|KASPA-MAINNET|MNEMONIC";
@@ -84,7 +84,7 @@ export const HARDWARE_KEYSTORE_BINDING_AAD = "KASPRIV-WALLET-v1|ANDROID-KEYSTORE
 
 /**
  * Hardware Keystore Master Key Wrapper
- * Wraps or unwraps a vault master key using a hardware-bound AES-256-GCM context.
+ * Wraps or unwraps a vault master key using a hardware-bound XChaCha20-Poly1305 context.
  * Binds the vault encryption key directly to the physical silicon chip (TEE / StrongBox) of the device.
  */
 export async function wrapKeyWithHardwareKeystore(

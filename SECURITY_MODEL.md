@@ -64,7 +64,7 @@ export async function saveWalletToDB(wallet: Wallet) {
 }
 ```
 
-* **Hot Wallets**: Store only the AES-256-GCM ciphertext (`encryptedMnemonic`), salt, IV, and public address context.
+* **Hot Wallets**: Store only the XChaCha20-Poly1305 ciphertext (`encryptedMnemonic`), salt, and context.
 * **Watch-Only Wallets**: Store only public addresses or extended public keys (`kpub`), with send/sign capabilities permanently disabled in both UI and core logic.
 
 ---
@@ -120,8 +120,8 @@ Before password verification, seed decryption, or private key derivation occurs,
 * **Pure Native Cryptographic Runtime**: Kaspriv uses pure JavaScript/TypeScript cryptographic primitives (`@noble/secp256k1`, `@scure/bip32`, `@scure/bip39`, and `@noble/hashes`) along with `@kaspa/core-lib` for HD derivation, Schnorr signing, and transaction construction.
 * **No WASM Postinstall Dependency**: Operates cleanly without fragile postinstall patching (`kaspa-wasm`) scripts or binary WASM runtime hacks, ensuring seamless compatibility across mobile WebView, Node.js, and desktop browsers.
 * **Protocol & Signing Runtime**: Transaction, address, and fee logic are strictly written to follow Kaspa protocol rules with high-performance client-side Schnorr signing and direct real Kaspa node broadcasting.
-* **Native Web Crypto**: AES-256-GCM encryption/decryption is performed by browser-native C++ implementations via `window.crypto.subtle`.
-* **Memory-Hard KDF**: Argon2id memory-hard key derivation is powered by `hash-wasm` using WebAssembly memory constraints (128 MiB).
+* **Native Web Crypto**: Encryption/decryption is performed by the official Rusty Kaspa SDK (compiled to WASM).
+* **High-Performance KDF**: Key derivation is handled internally by the Rusty Kaspa SDK using high-performance cryptographic standards.
 
 ---
 
@@ -141,12 +141,12 @@ For a mobile web wallet, JavaScript supply-chain integrity and runtime hardening
 ## 6. Threat Model
 
 ### Protected (Assuming Wallet Application is Uncompromised)
-* IndexedDB storage extraction (data is encrypted at rest with AES-256-GCM).
+* IndexedDB storage extraction (data is encrypted at rest with XChaCha20-Poly1305).
 * Plaintext credential persistence.
-* Ciphertext modification or context swapping (protected by AAD).
+* Ciphertext modification or context swapping (protected by Poly1305 MAC).
 * Incorrect network context or malformed transaction parameters (caught by intent verifier).
 * Accidental private-key retention in React state or global variables.
-* Offline password guessing (resisted by Argon2id memory-hard hashing and random salts).
+* Offline password guessing (resisted by internal SDK key derivation and random salts).
 
 ### Not Guaranteed (Out of Scope)
 * Compromised operating system or rooted/fully compromised physical device.
@@ -168,9 +168,9 @@ For a mobile web wallet, JavaScript supply-chain integrity and runtime hardening
        ↓
 [ Password Input ]
        ↓
-[ Argon2id KDF ] (Memory-hard derivation of 256-bit AES Key)
+[ SDK-Internal KDF ] (Authoritative Rusty Kaspa key derivation)
        ↓
-[ AES-256-GCM + AAD Validation ] (Decrypt mnemonic inside isolated scope)
+[ XChaCha20-Poly1305 + AAD Validation ] (Decrypt mnemonic inside isolated scope)
        ↓
 [ Derive Signing Key & Kaspa Schnorr Signing ] (Executed via Kaspa WASM core)
        ↓
