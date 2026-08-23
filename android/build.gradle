@@ -25,16 +25,18 @@ allprojects {
 }
 
 task clean(type: Delete) {
-    delete rootProject.buildDir
+    delete rootProject.layout.buildDirectory
 }
 
 subprojects {
     afterEvaluate { project ->
         if (project.hasProperty("android")) {
-            android {
-                lintOptions {
-                    abortOnError false
-                    checkReleaseBuilds false
+            project.android {
+                if (project.android.hasProperty("lintOptions")) {
+                    lintOptions {
+                        abortOnError false
+                        checkReleaseBuilds false
+                    }
                 }
             }
         }

@@ -64,15 +64,6 @@ jobs:
 
       - name: Grant Execute Permissions for Gradle
         run: |
-          mkdir -p temp-gradle
-          cd temp-gradle
-          touch settings.gradle
-          gradle wrapper --gradle-version 8.10.2
-          cd ..
-          cp temp-gradle/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/gradle-wrapper.jar
-          cp temp-gradle/gradle/wrapper/gradle-wrapper.properties android/gradle/wrapper/gradle-wrapper.properties
-          cp temp-gradle/gradlew android/gradlew
-          rm -rf temp-gradle
           chmod +x android/gradlew
 
       - name: Build Android APK
@@ -84,19 +75,22 @@ jobs:
         run: |
           cd android
           
-          # Create debug.keystore if it does not exist yet
+          # Ensure a fallback debug.keystore exists in app/
           if [ ! -f "app/debug.keystore" ]; then
-            keytool -genkeypair -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -storetype PKCS12
+            keytool -genkeypair -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -storetype PKCS12 -noprompt
           fi
+
+          GRADLE_ARGS=""
 
           # Handle Production Signing if Secrets are present
           if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
             echo "Release signing keystore secret detected. Decoding to app/release.keystore..."
-            echo "$RELEASE_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > app/release.keystore
+            echo "$RELEASE_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > app/release.keystore
             export RELEASE_STORE_FILE="release.keystore"
             export RELEASE_STORE_PASSWORD="${RELEASE_STORE_PASSWORD:-$RELEASE_KEY_PASSWORD}"
-            export RELEASE_KEY_ALIAS="$(echo "${RELEASE_KEY_ALIAS:-key0}" | tr -d '[:space:]')"
+            export RELEASE_KEY_ALIAS="$(echo "${RELEASE_KEY_ALIAS:-key0}" | tr -d '\r\n ')"
             export RELEASE_KEY_PASSWORD="${RELEASE_KEY_PASSWORD:-$RELEASE_STORE_PASSWORD}"
+            GRADLE_ARGS="-PRELEASE_STORE_FILE=release.keystore -PRELEASE_STORE_PASSWORD=$RELEASE_STORE_PASSWORD -PRELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS -PRELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD"
             echo "Release keystore initialized successfully."
           else
             echo "No custom release signing secret found in GitHub Secrets. Using debug signing profile for build."
@@ -109,18 +103,7 @@ jobs:
           ./gradlew --version
           
           echo "Starting Gradle Release Build..."
-          ./gradlew assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace --info > ../gradle_full.log 2>&1 || BUILD_FAILED=true
-          
-          # Print the full log regardless of success/failure so it's directly visible in GitHub Actions
-          echo "========== FULL GRADLE LOG START =========="
-          cat ../gradle_full.log
-          echo "========== FULL GRADLE LOG END =========="
-          
-          # Check if build completed
-          if [ "$BUILD_FAILED" = "true" ]; then
-            echo "Build FAILED: Gradle assembleRelease task failed."
-            exit 1
-          fi
+          ./gradlew assembleRelease $GRADLE_ARGS -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace
 
       - name: Stage APK Files
         run: |

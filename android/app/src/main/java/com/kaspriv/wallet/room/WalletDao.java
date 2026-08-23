@@ -37,7 +37,4 @@ public interface WalletDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertTransaction(TransactionEntity transaction);
-
-    @RawQuery
-    int executeRawWrite(SupportSQLiteQuery query);
 }
