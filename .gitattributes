@@ -1,0 +1,14 @@
+# Auto detect text files and perform LF normalization
+* text=auto eol=lf
+
+# Explicit binary files
+*.jar binary
+*.keystore binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.wasm binary
+*.zip binary
+*.so binary
+*.aar binary

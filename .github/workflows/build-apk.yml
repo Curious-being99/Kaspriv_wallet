@@ -62,8 +62,14 @@ jobs:
             keytool -genkeypair -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -storetype PKCS12
           fi
 
-      - name: Grant Execute Permissions for Gradle
+      - name: Verify and Setup Gradle Wrapper
         run: |
+          mkdir -p android/gradle/wrapper
+          # Ensure wrapper jar is valid; re-fetch official binary if missing or corrupted by git checkout
+          if [ ! -f "android/gradle/wrapper/gradle-wrapper.jar" ] || [ $(wc -c < "android/gradle/wrapper/gradle-wrapper.jar") -lt 10000 ]; then
+            echo "Downloading fresh official Gradle wrapper jar..."
+            curl -sSL "https://raw.githubusercontent.com/gradle/gradle/v8.10.2/gradle/wrapper/gradle-wrapper.jar" -o android/gradle/wrapper/gradle-wrapper.jar
+          fi
           chmod +x android/gradlew
 
       - name: Build Android APK
@@ -94,6 +100,12 @@ jobs:
             echo "Release keystore initialized successfully."
           else
             echo "No custom release signing secret found in GitHub Secrets. Using debug signing profile for build."
+          fi
+
+          # Ensure Gradle wrapper jar is valid before running gradlew
+          if ! java -jar gradle/wrapper/gradle-wrapper.jar --version > /dev/null 2>&1; then
+            echo "Re-fetching official Gradle wrapper jar..."
+            curl -sSL "https://raw.githubusercontent.com/gradle/gradle/v8.10.2/gradle/wrapper/gradle-wrapper.jar" -o gradle/wrapper/gradle-wrapper.jar
           fi
 
           echo "Current working directory: $(pwd)"
