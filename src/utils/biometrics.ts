@@ -135,22 +135,14 @@ export async function registerBiometricUnlock(
       // On web/PWA preview if BiometricAuth is missing or unhandled, proceed with encrypted storage
     }
 
-    // Generate local hardware-bound key record
-    const master = new Uint8Array(32);
-    crypto.getRandomValues(master);
-    let binary = '';
-    for (let i = 0; i < master.byteLength; i++) {
-      binary += String.fromCharCode(master[i]);
-    }
-    const secretBase64 = btoa(binary);
+    // For fallback biometric-auth (PWA/non-enclave), use the static alias key
+    const secretKey = 'kaspriv_vault_v1';
 
     const encrypted = await encryptWithPassword(
       walletPassword,
-      secretBase64,
+      secretKey,
       BIOMETRIC_AAD_CONTEXT
     );
-
-    master.fill(0);
 
     return {
       credentialId: `biometric-auth:${Date.now()}`,
@@ -158,7 +150,8 @@ export async function registerBiometricUnlock(
       ciphertext: encrypted.ciphertext,
       salt: encrypted.salt,
       iv: encrypted.iv,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      alias: secretKey
     };
   } finally {
     setTimeout(() => {

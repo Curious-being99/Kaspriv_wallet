@@ -61,6 +61,13 @@ export function kasToSompi(kas: number | string | bigint): bigint {
   const wholePart = parts[0] || '0';
   const fracPart = parts[1] || '';
 
+  if (fracPart.length > 8) {
+    const extraFrac = fracPart.slice(8);
+    if (/[1-9]/.test(extraFrac)) {
+      throw new Error('Kaspa amounts cannot exceed 8 decimal places (sompi precision limit)');
+    }
+  }
+
   const wholeSompi = BigInt(wholePart) * SOMPI_PER_KAS;
   const paddedFrac = fracPart.padEnd(8, '0').slice(0, 8);
   const fracSompi = BigInt(paddedFrac);

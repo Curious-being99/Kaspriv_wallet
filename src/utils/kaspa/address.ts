@@ -230,13 +230,10 @@ export function parseKaspaUri(uriString: string): { address: string; amountKas?:
  * Helper to convert a Kaspa address into a scriptPublicKey bytes
  */
 export function addressToScriptPublicKeyBytes(address: string, network: NetworkType = 'mainnet'): Uint8Array {
-  if (!address) return new Uint8Array(0);
-  const trimmed = address.trim();
-
-  // If already hex scriptPublicKey
-  if (/^[0-9a-fA-F]+$/.test(trimmed) && (trimmed.length === 68 || trimmed.length === 70)) {
-    return Buffer.from(trimmed, 'hex');
+  if (!address || typeof address !== 'string') {
+    throw new Error('Address is required');
   }
+  const trimmed = address.trim();
 
   const validation = validateKaspaAddress(trimmed, network);
   if (!validation.isValid) {
@@ -297,4 +294,10 @@ export function generateRandomKaspaAddress(prefix: string = 'kaspa:'): string {
   const payload = new Uint8Array(32);
   crypto.getRandomValues(payload);
   return encodeKaspaAddress(prefix.replace(':', ''), VERSION_P2PKH, payload);
+}
+
+export function getAddressPrefix(network: NetworkType): string {
+  if (network === 'mainnet') return 'kaspa';
+  if (network === 'devnet') return 'kaspadev';
+  return 'kaspatest';
 }

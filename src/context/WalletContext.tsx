@@ -64,6 +64,7 @@ import {
   generate24WordMnemonic,
   generateDeterministicAddress,
   getAddressFromPublicKey,
+  getAddressPrefix,
   validateKaspaAddress,
   SOMPI_PER_KAS,
   fetchKaspaPrice,
@@ -1529,7 +1530,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               const maxIdx = receiveAddressesList.reduce((max, item) => Math.max(max, item.idx), 0);
               const nextIdx = maxIdx + 1;
               const networkType = wallet.addressType || 'P2PKH';
-              const prefix = networkRef.current === 'mainnet' ? 'kaspa' : networkRef.current === 'testnet-10' ? 'kaspatest' : 'kaspadev';
+              const prefix = getAddressPrefix(networkRef.current);
               const nextPath = `m/44'/111111'/0'/0/${nextIdx}`;
               
               try {
@@ -1627,7 +1628,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               const maxIdx = changeAddressesList.reduce((max, item) => Math.max(max, item.idx), 0);
               const nextIdx = maxIdx + 1;
               const networkType = wallet.addressType || 'P2PKH';
-              const prefix = networkRef.current === 'mainnet' ? 'kaspa' : networkRef.current === 'testnet-10' ? 'kaspatest' : 'kaspadev';
+              const prefix = getAddressPrefix(networkRef.current);
               const nextPath = `m/44'/111111'/0'/1/${nextIdx}`;
               
               try {
@@ -2016,7 +2017,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const createNewWallet = async (name: string, mnemonicWords?: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string, duressPassword?: string): Promise<Wallet> => {
     const words = mnemonicWords && mnemonicWords.length === 24 ? mnemonicWords : generate24WordMnemonic();
-    const prefix = network === 'mainnet' ? 'kaspa' : network === 'testnet-10' ? 'kaspatest' : 'kaspadev';
+    const prefix = getAddressPrefix(network);
     let mStr = cleanMnemonic(words.join(' '));
     
     let scanRes;
@@ -2292,7 +2293,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setIndexingState({ isIndexing: true, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
 
     try {
-      const prefix = network === 'mainnet' ? 'kaspa' : network === 'testnet-10' ? 'kaspatest' : 'kaspadev';
+      const prefix = getAddressPrefix(network);
       const scanRes = await scanKaspaWalletChain(
         seedToUse,
         passToUse,
@@ -2399,7 +2400,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const importSeedWallet = async (name: string, words: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string, duressPassword?: string): Promise<Wallet> => {
-    const prefix = network === 'mainnet' ? 'kaspa' : network === 'testnet-10' ? 'kaspatest' : 'kaspadev';
+    const prefix = getAddressPrefix(network);
     let mStr = cleanMnemonic(words.join(' '));
     const cleanedWords = mStr.split(' ');
     
@@ -2563,7 +2564,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const importKpubWallet = async (name: string, kpubOrAddress: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string, duressPassword?: string): Promise<Wallet> => {
-    const prefix = network === 'mainnet' ? 'kaspa' : network === 'testnet-10' ? 'kaspatest' : 'kaspadev';
+    const prefix = getAddressPrefix(network);
     const isDirectAddress = kpubOrAddress.includes(':') || kpubOrAddress.length > 50; // Simple heuristic
     
     let targetAddress: string;
@@ -2903,7 +2904,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       if (seedToUse) {
         try {
-          const prefix = network === 'mainnet' ? 'kaspa' : network === 'testnet-10' ? 'kaspatest' : 'kaspadev';
+          const prefix = getAddressPrefix(network);
           const paths = activeWallet.addressPaths || {};
           const allDiscovered = activeWallet.discoveredAddresses || [activeWallet.receiveAddress];
 
@@ -2958,7 +2959,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           );
         } catch {
           effectiveChangeAddress = activeWallet.changeAddress || activeWallet.receiveAddress;
-          effectiveChangePath = activeWallet.addressPaths?.[effectiveChangeAddress] || "m/44'/111111'/0'/1/0";
+          effectiveChangePath = activeWallet.addressPaths?.[effectiveChangeAddress] || (effectiveChangeAddress === activeWallet.receiveAddress ? "m/44'/111111'/0'/0/0" : "m/44'/111111'/0'/1/0");
         }
       } else if (!effectiveChangeAddress) {
         effectiveChangeAddress = activeWallet.receiveAddress;
@@ -3039,7 +3040,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               amountSompi: changeSompi,
               address: effectiveChangeAddress || activeWallet.receiveAddress,
               blockDaaScore: 0,
-              derivationPath: effectiveChangePath || activeWallet.addressPaths?.[effectiveChangeAddress || activeWallet.receiveAddress] || "m/44'/111111'/0'/1/0",
+              derivationPath: effectiveChangePath || activeWallet.addressPaths?.[effectiveChangeAddress || activeWallet.receiveAddress] || (effectiveChangeAddress === activeWallet.receiveAddress ? "m/44'/111111'/0'/0/0" : "m/44'/111111'/0'/1/0"),
               timestamp: nowSpent,
             };
             setLocalPendingChangeUtxos((prev) => [...prev, pendingChange]);
@@ -3066,7 +3067,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 amountSompi: changeSompi,
                 address: effectiveChangeAddress || activeWallet.receiveAddress,
                 blockDaaScore: 0,
-                derivationPath: effectiveChangePath || activeWallet.addressPaths?.[effectiveChangeAddress || activeWallet.receiveAddress] || "m/44'/111111'/0'/1/0",
+                derivationPath: effectiveChangePath || activeWallet.addressPaths?.[effectiveChangeAddress || activeWallet.receiveAddress] || (effectiveChangeAddress === activeWallet.receiveAddress ? "m/44'/111111'/0'/0/0" : "m/44'/111111'/0'/1/0"),
               };
               const updated = [...unspent, pendingChange];
               saveUtxosToDB(activeWallet.id, updated).catch(() => {});
@@ -3865,7 +3866,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return null;
     }
 
-    const prefix = network === 'mainnet' ? 'kaspa' : network === 'testnet-10' ? 'kaspatest' : 'kaspadev';
+    const prefix = getAddressPrefix(network);
     const addressType = activeWallet.addressType || 'P2PKH';
 
     let maxRecvIdx = 0;

@@ -365,6 +365,7 @@ export const NodeManagerModal: React.FC = () => {
                       >
                         <option value="mainnet">Mainnet</option>
                         <option value="testnet-10">Testnet-10</option>
+                        <option value="testnet-11">Testnet-11</option>
                         <option value="devnet">Devnet</option>
                       </select>
                     </div>

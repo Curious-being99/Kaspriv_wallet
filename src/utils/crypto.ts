@@ -190,34 +190,11 @@ export async function encryptWithPassword(
     if (ciphertext) {
       return { ciphertext, salt: '', iv: '' };
     }
-  } catch (err) {
-    console.warn('WASM XChaCha20Poly1305 encryption error, using Web Crypto fallback:', err);
+  } catch (err: any) {
+    throw new Error(`CRITICAL: Rusty Kaspa WASM XChaCha20Poly1305 encryption failed: ${err?.message || err}. Refusing silent fallback to Web Crypto.`);
   }
 
-  // Resilient Web Crypto AES-256-GCM fallback
-  const crypto = getCrypto();
-  const salt = new Uint8Array(16);
-  crypto.getRandomValues(salt);
-  const iv = new Uint8Array(12);
-  crypto.getRandomValues(iv);
-
-  const key = await deriveKeyWebCrypto(password, salt);
-  const enc = new TextEncoder();
-  const ciphertextBuf = await crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv: iv as unknown as BufferSource,
-      additionalData: enc.encode(context) as unknown as BufferSource
-    },
-    key,
-    enc.encode(plaintext) as unknown as BufferSource
-  );
-
-  return {
-    ciphertext: bytesToHex(new Uint8Array(ciphertextBuf)),
-    salt: bytesToHex(salt),
-    iv: bytesToHex(iv)
-  };
+  throw new Error('CRITICAL: WASM encryption produced empty ciphertext.');
 }
 
 export async function decryptWithPassword(

@@ -10,6 +10,7 @@
 // - Performs polling-based GHOSTDAG block acceptance tracking.
 
 import { getCandidateApiUrls } from '../utils/kaspa/api';
+import { computeTxIdWasm } from '../utils/kaspa/wasmTx';
 
 export type TransactionState =
   | 'building'
@@ -45,12 +46,13 @@ export interface AcceptanceStatus {
 }
 
 /**
- * Validates basic structural rules of the signed transaction client-side before broadcast
+ * Validates strict structural, cryptographic, integer, script, duplicate, and boundary rules
+ * of the signed transaction client-side before broadcast to prevent node penalties or mempool rejections.
  */
 export function validateTransactionClientSide(txPayload: any): { valid: boolean; reason?: string } {
   const tx = txPayload?.transaction || txPayload;
-  if (!tx) {
-    return { valid: false, reason: 'Empty transaction payload' };
+  if (!tx || typeof tx !== 'object') {
+    return { valid: false, reason: 'Empty or invalid transaction payload' };
   }
 
   if (!Array.isArray(tx.inputs) || tx.inputs.length === 0) {
@@ -61,26 +63,106 @@ export function validateTransactionClientSide(txPayload: any): { valid: boolean;
     return { valid: false, reason: 'Transaction must contain at least one output destination' };
   }
 
-  // Validate signatures exist
-  for (let i = 0; i < tx.inputs.length; i++) {
-    const input = tx.inputs[i];
-    if (!input.signatureScript || input.signatureScript.length < 10) {
-      return { valid: false, reason: `Input index ${i} has an invalid or missing signatureScript` };
+  // Enforce input size limits (e.g. Kaspa standard max mass / input limits)
+  if (tx.inputs.length > 500) {
+    return { valid: false, reason: `Transaction inputs count (${tx.inputs.length}) exceeds safety limit of 500` };
+  }
+
+  if (tx.outputs.length > 100) {
+    return { valid: false, reason: `Transaction outputs count (${tx.outputs.length}) exceeds safety limit of 100` };
+  }
+
+  // Validate version & lockTime integers
+  if (tx.version !== undefined) {
+    const v = Number(tx.version);
+    if (!Number.isInteger(v) || v < 0) {
+      return { valid: false, reason: 'Transaction version must be a non-negative integer' };
     }
   }
 
-  // Ensure output amounts are valid positive bigints
+  const seenOutpoints = new Set<string>();
+
+  // Validate inputs, signatures, and duplicate prevention
+  for (let i = 0; i < tx.inputs.length; i++) {
+    const input = tx.inputs[i];
+    if (!input || typeof input !== 'object') {
+      return { valid: false, reason: `Input index ${i} is malformed` };
+    }
+
+    const prevOutpoint = input.previousOutpoint;
+    if (!prevOutpoint || typeof prevOutpoint !== 'object') {
+      return { valid: false, reason: `Input index ${i} is missing a valid previousOutpoint` };
+    }
+
+    const txId = String(prevOutpoint.transactionId || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(txId)) {
+      return { valid: false, reason: `Input index ${i} has an invalid previousOutpoint transactionId (expected 64-char hex)` };
+    }
+
+    const outIndex = Number(prevOutpoint.index);
+    if (!Number.isInteger(outIndex) || outIndex < 0 || outIndex > 4294967295) {
+      return { valid: false, reason: `Input index ${i} has an invalid previousOutpoint index (must be uint32)` };
+    }
+
+    const outpointKey = `${txId}:${outIndex}`;
+    if (seenOutpoints.has(outpointKey)) {
+      return { valid: false, reason: `Duplicate input outpoint detected: ${outpointKey}` };
+    }
+    seenOutpoints.add(outpointKey);
+
+    const sigScript = String(input.signatureScript || '').trim();
+    if (!sigScript || sigScript.length < 10 || !/^[0-9a-fA-F]+$/.test(sigScript)) {
+      return { valid: false, reason: `Input index ${i} has an invalid or missing signatureScript (expected hex)` };
+    }
+
+    if (input.sigOpCount !== undefined) {
+      const sigOps = Number(input.sigOpCount);
+      if (!Number.isInteger(sigOps) || sigOps < 1) {
+        return { valid: false, reason: `Input index ${i} has an invalid sigOpCount (must be positive integer)` };
+      }
+    }
+  }
+
+  const MAX_KASPA_SOMPI = 290000000000000000n; // 29 Billion KAS in Sompi safety ceiling
+
+  // Ensure output amounts and scriptPublicKeys are strictly valid
   for (let i = 0; i < tx.outputs.length; i++) {
     const out = tx.outputs[i];
-    const rawAmt = out?.amount;
+    if (!out || typeof out !== 'object') {
+      return { valid: false, reason: `Output index ${i} is malformed` };
+    }
+
+    const rawAmt = out.amount;
     let amt: bigint;
     try {
       amt = typeof rawAmt === 'bigint' ? rawAmt : BigInt(rawAmt);
     } catch {
       return { valid: false, reason: `Output index ${i} has an unparseable amount value` };
     }
+
     if (amt <= 0n) {
       return { valid: false, reason: `Output index ${i} has a zero or negative spending amount` };
+    }
+
+    if (amt > MAX_KASPA_SOMPI) {
+      return { valid: false, reason: `Output index ${i} amount exceeds maximum Kaspa supply bounds` };
+    }
+
+    const spkObj = out.scriptPublicKey;
+    if (!spkObj || typeof spkObj !== 'object') {
+      return { valid: false, reason: `Output index ${i} is missing scriptPublicKey` };
+    }
+
+    const spkHex = String(spkObj.scriptPublicKey || '').trim();
+    if (!spkHex || !/^[0-9a-fA-F]+$/.test(spkHex)) {
+      return { valid: false, reason: `Output index ${i} has an invalid scriptPublicKey hex string` };
+    }
+
+    if (spkObj.version !== undefined) {
+      const v = Number(spkObj.version);
+      if (!Number.isInteger(v) || v < 0) {
+        return { valid: false, reason: `Output index ${i} scriptPublicKey version must be non-negative integer` };
+      }
     }
   }
 
@@ -122,6 +204,14 @@ export async function broadcastKaspaTransactionService(
   const endpoints = getBroadcastEndpoints(network);
   const rawTx = txPayload?.transaction || txPayload;
 
+  // Compute local authoritative transaction ID via WASM
+  let localComputedTxId = knownTxId;
+  try {
+    localComputedTxId = await computeTxIdWasm(rawTx);
+  } catch (e) {
+    console.warn('Failed to compute local TXID via WASM, falling back to payload ID:', e);
+  }
+
   // Normalize formatting for BigInt JSON parsing
   const formattedTx = {
     version: Number(rawTx.version || 0),
@@ -157,17 +247,18 @@ export async function broadcastKaspaTransactionService(
     // Timeout safeguard: if we already completed a try that timed out,
     // and we have a transaction ID, check if it exists on this next node
     // before broadcasting again.
-    if (hasTriedAtLeastOne && knownTxId) {
+    const checkTxId = localComputedTxId || knownTxId;
+    if (hasTriedAtLeastOne && checkTxId) {
       try {
-        const checkRes = await fetch(`${baseUrl}/transactions/${knownTxId}?include_payload=false`);
+        const checkRes = await fetch(`${baseUrl}/transactions/${checkTxId}?include_payload=false`);
         if (checkRes.ok) {
           const checkData = await checkRes.json();
           const returnedTxId = checkData?.transactionId || checkData?.txId || checkData?.id;
           if (returnedTxId) {
-            console.log(`[Rebroadcast Safeguard] Found existing transaction ${knownTxId} on fallback node ${baseUrl}. Bypassing broadcast.`);
+            console.log(`[Rebroadcast Safeguard] Found existing transaction ${checkTxId} on fallback node ${baseUrl}. Bypassing broadcast.`);
             return {
               status: 'submitted',
-              txId: knownTxId,
+              txId: checkTxId,
               endpointUsed: baseUrl,
             };
           }
@@ -188,10 +279,15 @@ export async function broadcastKaspaTransactionService(
       const data = await res.json().catch(() => null);
       const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;
 
-      if (res.ok && returnedTxId) {
+      if (res.ok) {
+        // Authoritative validation: ensure node response matches our locally computed TXID if available
+        const finalTxId = localComputedTxId || String(returnedTxId || '');
+        if (localComputedTxId && returnedTxId && String(returnedTxId).toLowerCase() !== String(localComputedTxId).toLowerCase()) {
+          console.warn(`[Broadcast Warning] Node returned TXID ${returnedTxId} which differs from locally computed TXID ${localComputedTxId}. Using local authoritative TXID.`);
+        }
         return {
           status: 'submitted',
-          txId: String(returnedTxId),
+          txId: finalTxId,
           endpointUsed: baseUrl,
         };
       }

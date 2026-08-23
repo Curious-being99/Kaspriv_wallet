@@ -1,13 +1,12 @@
 import { 
   getPrivateKeyBytesFromMnemonic, 
-  buildKaspaTransaction, 
-  signTransactionWithPrivateKeyBytes, 
   signKaspaMessage, 
   addressToScriptPublicKey,
   wipe,
   estimateTransactionMass,
   calculateMinFeeForInputs
 } from './kaspa';
+import { createSignedTransactionIsolatedWasm } from './kaspa/wasmTx';
 import { NetworkType } from '../types';
 
 export function deepCloneAndFreeze<T>(obj: T): T {
@@ -26,9 +25,11 @@ export function deepCloneAndFreeze<T>(obj: T): T {
     return Object.freeze(copy) as any;
   }
 
-  // Handle Uint8Array or other TypedArrays
-  if (obj instanceof Uint8Array) {
-    const copy = new Uint8Array(obj);
+  // Handle TypedArrays (Uint8Array, Int32Array, etc.)
+  if (ArrayBuffer.isView(obj)) {
+    const view = obj as unknown as Uint8Array;
+    const copy = new (obj.constructor as any)(view.length);
+    copy.set(view);
     return Object.freeze(copy) as any;
   }
 
@@ -85,6 +86,7 @@ export function verifyTransactionIntent(
       expectedPrefix = 'kaspa';
       break;
     case 'testnet-10':
+    case 'testnet-11':
       expectedPrefix = 'kaspatest';
       break;
     case 'devnet':
@@ -104,6 +106,16 @@ export function verifyTransactionIntent(
       valid: false,
       error: `Network mismatch error: Recipient address prefix '${addrPrefix}' does not match the active network '${expectedNetwork}' (expected '${expectedPrefix}:').`
     };
+  }
+
+  if (intent.changeAddress) {
+    const changePrefix = intent.changeAddress.split(':')[0];
+    if (changePrefix !== expectedPrefix) {
+      return {
+        valid: false,
+        error: `Network mismatch error: Change address prefix '${changePrefix}' does not match the active network '${expectedNetwork}' (expected '${expectedPrefix}:').`
+      };
+    }
   }
 
   // 2. Verify amount
@@ -444,31 +456,7 @@ export class IsolatedSigner {
       };
     }
 
-    // 2. Build the transaction structure.
-    let transaction: any;
-    try {
-      transaction = await buildKaspaTransaction(
-        intent.utxos,
-        intent.toAddress,
-        intent.amountSompi,
-        intent.changeAddress,
-        intent.feeSompi,
-        addressType,
-        redeemScriptHex,
-        intent.lockTime,
-        intent.network
-      );
-
-      // 3. Verify the built transaction actually matches the intent.
-      verifyBuiltTransaction(transaction, intent);
-    } catch (err: unknown) {
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : 'Transaction construction failed'
-      };
-    }
-
-    // 4. Sign the transaction in a protected scope by deriving keys for each unique UTXO path.
+    // 2. Build and sign the transaction using authoritative Kaspa WASM engine.
     const uniquePaths = Array.from(
       new Set(
         intent.utxos.map(u => {
@@ -487,12 +475,22 @@ export class IsolatedSigner {
         keysMap[path] = getPrivateKeyBytesFromMnemonic(mnemonic, passphrase, path);
       }
 
-      const signedTx = await signTransactionWithPrivateKeyBytes(
-        transaction,
-        keysMap
+      const wasmResult = await createSignedTransactionIsolatedWasm(
+        intent.utxos,
+        intent.toAddress,
+        intent.amountSompi,
+        intent.changeAddress,
+        keysMap,
+        intent.feeSompi,
+        addressType,
+        redeemScriptHex,
+        intent.lockTime
       );
 
-      // Verify the FINAL signed transaction structure, parameters, mass and fees against the intent before returning
+      const signedTx = wasmResult.transaction;
+
+      // 3. Verify the built transaction and final signed transaction against intent
+      verifyBuiltTransaction(signedTx, intent);
       await verifyFinalSignedTransaction(signedTx, intent);
 
       return {

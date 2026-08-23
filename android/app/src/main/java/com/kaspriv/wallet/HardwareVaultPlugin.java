@@ -61,7 +61,7 @@ public class HardwareVaultPlugin extends Plugin {
                     BiometricManager.from(getContext());
 
             int status = biometricManager.canAuthenticate(
-                    BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.BIOMETRIC_WEAK
+                    BiometricManager.Authenticators.BIOMETRIC_STRONG
             );
 
             String reason;
@@ -180,7 +180,7 @@ public class HardwareVaultPlugin extends Plugin {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 builder.setUserAuthenticationParameters(
                         0,
-                        KeyProperties.AUTH_BIOMETRIC_STRONG | KeyProperties.AUTH_BIOMETRIC_WEAK
+                        KeyProperties.AUTH_BIOMETRIC_STRONG
                 );
             } else {
                 builder.setUserAuthenticationValidityDurationSeconds(-1);
@@ -229,9 +229,23 @@ public class HardwareVaultPlugin extends Plugin {
             return;
         }
 
+        FragmentActivity activity = getActivity();
+        if (activity == null) {
+            call.reject("NO_ACTIVITY");
+            return;
+        }
+
         byte[] secret = null;
+        boolean wrappedOwnershipTransferred = false;
+
         try {
-            secret = Base64.decode(secretBase64, Base64.NO_WRAP);
+            try {
+                secret = Base64.decode(secretBase64, Base64.NO_WRAP);
+            } catch (IllegalArgumentException e) {
+                call.reject("INVALID_BASE64");
+                return;
+            }
+
             KeyStore keyStore = KeyStore.getInstance(ANDROID_KEYSTORE);
             keyStore.load(null);
 
@@ -244,18 +258,35 @@ public class HardwareVaultPlugin extends Plugin {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.ENCRYPT_MODE, key);
 
-            byte[] iv = cipher.getIV();
-            byte[] wrapped = cipher.doFinal(secret);
+            BiometricPrompt.CryptoObject cryptoObject =
+                    new BiometricPrompt.CryptoObject(cipher);
 
-            JSObject result = new JSObject();
-            result.put("wrappedBase64", Base64.encodeToString(wrapped, Base64.NO_WRAP));
-            result.put("ivBase64", Base64.encodeToString(iv, Base64.NO_WRAP));
+            NativeSecretOperation operation =
+                    (ciphertext, nativeCall) -> {
+                        byte[] iv = cipher.getIV();
+                        JSObject ret = new JSObject();
+                        ret.put("wrappedBase64", Base64.encodeToString(ciphertext, Base64.NO_WRAP));
+                        ret.put("ivBase64", Base64.encodeToString(iv, Base64.NO_WRAP));
+                        return ret;
+                    };
 
-            call.resolve(result);
+            prompt(
+                    activity,
+                    cryptoObject,
+                    "Register KasPriv vault",
+                    call,
+                    secret,
+                    operation
+            );
+
+            wrappedOwnershipTransferred = true;
+
         } catch (Exception e) {
             call.reject("WRAP_SECRET_FAILED");
         } finally {
-            wipe(secret);
+            if (!wrappedOwnershipTransferred) {
+                wipe(secret);
+            }
         }
     }
 
@@ -445,7 +476,7 @@ public class HardwareVaultPlugin extends Plugin {
                         .setSubtitle("Biometric authentication")
                         .setNegativeButtonText("Cancel")
                         .setAllowedAuthenticators(
-                                BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.BIOMETRIC_WEAK
+                                BiometricManager.Authenticators.BIOMETRIC_STRONG
                         )
                         .build();
 

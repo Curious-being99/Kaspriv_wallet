@@ -4,11 +4,17 @@ android {
     namespace = "com.kaspriv.wallet"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments += ["room.incremental":"false"]
+            }
+        }
+
         applicationId "com.kaspriv.wallet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -24,18 +30,36 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('RELEASE_STORE_FILE') && file(project.property('RELEASE_STORE_FILE')).exists()) {
-                storeFile file(project.property('RELEASE_STORE_FILE'))
-                storePassword project.property('RELEASE_STORE_PASSWORD')
-                keyAlias project.property('RELEASE_KEY_ALIAS')
-                keyPassword project.property('RELEASE_KEY_PASSWORD')
-            } else if (System.getenv('RELEASE_STORE_FILE') != null && file(System.getenv('RELEASE_STORE_FILE')).exists()) {
-                storeFile file(System.getenv('RELEASE_STORE_FILE'))
-                storePassword System.getenv('RELEASE_STORE_PASSWORD')
-                keyAlias System.getenv('RELEASE_KEY_ALIAS')
-                keyPassword System.getenv('RELEASE_KEY_PASSWORD')
+            def keystoreFile = null
+            def keystorePath = project.hasProperty('RELEASE_STORE_FILE') ? project.property('RELEASE_STORE_FILE') : (System.getenv('RELEASE_STORE_FILE') ?: System.getenv('KEYSTORE_FILE'))
+            if (keystorePath) {
+                def direct = file(keystorePath)
+                if (direct.exists()) {
+                    keystoreFile = direct
+                } else if (file("app/${keystorePath}").exists()) {
+                    keystoreFile = file("app/${keystorePath}")
+                } else if (rootProject.file(keystorePath).exists()) {
+                    keystoreFile = rootProject.file(keystorePath)
+                }
+            }
+            if (keystoreFile == null && file('release.keystore').exists()) {
+                keystoreFile = file('release.keystore')
+            }
+            if (keystoreFile == null && file('../app/release.keystore').exists()) {
+                keystoreFile = file('../app/release.keystore')
+            }
+
+            def storePass = project.hasProperty('RELEASE_STORE_PASSWORD') ? project.property('RELEASE_STORE_PASSWORD') : (System.getenv('RELEASE_STORE_PASSWORD') ?: System.getenv('KEYSTORE_PASSWORD') ?: System.getenv('SIGNING_STORE_PASSWORD') ?: System.getenv('STORE_PASSWORD'))
+            def keyAliasVal = project.hasProperty('RELEASE_KEY_ALIAS') ? project.property('RELEASE_KEY_ALIAS') : (System.getenv('RELEASE_KEY_ALIAS') ?: System.getenv('KEY_ALIAS') ?: System.getenv('SIGNING_KEY_ALIAS') ?: System.getenv('ALIAS'))
+            def keyPass = project.hasProperty('RELEASE_KEY_PASSWORD') ? project.property('RELEASE_KEY_PASSWORD') : (System.getenv('RELEASE_KEY_PASSWORD') ?: System.getenv('KEY_PASSWORD') ?: System.getenv('SIGNING_KEY_PASSWORD') ?: storePass)
+
+            if (keystoreFile != null && keystoreFile.exists() && storePass && keyAliasVal) {
+                storeFile keystoreFile
+                storePassword storePass
+                keyAlias keyAliasVal
+                keyPassword (keyPass ?: storePass)
             } else {
-                // Fallback to debug signing for release builds if secrets are missing (e.g. in CI)
+                // Graceful fallback to debug keystore for development / dry-run builds
                 storeFile file('debug.keystore')
                 storePassword 'android'
                 keyAlias 'androiddebugkey'
@@ -96,4 +120,20 @@ try {
     }
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
+
+
+tasks.withType(JavaCompile).configureEach {
+    options.fork = true
+    options.forkOptions.jvmArgs = [
+        '--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED',
+        '--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED',
+        '--add-opens=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED',
+        '--add-opens=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED',
+        '--add-opens=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED',
+        '--add-opens=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED',
+        '--add-opens=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED',
+        '--add-opens=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED',
+        '--add-opens=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED'
+    ]
 }
