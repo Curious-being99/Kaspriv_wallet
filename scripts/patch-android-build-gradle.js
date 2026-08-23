@@ -37,7 +37,11 @@ if (fs.existsSync(gradleFile)) {
   if (!appGradle.includes('compileOptions')) {
     appGradle = appGradle.replace(
       /buildTypes\s*\{/,
-      `compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }\n    buildTypes {`
+      `compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    buildTypes {`
     );
     modified = true;
   }

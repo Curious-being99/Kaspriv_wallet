@@ -31,11 +31,11 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: Setup Java JDK 17
+      - name: Setup Java JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
           cache: 'gradle'
 
       - name: Setup Android SDK
@@ -67,7 +67,7 @@ jobs:
           mkdir -p temp-gradle
           cd temp-gradle
           touch settings.gradle
-          gradle wrapper --gradle-version 8.14.3
+          gradle wrapper --gradle-version 8.10.2
           cd ..
           cp temp-gradle/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/gradle-wrapper.jar
           cp temp-gradle/gradle/wrapper/gradle-wrapper.properties android/gradle/wrapper/gradle-wrapper.properties
