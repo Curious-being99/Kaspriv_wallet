@@ -171,14 +171,15 @@ export function validateKaspaAddress(address: string, network: NetworkType = 'ma
   }
 
   const version = bytes[0];
-  if (version !== VERSION_P2SH) {
-    return { isValid: false, error: `Unsupported address version 0x${version.toString(16)}. Only P2SH is supported.` };
+  if (version !== VERSION_P2SH && version !== 0x00 && version !== 0x01) {
+    return { isValid: false, error: `Unsupported address version 0x${version.toString(16)}. Only P2SH and standard P2PKH/P2PK (0x00/0x01) are supported.` };
   }
 
   const pubkeyHashLength = bytes.length - 1;
-  // Standard Kaspa addresses have a 32-byte public key hash or script hash.
-  if (pubkeyHashLength !== 32) {
-    return { isValid: false, error: `Invalid payload length (${pubkeyHashLength} bytes, expected 32)` };
+  const expectedLength = version === 0x01 ? 33 : 32;
+  // Standard Kaspa addresses have a 32-byte public key hash/script hash (or 33-byte for ECDSA).
+  if (pubkeyHashLength !== expectedLength) {
+    return { isValid: false, error: `Invalid payload length (${pubkeyHashLength} bytes, expected ${expectedLength})` };
   }
 
   return { isValid: true };
@@ -261,6 +262,24 @@ export function addressToScriptPublicKeyBytes(address: string, network: NetworkT
     script[1] = 0x20;
     script.set(payload, 2);
     script[34] = 0x87;
+    return script;
+  }
+
+  // P2PK Schnorr (version 0x00): 20 + [32 bytes pubkey] + ac
+  if (version === 0x00) {
+    const script = new Uint8Array(34);
+    script[0] = 0x20;
+    script.set(payload, 1);
+    script[33] = 0xAC;
+    return script;
+  }
+
+  // P2PK ECDSA (version 0x01): 21 + [33 bytes pubkey] + ac
+  if (version === 0x01) {
+    const script = new Uint8Array(35);
+    script[0] = 0x21;
+    script.set(payload, 1);
+    script[34] = 0xAC;
     return script;
   }
 
