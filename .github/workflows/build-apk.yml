@@ -138,7 +138,7 @@ jobs:
           ./gradlew --version
           
           echo "Starting Gradle Release Build..."
-          ./gradlew assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace
+          ./gradlew assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace --info
 
       - name: Stage APK Files
         run: |

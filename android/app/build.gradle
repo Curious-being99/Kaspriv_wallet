@@ -6,12 +6,6 @@ android {
     namespace = "com.kaspriv.wallet"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        javaCompileOptions {
-            annotationProcessorOptions {
-                arguments += ["room.incremental":"false"]
-            }
-        }
-
         applicationId "com.kaspriv.wallet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
@@ -88,8 +82,11 @@ android {
         checkDependencies = false
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    kotlinOptions {
+        jvmTarget = "21"
     }
     buildTypes {
         debug {
@@ -100,6 +97,15 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+}
+
+kapt {
+    correctErrorTypes = true
+    arguments {
+        arg("room.schemaLocation", "$projectDir/schemas")
+        arg("room.incremental", "false")
+        arg("room.expandProjection", "true")
     }
 }
 
@@ -142,7 +148,6 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
-
 
 tasks.withType(JavaCompile).configureEach {
     options.fork = true
