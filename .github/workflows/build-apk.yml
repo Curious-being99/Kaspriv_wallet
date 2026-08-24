@@ -51,6 +51,11 @@ jobs:
       - name: Install Dependencies
         run: npm install --legacy-peer-deps
 
+      - name: Generate Pristine Native Icons
+        run: |
+          npm install --no-save sharp
+          node scripts/generate_android_icons.cjs
+
       - name: Build Web Assets
         run: npm run build
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React from 'react'; // Force GitHub sync
 import { WalletProvider, useWallet } from './context/WalletContext';
 import { KeyboardProvider } from './context/KeyboardContext';
 import { Header, HistoryHeader, ContactsHeader, SettingsHeader } from './components/Header';
@@ -144,3 +144,4 @@ export function App() {
 }
 
 export default App;
+// trigger sync
