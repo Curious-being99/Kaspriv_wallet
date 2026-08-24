@@ -59,15 +59,20 @@ class HardwareVaultPlugin : Plugin() {
         try {
             val secretKey = getOrCreateKey(alias)
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey)
             
-            val iv = cipher.iv
-            val encryptedBytes = cipher.doFinal(data.toByteArray(Charsets.UTF_8))
-            
-            val ret = JSObject()
-            ret.put("iv", Base64.encodeToString(iv, Base64.DEFAULT))
-            ret.put("ciphertext", Base64.encodeToString(encryptedBytes, Base64.DEFAULT))
-            call.resolve(ret)
+            try {
+                cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+                val iv = cipher.iv
+                val encryptedBytes = cipher.doFinal(data.toByteArray(Charsets.UTF_8))
+                
+                val ret = JSObject()
+                ret.put("iv", Base64.encodeToString(iv, Base64.DEFAULT))
+                ret.put("ciphertext", Base64.encodeToString(encryptedBytes, Base64.DEFAULT))
+                call.resolve(ret)
+            } catch (e: Exception) {
+                cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+                showBiometricPromptForEncrypt(cipher, data.toByteArray(Charsets.UTF_8), call)
+            }
         } catch (e: Exception) {
             call.reject("Failed to encrypt data: ${e.message}")
         }
@@ -94,18 +99,17 @@ class HardwareVaultPlugin : Plugin() {
             
             val cipher = Cipher.getInstance(TRANSFORMATION)
             val gcmSpec = GCMParameterSpec(TAG_LENGTH, iv)
-            cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
             
-            // Check if user authentication is required
             try {
+                cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
                 val decryptedBytes = cipher.doFinal(ciphertext)
                 val ret = JSObject()
                 ret.put("data", String(decryptedBytes, Charsets.UTF_8))
                 wipe(decryptedBytes)
                 call.resolve(ret)
             } catch (e: Exception) {
-                // If authentication is required, we need to show the biometric prompt
-                showBiometricPrompt(cipher, ciphertext, call)
+                cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
+                showBiometricPromptForDecrypt(cipher, ciphertext, call)
             }
         } catch (e: Exception) {
             call.reject("Failed to decrypt: ${e.message}")
@@ -144,22 +148,60 @@ class HardwareVaultPlugin : Plugin() {
             .setInvalidatedByBiometricEnrollment(true)
             
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            specBuilder.setUserAuthenticationValidityDurationSeconds(-1) // Always require authentication
+            specBuilder.setUserAuthenticationValidityDurationSeconds(-1)
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
                 specBuilder.setIsStrongBoxBacked(true)
-            } catch (e: Exception) {
-                // StrongBox might not be available
-            }
+            } catch (e: Exception) {}
         }
 
         keyGenerator.init(specBuilder.build())
         return keyGenerator.generateKey()
     }
 
-    private fun showBiometricPrompt(cipher: Cipher, ciphertext: ByteArray, call: PluginCall) {
+    private fun showBiometricPromptForEncrypt(cipher: Cipher, plaintext: ByteArray, call: PluginCall) {
+        activity.runOnUiThread {
+            val executor = ContextCompat.getMainExecutor(context)
+            val biometricPrompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    try {
+                        val authCipher = result.cryptoObject?.cipher ?: throw Exception("Cipher is null")
+                        val iv = authCipher.iv
+                        val encryptedBytes = authCipher.doFinal(plaintext)
+                        val ret = JSObject()
+                        ret.put("iv", Base64.encodeToString(iv, Base64.DEFAULT))
+                        ret.put("ciphertext", Base64.encodeToString(encryptedBytes, Base64.DEFAULT))
+                        call.resolve(ret)
+                    } catch (e: Exception) {
+                        call.reject("Encryption failed after auth: ${e.message}")
+                    }
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    call.reject("Authentication error: $errString")
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                }
+            })
+
+            val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Authenticate to Secure Wallet")
+                .setSubtitle("Confirm biometrics to save your vault key")
+                .setNegativeButtonText("Cancel")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .build()
+
+            biometricPrompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(cipher))
+        }
+    }
+
+    private fun showBiometricPromptForDecrypt(cipher: Cipher, ciphertext: ByteArray, call: PluginCall) {
         activity.runOnUiThread {
             val executor = ContextCompat.getMainExecutor(context)
             val biometricPrompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
@@ -184,7 +226,6 @@ class HardwareVaultPlugin : Plugin() {
 
                 override fun onAuthenticationFailed() {
                     super.onAuthenticationFailed()
-                    // Prompt keeps showing on failure
                 }
             })
 
@@ -240,17 +281,13 @@ class HardwareVaultPlugin : Plugin() {
 
             keyGenerator.init(builder.build())
             val key = keyGenerator.generateKey()
-            val factory = java.security.KeyFactory.getInstance(key.algorithm, KEY_STORE_NAME)
-            
-            // This is a simplified check as KeyFactory.getKeySpec is for asymmetric keys
-            // For symmetric keys, we use SecretKeyFactory on some versions or check KeyInfo
             val secretKeyFactory = javax.crypto.SecretKeyFactory.getInstance(key.algorithm, KEY_STORE_NAME)
             val keyInfo = secretKeyFactory.getKeySpec(key, KeyInfo::class.java) as KeyInfo
             
             val ret = JSObject()
             ret.put("insideSecureHardware", keyInfo.isInsideSecureHardware)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                ret.put("isStrongBoxBacked", keyInfo.isTrustedUserPresenceRequired) // Approximate
+                ret.put("isStrongBoxBacked", keyInfo.isTrustedUserPresenceRequired)
             }
             
             val keyStore = KeyStore.getInstance(KEY_STORE_NAME)
