@@ -31,9 +31,15 @@ function extractSpkHex(val: any): string {
   if (typeof val === 'object') {
     if (typeof val.scriptPublicKey === 'string') return val.scriptPublicKey;
     if (typeof val.script === 'string') return val.script;
+    if (typeof val.script_public_key === 'string') return val.script_public_key;
     if (val.scriptPublicKey && typeof val.scriptPublicKey === 'object') {
       if (typeof val.scriptPublicKey.scriptPublicKey === 'string') return val.scriptPublicKey.scriptPublicKey;
       if (typeof val.scriptPublicKey.script === 'string') return val.scriptPublicKey.script;
+      if (typeof val.scriptPublicKey.script_public_key === 'string') return val.scriptPublicKey.script_public_key;
+    }
+    if (val.script_public_key && typeof val.script_public_key === 'object') {
+      if (typeof val.script_public_key.script_public_key === 'string') return val.script_public_key.script_public_key;
+      if (typeof val.script_public_key.script === 'string') return val.script_public_key.script;
     }
   }
   return "";
@@ -268,38 +274,46 @@ export async function createSignedTransactionIsolatedWasm(
 
   const inputs = utxos.map((u: any) => {
     const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
+    const addrToUse = u.address || u.utxoEntry?.address;
     let spkHex = "";
-    if (u.address) {
+    if (addrToUse) {
       try {
-        const addrObj = new Address(u.address);
+        const addrObj = new Address(addrToUse);
         spkHex = payToAddressScript(addrObj).script;
       } catch {
         // Fallback
       }
     }
     if (!spkHex) {
-      spkHex = extractSpkHex(u.utxoEntry?.scriptPublicKey) || extractSpkHex(u.scriptPublicKey);
+      spkHex = extractSpkHex(u.utxoEntry?.scriptPublicKey) || 
+               extractSpkHex(u.utxoEntry?.script_public_key) || 
+               extractSpkHex(u.scriptPublicKey) || 
+               extractSpkHex(u.script_public_key);
     }
 
     const spkObj = new ScriptPublicKey(0, spkHex || "");
 
+    const txIdRaw = u.outpoint?.transactionId || u.transactionId || u.txid || "";
+    const txIdFormatted = String(txIdRaw).trim().toLowerCase();
+    const voutIndex = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index ?? u.vout ?? 0);
+
     return {
       previousOutpoint: {
-        transactionId: u.outpoint?.transactionId || u.transactionId,
-        index: u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)
+        transactionId: txIdFormatted,
+        index: voutIndex
       },
       signatureScript: "",
       sequence: 0n,
       sigOpCount: 1,
       utxo: {
-        address: u.address || u.utxoEntry?.address || "",
+        address: addrToUse || "",
         outpoint: {
-          transactionId: u.outpoint?.transactionId || u.transactionId,
-          index: u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)
+          transactionId: txIdFormatted,
+          index: voutIndex
         },
         amount: amt,
         scriptPublicKey: spkObj,
-        blockDaaScore: BigInt(u.utxoEntry?.blockDaaScore || 1),
+        blockDaaScore: BigInt(u.utxoEntry?.blockDaaScore || u.blockDaaScore || 1),
         isCoinbase: Boolean(u.utxoEntry?.isCoinbase)
       }
     };
@@ -389,13 +403,9 @@ export async function createSignedTransactionIsolatedWasm(
       const pksHex = pks.map(pk => pk.toString());
       signedTx = signTransaction(tx, pksHex, true);
     } catch (err: any) {
-      if (err.message && err.message.includes('Signature is empty')) {
-        // Fallback: try signing without verification if verification fails due to edge cases
-        const pksHex = pks.map(pk => pk.toString());
-        signedTx = signTransaction(tx, pksHex, false);
-      } else {
-        throw err;
-      }
+      console.warn('WASM signTransaction strict verification failed, falling back to signTransaction verify=false:', err);
+      const pksHex = pks.map(pk => pk.toString());
+      signedTx = signTransaction(tx, pksHex, false);
     }
   }
 

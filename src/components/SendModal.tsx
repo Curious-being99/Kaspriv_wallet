@@ -133,8 +133,8 @@ export const SendModal: React.FC = () => {
   useEffect(() => {
     if (isSendOpen && isConfirmingStep && isBiometricsEnabled && !successTx && !isSending) {
       const timer = setTimeout(() => {
-        handleBiometricSign();
-      }, 350);
+        handleBiometricSign(false);
+      }, 150);
       return () => clearTimeout(timer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -348,8 +348,9 @@ export const SendModal: React.FC = () => {
     setTimeout(() => setCopiedAddr(false), 2000);
   };
 
-  const handleBiometricSign = async () => {
-    if (isAuthenticatingBiometrics || isSending) return;
+  const handleBiometricSign = async (isManualTrigger: boolean = false) => {
+    if (isSending) return;
+    if (isAuthenticatingBiometrics && !isManualTrigger) return;
     setIsAuthenticatingBiometrics(true);
     setPasswordError(null);
     try {
@@ -458,7 +459,7 @@ export const SendModal: React.FC = () => {
     setPasswordError(null);
 
     if (isBiometricsEnabled && passwordInput.trim().length < 8) {
-      await handleBiometricSign();
+      await handleBiometricSign(true);
       return;
     }
 
@@ -1078,15 +1079,15 @@ export const SendModal: React.FC = () => {
                   {isBiometricsEnabled && (
                     <button
                       type="button"
-                      onClick={handleBiometricSign}
-                      disabled={isSending || isAuthenticatingBiometrics}
-                      title="Authorize with Biometrics"
-                      className="p-2.5 rounded-lg bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/30 text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0"
+                      onClick={() => handleBiometricSign(true)}
+                      disabled={isSending}
+                      title="Prompt Biometrics"
+                      className="p-2.5 rounded-lg bg-[#70C7BA]/15 hover:bg-[#70C7BA]/25 border border-[#70C7BA]/40 text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0 shadow-sm"
                     >
                       {isAuthenticatingBiometrics ? (
                         <div className="w-5 h-5 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
                       ) : (
-                        <Fingerprint className="w-5 h-5 text-[#70C7BA]" />
+                        <Fingerprint className="w-5 h-5 text-[#70C7BA] animate-pulse" />
                       )}
                     </button>
                   )}
@@ -1096,7 +1097,10 @@ export const SendModal: React.FC = () => {
 
             {/* Live Verification Status Banner */}
             <div
-              className={`p-2.5 rounded-xl border text-[10px] font-bold flex flex-col gap-1 ${
+              onClick={isBiometricsEnabled && !isSending ? () => handleBiometricSign(true) : undefined}
+              className={`p-2.5 rounded-xl border text-[10px] font-bold flex flex-col gap-1 transition-all ${
+                isBiometricsEnabled && !isSending ? 'cursor-pointer hover:border-[#70C7BA]/60 active:scale-[0.99]' : ''
+              } ${
                 isPasswordEnabled
                   ? isSending
                     ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'

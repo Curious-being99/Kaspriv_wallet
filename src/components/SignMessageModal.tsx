@@ -199,10 +199,10 @@ export const SignMessageModal: React.FC = () => {
                     type="button"
                     onClick={handleSign}
                     disabled={!message.trim()}
-                    title="Unlock with Biometrics"
-                    className="p-2.5 rounded-xl bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/30 text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0"
+                    title="Prompt Biometrics"
+                    className="p-2.5 rounded-xl bg-[#70C7BA]/15 hover:bg-[#70C7BA]/25 border border-[#70C7BA]/40 text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0 shadow-sm"
                   >
-                    <Fingerprint className="w-5 h-5 text-[#70C7BA]" />
+                    <Fingerprint className="w-5 h-5 text-[#70C7BA] animate-pulse" />
                   </button>
                 )}
               </div>

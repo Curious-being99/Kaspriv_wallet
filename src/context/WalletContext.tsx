@@ -3026,7 +3026,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         utxos: selectedUtxos,
         note,
         lockedUtxoOutpoints: activeWallet.lockedUtxoOutpoints || [],
-        addressPaths: activeWallet.addressPaths || {}
+        addressPaths: {
+          ...(activeWallet.addressPaths || {}),
+          ...(effectiveChangeAddress && effectiveChangePath ? { [effectiveChangeAddress]: effectiveChangePath } : {})
+        }
       };
 
       if (!seedToUse) {
