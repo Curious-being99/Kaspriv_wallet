@@ -1,4 +1,4 @@
-import React from 'react'; // Force GitHub sync
+import React from 'react'; // Force GitHub sync for Room implementation
 import { WalletProvider, useWallet } from './context/WalletContext';
 import { KeyboardProvider } from './context/KeyboardContext';
 import { Header, HistoryHeader, ContactsHeader, SettingsHeader } from './components/Header';

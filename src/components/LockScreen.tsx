@@ -20,7 +20,9 @@ export const LockScreen: React.FC = () => {
     setIsPendingLogout,
     confirmLogout,
     indexingState,
+    isInitializing,
   } = useWallet();
+
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
   const [password, setPassword] = useState('');
   const [isDecrypting, setIsDecrypting] = useState(false);
@@ -30,7 +32,7 @@ export const LockScreen: React.FC = () => {
 
   // Auto-trigger Biometrics if enabled, or Virtual Keyboard when LockScreen is shown
   useEffect(() => {
-    if (isLocked && !indexingState?.isIndexing && wallets.length > 0) {
+    if (isLocked && !indexingState?.isIndexing && wallets.length > 0 && !isInitializing) {
       setPassword('');
       setError(null);
       if (isBiometricsEnabled) {
@@ -44,14 +46,14 @@ export const LockScreen: React.FC = () => {
           },
         });
       }
-    } else {
+    } else if (!isLocked) {
       setPassword('');
       closeKeyboard();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocked, wallets.length, isBiometricsEnabled, indexingState?.isIndexing]);
+  }, [isLocked, wallets.length, isBiometricsEnabled, indexingState?.isIndexing, isInitializing]);
 
-  if (!isLocked || wallets.length === 0 || (indexingState && indexingState.isIndexing)) return null;
+  if (isInitializing || !isLocked || wallets.length === 0 || (indexingState && indexingState.isIndexing)) return null;
 
   const handleBiometricUnlock = async () => {
     if (isAuthenticatingBiometrics || isDecrypting) return;
