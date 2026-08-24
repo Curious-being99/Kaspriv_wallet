@@ -238,7 +238,7 @@ function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): voi
  * Compare the entire final signed transaction against the approved intent,
  * and verify actual transaction mass/fee using the Kaspa implementation.
  */
-async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxIntent, addressType: 'P2PKH' | 'P2SH'): Promise<void> {
+async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxIntent, addressType: 'P2SH'): Promise<void> {
   // Ensure the transaction structure exists
   if (!signedTx || !Array.isArray(signedTx.inputs) || !Array.isArray(signedTx.outputs)) {
     throw new Error('Security failure: Signed transaction is missing inputs or outputs array.');
@@ -419,7 +419,7 @@ export class IsolatedSigner {
     mnemonic: string,
     passphrase: string | undefined,
     intentInput: UnsignedTxIntent,
-    addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+    addressType: 'P2SH' = 'P2SH',
     redeemScriptHex?: string,
     skipWorker = false,
     sessionId?: string | null
@@ -428,12 +428,9 @@ export class IsolatedSigner {
     transaction?: any;
     error?: string;
   }> {
-    const isP2SH = addressType === 'P2SH' || 
-      intentInput.toAddress.includes(':p') || 
-      (intentInput.changeAddress && intentInput.changeAddress.includes(':p')) ||
-      intentInput.utxos.some((u: any) => u.address?.includes(':p'));
+    const isP2SH = true;
 
-    const effectiveAddressType: 'P2PKH' | 'P2SH' = isP2SH ? 'P2SH' : addressType;
+    const effectiveAddressType: 'P2SH' = 'P2SH';
 
     const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
     if (isMainThread && !skipWorker) {

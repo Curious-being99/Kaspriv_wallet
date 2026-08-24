@@ -2,7 +2,7 @@ import { Mnemonic, XPrv } from '@kasdk/web';
 import { ensureKaspaWasm } from '../crypto';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { wipe } from './common';
-import { encodeKaspaAddress, VERSION_P2PKH, VERSION_P2SH } from './address';
+import { encodeKaspaAddress, VERSION_P2SH } from './address';
 
 /**
  * Extract and clean BIP39 words from any formatted user input (numbered lists, capitalization, commas, etc.)
@@ -62,7 +62,7 @@ export async function generate24WordMnemonic(): Promise<string[]> {
  */
 export function getAddressFromPublicKey(
   publicKey: Uint8Array | string, 
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  addressType: 'P2SH' = 'P2SH',
   prefix: string = 'kaspa'
 ): string {
   let pubKey: Uint8Array;
@@ -86,17 +86,13 @@ export function getAddressFromPublicKey(
 
   const xOnlyPubKey = pubKey.length === 33 ? pubKey.slice(1) : pubKey;
 
-  if (addressType === 'P2SH') {
-    const redeemScript = new Uint8Array(34);
-    redeemScript[0] = 0x20; // PUSH 32 bytes
-    redeemScript.set(xOnlyPubKey, 1);
-    redeemScript[33] = 0xac; // OP_CHECKSIG
-    
-    const scriptHash = blake2b(redeemScript, { dkLen: 32 });
-    return encodeKaspaAddress(prefix, VERSION_P2SH, scriptHash);
-  } else {
-    return encodeKaspaAddress(prefix, VERSION_P2PKH, xOnlyPubKey);
-  }
+  const redeemScript = new Uint8Array(34);
+  redeemScript[0] = 0x20; // PUSH 32 bytes
+  redeemScript.set(xOnlyPubKey, 1);
+  redeemScript[33] = 0xac; // OP_CHECKSIG
+  
+  const scriptHash = blake2b(redeemScript, { dkLen: 32 });
+  return encodeKaspaAddress(prefix, VERSION_P2SH, scriptHash);
 }
 
 // Volatile, in-memory cache for seed derivation (BIP39 Seed Cache)
@@ -136,13 +132,13 @@ export function hexToBytes(hex: string): Uint8Array {
 
 /**
  * Generate a real deterministic Kaspa Address based on mnemonic words
- * Supports P2PKH (default) and P2SH, with custom index, change chain, and coinType (111111 or 972)
+ * Supports P2SH, with custom index, change chain, and coinType (111111 or 972)
  */
 export async function generateDeterministicAddress(
   mnemonic: string, 
   passphrase?: string, 
   prefix: string = 'kaspa',
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  addressType: 'P2SH' = 'P2SH',
   index: number = 0,
   isChange: boolean = false,
   coinType: number = 111111

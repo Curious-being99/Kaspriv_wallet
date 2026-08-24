@@ -1,7 +1,6 @@
 import { NetworkType } from '../../types';
 
 // Kaspa address version constants
-export const VERSION_P2PKH = 0x00;
 export const VERSION_P2SH = 0x08;
 
 // Kaspa Bech32 implementation
@@ -66,7 +65,7 @@ export function hrpExpand(hrp: string): bigint[] {
 
 /**
  * Encode a Kaspa address
- * version: 0x00 for P2PKH, 0x08 for P2SH
+ * version: 0x08 for P2SH
  */
 export function encodeKaspaAddress(prefix: string, version: number, payload: Uint8Array): string {
   const words = convertBits([version, ...payload], 8, 5, true);
@@ -172,8 +171,8 @@ export function validateKaspaAddress(address: string, network: NetworkType = 'ma
   }
 
   const version = bytes[0];
-  if (version !== VERSION_P2PKH && version !== VERSION_P2SH) {
-    return { isValid: false, error: `Unsupported address version 0x${version.toString(16)}` };
+  if (version !== VERSION_P2SH) {
+    return { isValid: false, error: `Unsupported address version 0x${version.toString(16)}. Only P2SH is supported.` };
   }
 
   const pubkeyHashLength = bytes.length - 1;
@@ -255,14 +254,6 @@ export function addressToScriptPublicKeyBytes(address: string, network: NetworkT
   const version = bytes[0];
   const payload = bytes.slice(1);
 
-  // P2PKH (version 0x00): 20 + [32 bytes pubkey hash] + ac
-  if (version === VERSION_P2PKH) {
-    const script = new Uint8Array(34);
-    script[0] = 0x20;
-    script.set(payload, 1);
-    script[33] = 0xAC;
-    return script;
-  }
   // P2SH (version 0x08): aa + 20 + [32 bytes script hash] + 87
   if (version === 0x08) {
     const script = new Uint8Array(35);
@@ -273,11 +264,7 @@ export function addressToScriptPublicKeyBytes(address: string, network: NetworkT
     return script;
   }
 
-  const script = new Uint8Array(34);
-  script[0] = 0x20;
-  script.set(payload, 1);
-  script[33] = 0xAC;
-  return script;
+  throw new Error(`Unsupported address version 0x${version.toString(16)}`);
 }
 
 /**
@@ -293,7 +280,7 @@ export function addressToScriptPublicKey(address: string, network: NetworkType =
 export function generateRandomKaspaAddress(prefix: string = 'kaspa:'): string {
   const payload = new Uint8Array(32);
   crypto.getRandomValues(payload);
-  return encodeKaspaAddress(prefix.replace(':', ''), VERSION_P2PKH, payload);
+  return encodeKaspaAddress(prefix.replace(':', ''), VERSION_P2SH, payload);
 }
 
 export function getAddressPrefix(network: NetworkType): string {

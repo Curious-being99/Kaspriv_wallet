@@ -47,8 +47,8 @@ export const WalletSetupModal: React.FC = () => {
   // Track Real Address state
   const [addressInput, setAddressInput] = useState('');
 
-  // Address Type state (P2PKH vs P2SH)
-  const [addressType, setAddressType] = useState<'P2PKH' | 'P2SH'>('P2SH');
+  // Address Type state (P2SH only)
+  const [addressType, setAddressType] = useState<'P2SH'>('P2SH');
 
   // Password setup state
   const [setupPassword, setSetupPassword] = useState('');
@@ -146,16 +146,16 @@ export const WalletSetupModal: React.FC = () => {
     setPendingFlow('none');
   };
 
-  const updatePreview = useCallback(async (type: 'P2PKH' | 'P2SH') => {
+  const updatePreview = useCallback(async (type: 'P2SH') => {
     try {
       if (mode === 'create' && generatedWords.length > 0) {
-        const addr = await generateDeterministicAddress(generatedWords.join(' '), passphraseInput || undefined, 'kaspa', type);
+        const addr = await generateDeterministicAddress(generatedWords.join(' '), passphraseInput || undefined, 'kaspa', 'P2SH');
         setPreviewAddress(addr);
       } else if (mode === 'import-seed') {
         const cleaned = cleanMnemonic(importWordsText);
         const words = cleaned ? cleaned.split(' ') : [];
         if (words.length === 12 || words.length === 24) {
-          const addr = await generateDeterministicAddress(cleaned, passphraseInput || undefined, 'kaspa', type);
+          const addr = await generateDeterministicAddress(cleaned, passphraseInput || undefined, 'kaspa', 'P2SH');
           setPreviewAddress(addr);
         } else {
           setPreviewAddress('');
@@ -179,24 +179,7 @@ export const WalletSetupModal: React.FC = () => {
 
   if (!isWalletSetupOpen) return null;
 
-  const AddressTypeSelector = () => (
-    <div className="space-y-1.5">
-      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-        Address Standard
-      </label>
-      <div className="w-full">
-        <div
-          className="p-3 rounded-xl border bg-[#70C7BA]/10 border-[#70C7BA]/40 text-[#70C7BA] transition-all"
-        >
-          <div className="font-extrabold text-[11px] mb-0.5 flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#70C7BA]" />
-            <span>Secure (p)</span>
-          </div>
-          <div className="text-[9px] text-slate-400">P2SH Script Hash Address Standard Active</div>
-        </div>
-      </div>
-    </div>
-  );
+  const AddressTypeSelector = () => null;
 
   return (
     <div className="fixed inset-0 z-50 bg-[#090D12] flex flex-col overflow-hidden">
@@ -537,7 +520,7 @@ export const WalletSetupModal: React.FC = () => {
                   <div className="flex justify-between items-center mb-1">
                     <div className="text-[10px] font-bold text-[#70C7BA] uppercase">Live Address Preview</div>
                     <div className="px-1.5 py-0.5 rounded-md bg-[#70C7BA]/20 text-[#70C7BA] text-[8px] font-mono">
-                      {addressType === 'P2PKH' ? 'Standard (q)' : 'Secure (p)'}
+                      Secure (p)
                     </div>
                   </div>
                   <div className="text-[10px] font-mono text-slate-200 break-all leading-relaxed bg-black/20 p-2 rounded-lg border border-[#70C7BA]/10">

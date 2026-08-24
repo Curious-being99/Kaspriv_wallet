@@ -194,7 +194,7 @@ export const LockScreen: React.FC = () => {
                   onClick={() => handleBiometricUnlock(true)}
                   disabled={isDecrypting}
                   title="Prompt Biometrics"
-                  className="p-3 rounded-xl bg-[#70C7BA]/15 hover:bg-[#70C7BA]/25 border border-[#70C7BA]/40 text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0 shadow-lg shadow-[#70C7BA]/10 relative group"
+                  className="p-3 text-[#70C7BA]/80 hover:text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0 relative group"
                 >
                   {isAuthenticatingBiometrics ? (
                     <div className="w-5 h-5 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
@@ -210,9 +210,9 @@ export const LockScreen: React.FC = () => {
                 type="button"
                 onClick={() => handleBiometricUnlock(true)}
                 disabled={isDecrypting}
-                className="w-full py-2.5 px-4 rounded-xl bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/30 text-[#70C7BA] text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 shadow-sm"
+                className="w-full py-1.5 text-[#70C7BA]/80 hover:text-[#70C7BA] text-xs font-medium transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
               >
-                <Fingerprint className="w-4 h-4 text-[#70C7BA]" />
+                <Fingerprint className="w-4 h-4 text-[#70C7BA]/80" />
                 <span>{isAuthenticatingBiometrics ? 'Prompting Biometrics...' : 'Tap fingerprint icon to unlock with Biometrics'}</span>
               </button>
             )}

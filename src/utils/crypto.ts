@@ -8,6 +8,32 @@ import wasmUrl from '@kasdk/web/kaspa_bg.wasm?url';
  */
 let wasmInitPromise: Promise<void> | null = null;
 
+// Resolve the WASM URL to an absolute URL with origin to prevent relative resolution errors in Workers or sandboxed iframes
+let resolvedWasmUrl = wasmUrl;
+if (typeof self !== 'undefined' && self.location) {
+  try {
+    const origin = self.location.origin;
+    if (origin && origin !== 'null') {
+      if (
+        !wasmUrl.startsWith('http://') &&
+        !wasmUrl.startsWith('https://') &&
+        !wasmUrl.startsWith('blob:')
+      ) {
+        let cleanPath = wasmUrl;
+        if (cleanPath.startsWith('.')) {
+          cleanPath = cleanPath.slice(1);
+        }
+        if (!cleanPath.startsWith('/')) {
+          cleanPath = '/' + cleanPath;
+        }
+        resolvedWasmUrl = origin + cleanPath;
+      }
+    }
+  } catch (e) {
+    console.warn('WASM URL resolution error:', e);
+  }
+}
+
 /**
  * Ensures Rusty Kaspa WASM cryptographic module is initialized
  */
@@ -15,7 +41,7 @@ export async function ensureKaspaWasm(): Promise<void> {
   if (!wasmInitPromise) {
     wasmInitPromise = (async () => {
       try {
-        await initKaspaWasm({ module_or_path: wasmUrl });
+        await initKaspaWasm({ module_or_path: resolvedWasmUrl });
       } catch (err) {
         console.warn('Kaspa WASM initialization note:', err);
       }

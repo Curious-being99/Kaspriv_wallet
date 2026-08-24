@@ -122,7 +122,7 @@ export const MainLandingPage: React.FC = () => {
 
   // Import Address / Kpub State - pre-filled real address to track
   const [addressInput, setAddressInput] = useState('');
-  const [addressType, setAddressType] = useState<'P2PKH' | 'P2SH'>('P2SH');
+  const [addressType, setAddressType] = useState<'P2SH'>('P2SH');
   const [previewAddress, setPreviewAddress] = useState('');
 
   // Password Setup State
@@ -201,16 +201,16 @@ export const MainLandingPage: React.FC = () => {
     setActiveTab('setup-password');
   };
 
-  const updatePreview = React.useCallback(async (type: 'P2PKH' | 'P2SH') => {
+  const updatePreview = React.useCallback(async (type: 'P2SH') => {
     try {
       if (activeTab === 'create' && createdWords.length > 0) {
-        const addr = await generateDeterministicAddress(createdWords.join(' '), passphraseInput || undefined, 'kaspa', type);
+        const addr = await generateDeterministicAddress(createdWords.join(' '), passphraseInput || undefined, 'kaspa', 'P2SH');
         setPreviewAddress(addr);
       } else if (activeTab === 'import-seed') {
         const cleaned = cleanMnemonic(importWordsText);
         const words = cleaned ? cleaned.split(' ') : [];
         if (words.length === 12 || words.length === 24) {
-          const addr = await generateDeterministicAddress(cleaned, passphraseInput || undefined, 'kaspa', type);
+          const addr = await generateDeterministicAddress(cleaned, passphraseInput || undefined, 'kaspa', 'P2SH');
           setPreviewAddress(addr);
         } else {
           setPreviewAddress('');
@@ -257,26 +257,7 @@ export const MainLandingPage: React.FC = () => {
 
   if ((wallets.length > 0 && isLocked) || indexingState?.isIndexing || (!isLoggedOut && wallets.length > 0)) return null;
 
-  const AddressTypeSelector = () => (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-          Address Standard
-        </label>
-      </div>
-      <div className="w-full">
-        <div
-          className="p-3 rounded-xl border bg-[#70C7BA]/10 border-[#70C7BA]/40 text-[#70C7BA] transition-all relative overflow-hidden"
-        >
-          <div className="font-bold text-xs mb-1 flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-[#70C7BA]" />
-            P2SH Privacy Active
-          </div>
-          <div className="text-[10px] text-slate-400">P2SH Script Hash address standard active for enhanced security</div>
-        </div>
-      </div>
-    </div>
-  );
+  const AddressTypeSelector = () => null;
 
   const handleTabChange = async (tab: 'home' | 'create' | 'import-seed' | 'import-address' | 'setup-password') => {
     setActiveTab(tab);
@@ -599,7 +580,7 @@ export const MainLandingPage: React.FC = () => {
                   <div className="flex justify-between items-center mb-1">
                     <div className="text-[10px] font-bold text-[#70C7BA] uppercase">Live Address Preview</div>
                     <div className="px-1.5 py-0.5 rounded-md bg-[#70C7BA]/20 text-[#70C7BA] text-[8px] font-mono">
-                      {addressType === 'P2PKH' ? 'Standard (q)' : 'Secure (p)'}
+                      Secure (p)
                     </div>
                   </div>
                   <div className="text-[10px] font-mono text-slate-200 break-all leading-relaxed bg-black/20 p-2 rounded-lg border border-[#70C7BA]/10">

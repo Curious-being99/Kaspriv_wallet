@@ -56,7 +56,7 @@ export async function deriveChangeAddress(
   index: number = 0,
   passphrase: string = '',
   prefix: string = 'kaspa',
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  addressType: 'P2SH' = 'P2SH',
   coinType: number = KASPA_COIN_TYPE,
   account: number = KASPA_ACCOUNT
 ): Promise<ChangeAddressInfo> {
@@ -100,7 +100,7 @@ export function deriveChangeAddressFromPublicKey(
   publicKey: Uint8Array,
   index: number,
   prefix: string = 'kaspa',
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  addressType: 'P2SH' = 'P2SH',
   coinType: number = KASPA_COIN_TYPE,
   account: number = KASPA_ACCOUNT
 ): ChangeAddressInfo {
@@ -266,7 +266,7 @@ function normalizeAddress(addr: string): string {
 }
 
 /**
- * Verifies if an address (P2PKH or P2SH) belongs to a wallet's internal change chain (/1/).
+ * Verifies if an address (P2SH) belongs to a wallet's internal change chain (/1/).
  */
 export function isChangeAddress(
   address: string,
@@ -294,7 +294,7 @@ export async function generateChangeAddressBatch(
   count: number = 5,
   passphrase: string = '',
   prefix: string = 'kaspa',
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH'
+  addressType: 'P2SH' = 'P2SH'
 ): Promise<ChangeAddressInfo[]> {
   const addresses: ChangeAddressInfo[] = [];
 

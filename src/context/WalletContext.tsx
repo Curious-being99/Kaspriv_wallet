@@ -108,9 +108,9 @@ interface WalletContextType {
   activeWallet: Wallet;
   setActiveWalletId: (id: string) => void;
   renameWallet: (walletId: string, newName: string) => void;
-  createNewWallet: (name: string, mnemonicWords?: string[], passphrase?: string, addressType?: 'P2PKH' | 'P2SH', password?: string, duressPassword?: string) => Promise<Wallet>;
-  importSeedWallet: (name: string, words: string[], passphrase?: string, addressType?: 'P2PKH' | 'P2SH', password?: string, duressPassword?: string) => Promise<Wallet>;
-  importKpubWallet: (name: string, kpub: string, addressType?: 'P2PKH' | 'P2SH', password?: string, duressPassword?: string) => Promise<Wallet>;
+  createNewWallet: (name: string, mnemonicWords?: string[], passphrase?: string, addressType?: 'P2SH', password?: string, duressPassword?: string) => Promise<Wallet>;
+  importSeedWallet: (name: string, words: string[], passphrase?: string, addressType?: 'P2SH', password?: string, duressPassword?: string) => Promise<Wallet>;
+  importKpubWallet: (name: string, kpub: string, addressType?: 'P2SH', password?: string, duressPassword?: string) => Promise<Wallet>;
 
   // Transactions & Balance
   transactions: KaspaTransaction[];
@@ -2047,7 +2047,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
   };
 
-  const createNewWallet = async (name: string, mnemonicWords?: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2SH', password?: string, duressPassword?: string): Promise<Wallet> => {
+  const createNewWallet = async (name: string, mnemonicWords?: string[], passphrase?: string, addressType: 'P2SH' = 'P2SH', password?: string, duressPassword?: string): Promise<Wallet> => {
     if (password) {
       setIsPasswordEnabled(true);
       setIsLocked(true);
@@ -2439,7 +2439,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const importSeedWallet = async (name: string, words: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2SH', password?: string, duressPassword?: string): Promise<Wallet> => {
+  const importSeedWallet = async (name: string, words: string[], passphrase?: string, addressType: 'P2SH' = 'P2SH', password?: string, duressPassword?: string): Promise<Wallet> => {
     if (password) {
       setIsPasswordEnabled(true);
       setIsLocked(true);
@@ -2608,7 +2608,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const importKpubWallet = async (name: string, kpubOrAddress: string, addressType: 'P2PKH' | 'P2SH' = 'P2SH', password?: string, duressPassword?: string): Promise<Wallet> => {
+  const importKpubWallet = async (name: string, kpubOrAddress: string, addressType: 'P2SH' = 'P2SH', password?: string, duressPassword?: string): Promise<Wallet> => {
     if (password) {
       setIsPasswordEnabled(true);
       setIsLocked(true);
@@ -2771,12 +2771,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     }
 
-    // Determine address standard (P2PKH or P2SH)
-    const addrType = activeWallet.addressType || (activeWallet.receiveAddress?.includes(':q') ? 'P2PKH' : 'P2SH');
+    // Determine address standard (P2SH strictly)
+    const addrType: 'P2SH' = 'P2SH';
 
     try {
-      // Ensure minimum fee for node compute mass
-      const minFeeKas = addrType === 'P2SH' || activeWallet.receiveAddress?.includes(':p') ? 0.001 : 0.0001;
+      // Ensure minimum fee for node compute mass (P2SH standard)
+      const minFeeKas = 0.001;
       const effectiveFeeKas = Math.max(Number(feeKas) || 0, minFeeKas);
 
       let amountSompi = kasToSompi(amountKas);
@@ -2890,7 +2890,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return amtB > amtA ? 1 : amtB < amtA ? -1 : 0;
       });
 
-      // Kaspa standard mempool max transaction mass is 100,000 grams (~84 P2PKH inputs limit)
+      // Kaspa standard mempool max transaction mass is 100,000 grams (~80 P2SH inputs limit)
       const MAX_INPUTS_PER_TX = 80;
       const outputsCount = 2; // 1 recipient output + 1 change output
 
@@ -3290,7 +3290,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return acc + BigInt(amount || 0);
       }, 0n);
       
-      const addrType = activeWallet.addressType || (activeWallet.receiveAddress?.includes(':q') ? 'P2PKH' : 'P2SH');
+      const addrType: 'P2SH' = 'P2SH';
       
       const minRequiredFeeSompi = calculateDynamicFeeForTransaction(utxosToCompound.length, 1, addrType, 25, 20000n);
       const feeSompi = minRequiredFeeSompi;

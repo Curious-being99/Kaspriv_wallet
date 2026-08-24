@@ -30,19 +30,19 @@ export interface ScannedWalletChainResult {
 export type PublicAddressDeriver = (
   chain: 'receive' | 'change',
   index: number,
-  scriptType: 'P2PKH' | 'P2SH'
+  scriptType: 'P2SH'
 ) => Promise<{ address: string; derivationPath: string }> | { address: string; derivationPath: string };
 
 /**
  * Perform deep DAG Chain Index scanning across multiple HD paths, receive/change chains, and derivation indices.
  *
- * Fully secures seed memory, respects both P2PKH/P2SH types, and computes deduplicated UTXO-based balances.
+ * Fully secures seed memory, respects P2SH types, and computes deduplicated UTXO-based balances.
  */
 export async function scanKaspaWalletChain(
   mnemonic: string,
   passphrase?: string,
   prefix: string = 'kaspa',
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  addressType: 'P2SH' = 'P2SH',
   gapLimit: number = 50,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<ScannedWalletChainResult> {
@@ -335,7 +335,7 @@ export async function scanKaspaWalletChain(
  */
 export async function scanKaspaWalletChainPublic(
   deriver: PublicAddressDeriver,
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  addressType: 'P2SH' = 'P2SH',
   gapLimit: number = 50,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<{

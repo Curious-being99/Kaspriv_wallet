@@ -16,7 +16,7 @@ export interface Wallet {
   isWatchOnly?: boolean;
   balanceSompi: bigint;
   createdAt: number;
-  addressType?: 'P2PKH' | 'P2SH';
+  addressType?: 'P2SH';
   discoveredAddresses?: string[];
   addressPaths?: { [address: string]: string };
   addressBalances?: { [address: string]: string };

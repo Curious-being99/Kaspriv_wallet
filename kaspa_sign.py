@@ -125,31 +125,19 @@ def sign_transaction_with_python(
         # Append Hash Type byte (01) to the signature
         sig_with_sighash = f"{raw_signature.hex()}01"
 
-        # Determine if it is a P2SH (script hash) input
-        is_p2sh = (
-            tx_data.get("addressType") == "P2SH"
-            or ":p" in utxo.get("address", "")
-            or spk_hex.startswith("aa20")
-        )
-
-        if is_p2sh:
-            # Build P2SH execution script pushing signature + redeem script
-            # OP_PUSH32 <pubkey> OP_CHECKSIG
-            redeem_script = f"20{pub_key_hex}ac"
-            redeem_bytes = hex_to_bytes(redeem_script)
-            
-            # Form standard OP_PUSH prefix for redeem script length
-            if len(redeem_bytes) <= 75:
-                push_prefix = f"{len(redeem_bytes):02x}"
-            elif len(redeem_bytes) <= 255:
-                push_prefix = f"4c{len(redeem_bytes):02x}"
-            else:
-                push_prefix = f"4d{struct.pack('<H', len(redeem_bytes)).hex()}"
-                
-            inpt["signatureScript"] = f"41{sig_with_sighash}{push_prefix}{redeem_script}"
+        # Build P2SH execution script pushing signature + redeem script (OP_PUSH32 <pubkey> OP_CHECKSIG)
+        redeem_script = f"20{pub_key_hex}ac"
+        redeem_bytes = hex_to_bytes(redeem_script)
+        
+        # Form standard OP_PUSH prefix for redeem script length
+        if len(redeem_bytes) <= 75:
+            push_prefix = f"{len(redeem_bytes):02x}"
+        elif len(redeem_bytes) <= 255:
+            push_prefix = f"4c{len(redeem_bytes):02x}"
         else:
-            # Standard P2PKH pushes the 65-byte Schnorr signature
-            inpt["signatureScript"] = f"41{sig_with_sighash}"
+            push_prefix = f"4d{struct.pack('<H', len(redeem_bytes)).hex()}"
+            
+        inpt["signatureScript"] = f"41{sig_with_sighash}{push_prefix}{redeem_script}"
 
     # Return clean, fully-serialized Kaspa-compliant transaction structure
     return {

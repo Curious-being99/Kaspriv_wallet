@@ -23,7 +23,7 @@ export const CompoundUtxoModal: React.FC = () => {
     0n
   );
 
-  const addrType = activeWallet.addressType || (activeWallet.receiveAddress?.includes(':p') ? 'P2SH' : 'P2PKH');
+  const addrType: 'P2SH' = 'P2SH';
   const feeSompi = countToCompound > 0
     ? calculateDynamicFeeForTransaction(countToCompound, 1, addrType, 25, 20000n)
     : 0n;

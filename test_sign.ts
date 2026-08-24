@@ -19,7 +19,7 @@ async function run() {
       'kaspa:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkx9aw3j',
       keysMap,
       10000n,
-      'P2PKH'
+      'P2SH'
     );
     console.log("Success:", res.id);
   } catch (err) {

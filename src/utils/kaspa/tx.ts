@@ -50,7 +50,7 @@ export async function createSignedTransaction(
   changeAddress: string,
   privateKeyBytes: Uint8Array,
   feeSompi: bigint,
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  addressType: 'P2SH' = 'P2SH',
   redeemScriptHex?: string,
   lockTime: number = 0,
   network: NetworkType = 'mainnet'
@@ -71,13 +71,13 @@ export async function createSignedTransaction(
 }
 
 /**
- * Estimates transaction mass in grams for P2PKH or P2SH Kaspa transactions.
+ * Estimates transaction mass in grams for P2SH Kaspa transactions.
  * Accurate to rusty-kaspa node consensus compute & size mass calculation.
  */
 export function estimateTransactionMass(
   inputsCount: number,
   outputsCount: number,
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH'
+  addressType: 'P2SH' = 'P2SH'
 ): number {
   const countIn = Math.max(1, inputsCount);
   const countOut = Math.max(1, outputsCount);
@@ -102,7 +102,7 @@ export function estimateTransactionMass(
 export function calculateMinFeeForInputs(
   inputsCount: number,
   outputsCount: number,
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH'
+  addressType: 'P2SH' = 'P2SH'
 ): bigint {
   const estimatedMass = estimateTransactionMass(inputsCount, outputsCount, addressType);
   return BigInt(Math.ceil(estimatedMass)) * 100n;
@@ -114,7 +114,7 @@ export function calculateMinFeeForInputs(
 export function calculateDynamicFeeForTransaction(
   inputsCount: number,
   outputsCount: number,
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  addressType: 'P2SH' = 'P2SH',
   bufferPercent: number = 20,
   flatBufferSompi: bigint = 15000n
 ): bigint {
@@ -127,7 +127,7 @@ export function calculateDynamicFeeForTransaction(
 export function getRecommendedFees(
   inputsCount: number,
   outputsCount: number = 2,
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH'
+  addressType: 'P2SH' = 'P2SH'
 ): {
   baseFeeSompi: bigint;
   lowFeeSompi: bigint;

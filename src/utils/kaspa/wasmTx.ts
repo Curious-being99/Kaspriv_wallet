@@ -95,7 +95,7 @@ export async function createSignedTransactionWasm(
   changeAddress: string,
   privateKeyBytes: Uint8Array,
   feeSompi: bigint,
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  addressType: 'P2SH' = 'P2SH',
   redeemScriptHex?: string,
   lockTime: number = 0
 ): Promise<any> {
@@ -256,7 +256,7 @@ export async function createSignedTransactionIsolatedWasm(
   changeAddress: string,
   keysMap: { [path: string]: Uint8Array },
   feeSompi: bigint,
-  addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
+  addressType: 'P2SH' = 'P2SH',
   redeemScriptHex?: string,
   lockTime: number = 0
 ): Promise<any> {

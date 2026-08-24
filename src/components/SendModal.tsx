@@ -232,7 +232,7 @@ export const SendModal: React.FC = () => {
     };
   }, [successTx]);
 
-  const addrType = activeWallet?.addressType || (activeWallet?.receiveAddress?.includes(':p') ? 'P2SH' : 'P2PKH');
+  const addrType: 'P2SH' = 'P2SH';
   const numericAmount = parseFloat(amountInput) || 0;
   const targetSompi = kasToSompi(amountInput);
 
@@ -1082,7 +1082,7 @@ export const SendModal: React.FC = () => {
                       onClick={() => handleBiometricSign(true)}
                       disabled={isSending}
                       title="Prompt Biometrics"
-                      className="p-2.5 rounded-lg bg-[#70C7BA]/15 hover:bg-[#70C7BA]/25 border border-[#70C7BA]/40 text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0 shadow-sm"
+                      className="p-2.5 text-[#70C7BA]/80 hover:text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0"
                     >
                       {isAuthenticatingBiometrics ? (
                         <div className="w-5 h-5 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
