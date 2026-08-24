@@ -159,8 +159,11 @@ interface WalletContextType {
   setIsLoggedOut: (val: boolean) => void;
   isLogoutConfirmOpen: boolean;
   setIsLogoutConfirmOpen: (open: boolean) => void;
+  isPendingLogout: boolean;
+  setIsPendingLogout: (pending: boolean) => void;
   openLogoutConfirm: () => void;
   confirmLogout: () => void;
+  requestLogoutWithLock: () => void;
   logoutWallet: () => void;
   setPassword: (password: string | null) => void;
   unlockWallet: (password: string) => Promise<boolean>;
@@ -608,6 +611,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return bioRecord || null;
   };
   const [password, setPasswordState] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [authState, setAuthState] = useState<AuthState>(unifiedAuthService.getState());
   const [autoLockDuration, setAutoLockDuration] = useState<number>(0);
@@ -715,6 +719,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const [isLoggedOut, setIsLoggedOut] = useState<boolean>(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState<boolean>(false);
+  const [isPendingLogout, setIsPendingLogout] = useState<boolean>(false);
 
   const openLogoutConfirm = () => {
     setIsLogoutConfirmOpen(true);
@@ -724,7 +729,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     openLogoutConfirm();
   };
 
+  const requestLogoutWithLock = () => {
+    setIsLogoutConfirmOpen(false);
+    if (isPasswordEnabled) {
+      setIsPendingLogout(true);
+      setIsLocked(true);
+    } else {
+      confirmLogout();
+    }
+  };
+
   const confirmLogout = async () => {
+    setIsPendingLogout(false);
     setIsSendOpen(false);
     setIsScanOpen(false);
     setIsReceiveOpen(false);
@@ -910,13 +926,24 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setToast(null);
   };
 
-  const lockWallet = React.useCallback((force: boolean = false) => {
+  const lockWallet = React.useCallback(async (force: boolean = false) => {
     if (wallets.length === 0) return; // Do NOT lock if no wallet exists (no create, import, or watch-only)
+
+    if (sessionId) {
+      try {
+        const { cryptoWorkerManager } = await import('../utils/cryptoWorkerManager');
+        await cryptoWorkerManager.runTask('closeSession', { sessionId });
+      } catch (e) {
+        console.warn('Failed to close Rust session during lock:', e);
+      }
+    }
+
     if (isPasswordEnabled) {
       if (!unifiedAuthService.lock('user_or_event', force)) {
         return;
       }
       setPasswordState(null);  // clear active password from memory
+      setSessionId(null);
       setIsLocked(true);
       setWallets((prevWallets) =>
         prevWallets.map((w) => {
@@ -936,7 +963,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       );
       showToast('Wallet locked & memory zeroized', 'info');
     }
-  }, [isPasswordEnabled, showToast, wallets.length]);
+  }, [isPasswordEnabled, showToast, wallets.length, sessionId]);
 
   const lockWalletRef = React.useRef(lockWallet);
   useEffect(() => {
@@ -998,8 +1025,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const lastRefreshTimeRef = useRef(0);
 
   const scheduleJitteredPostTxRefreshes = React.useCallback((refreshFn: (options?: { force?: boolean }) => Promise<void>) => {
-    // Jittered post-transaction refresh delays to avoid API rate limiting bursts
+    // Jittered post-transaction refresh delays to avoid API rate limiting bursts and ensure instant syncing
     const delays = [
+      500,                           // Immediate sync at ~0.5s
       2000 + Math.random() * 1000,   // ~2.0s - 3.0s
       7000 + Math.random() * 2000,   // ~7.0s - 9.0s
       18000 + Math.random() * 4000,  // ~18.0s - 22.0s
@@ -1217,19 +1245,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         });
 
         // Inject local pending change UTXOs that haven't been picked up/returned by the API yet
-        const now = Date.now();
         const liveOutpointKeys = new Set(allMergedUtxos.map(u => `${u.txid}:${u.vout}`));
         const stillPendingChange: (UTXO & { timestamp: number })[] = [];
 
         localPendingChangeUtxosRef.current.forEach((pending) => {
           const key = `${pending.txid}:${pending.vout}`;
-          const isExpired = (now - pending.timestamp) > 15000;
           if (liveOutpointKeys.has(key)) {
-            // Already officially in the live UTXO set! No need to track anymore
-          } else if (isExpired) {
-            // Expired after 15 seconds (safety cleanup), drop it
+            // Already officially in the live UTXO set! Transitioned to live
           } else {
-            // Not yet returned by node, keep tracking and merge into UTXO outputs list
+            // Node hasn't returned it yet, keep tracking locally as part of unspent set
             stillPendingChange.push(pending);
             allMergedUtxos.push(pending);
           }
@@ -1264,11 +1288,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           verifiedBalance = utxoSum;
         } else if (totalLiveBalance > 0n && spentUtxoOutpointsRef.current.length === 0) {
           verifiedBalance = totalLiveBalance;
-        } else if (allAddressesValid && (balances as (bigint | null)[]).every(b => b !== null)) {
-          // Only drop to 0 if all address queries affirmatively completed with 0 without network errors
+        } else if (allAddressesValid && (balances as (bigint | null)[]).every(b => b !== null) && stillPendingChange.length === 0 && spentUtxoOutpointsRef.current.length === 0) {
+          // Only drop to 0 if all address queries affirmatively completed with 0 AND no pending changes/spent locks remain
           verifiedBalance = utxoSum;
         } else {
-          // Retain existing balance if any query failed
+          // Retain existing balance if any query failed or pending change is settling
           verifiedBalance = wallet.balanceSompi;
         }
 
@@ -1304,13 +1328,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           } : w))
         );
 
-        // Clean up spentUtxoOutpoints: keep only outpoints that the API node still mistakenly returns,
-        // or that were spent within the last 15 seconds (safety margin for load-balanced/lagging nodes)
-        setSpentUtxoOutpoints((prev) => prev.filter(op => {
-          const spentTime = spentUtxoTimestampsRef.current[op] || 0;
-          const isRecentlySpent = (now - spentTime) < 15000;
-          return liveOutpointKeys.has(op) || isRecentlySpent;
-        }));
+        // Clean up spentUtxoOutpoints: keep an outpoint locked ONLY IF the API node still mistakenly returns it
+        // Once the node indexer stops returning the outpoint in live unspent set, the spend is confirmed by the network
+        setSpentUtxoOutpoints((prev) => prev.filter(op => liveOutpointKeys.has(op)));
 
         // Process transactions for all addresses and merge them
         const rawTxsList: any[] = [];
@@ -2016,10 +2036,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const createNewWallet = async (name: string, mnemonicWords?: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string, duressPassword?: string): Promise<Wallet> => {
-    const words = mnemonicWords && mnemonicWords.length === 24 ? mnemonicWords : generate24WordMnemonic();
+    if (password) {
+      setIsPasswordEnabled(true);
+      setIsLocked(true);
+      setPasswordState(null);
+      unifiedAuthService.lock('creation', true);
+    }
+    const words = mnemonicWords && mnemonicWords.length === 24 ? mnemonicWords : await generate24WordMnemonic();
     const prefix = getAddressPrefix(network);
     let mStr = cleanMnemonic(words.join(' '));
     
+    setIndexingState({ isIndexing: true, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
+
     let scanRes;
     try {
       scanRes = await scanKaspaWalletChain(
@@ -2040,9 +2068,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (password) {
         setIsPasswordEnabled(true);
         setPasswordState(null);
-        setIsLocked(true);
       }
-      setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
     }
     
     const addrPaths: { [address: string]: string } = {};
@@ -2121,18 +2147,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await saveSetting('kaspa_is_logged_out', false);
       } catch (e) {}
 
+      if (duressPassword) {
+        await setDuressPassword(duressPassword);
+      }
+
       if (password) {
         await setPassword(password, [newW]);
         setIsLocked(true);
         setPasswordState(null);
-        unifiedAuthService.lock('creation', true);
+        unifiedAuthService.lock('creation_complete', true);
       } else {
         setIsLocked(false);
         unifiedAuthService.completeUnlock('none');
-      }
-
-      if (duressPassword) {
-        await setDuressPassword(duressPassword);
       }
 
       setActiveBottomTab('home');
@@ -2144,6 +2170,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     } finally {
       // Wipe mnemonic string from memory
       mStr = '';
+      setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
     }
   };
 
@@ -2400,6 +2427,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   const importSeedWallet = async (name: string, words: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string, duressPassword?: string): Promise<Wallet> => {
+    if (password) {
+      setIsPasswordEnabled(true);
+      setIsLocked(true);
+      setPasswordState(null);
+      unifiedAuthService.lock('creation', true);
+    }
     const prefix = getAddressPrefix(network);
     let mStr = cleanMnemonic(words.join(' '));
     const cleanedWords = mStr.split(' ');
@@ -2429,9 +2462,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (password) {
         setIsPasswordEnabled(true);
         setPasswordState(null);
-        setIsLocked(true);
       }
-      setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
     }
     
     const addrPaths: { [address: string]: string } = {};
@@ -2537,18 +2568,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await saveSetting('kaspa_is_logged_out', false);
       } catch (e) {}
 
+      if (duressPassword) {
+        await setDuressPassword(duressPassword);
+      }
+
       if (password) {
         await setPassword(password, [newW]);
         setIsLocked(true);
         setPasswordState(null);
-        unifiedAuthService.lock('creation', true);
+        unifiedAuthService.lock('creation_complete', true);
       } else {
         setIsLocked(false);
         unifiedAuthService.completeUnlock('none');
-      }
-
-      if (duressPassword) {
-        await setDuressPassword(duressPassword);
       }
       
       setActiveBottomTab('home');
@@ -2560,10 +2591,17 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     } finally {
       // Wipe mnemonic string
       mStr = '';
+      setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
     }
   };
 
   const importKpubWallet = async (name: string, kpubOrAddress: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string, duressPassword?: string): Promise<Wallet> => {
+    if (password) {
+      setIsPasswordEnabled(true);
+      setIsLocked(true);
+      setPasswordState(null);
+      unifiedAuthService.lock('creation', true);
+    }
     const prefix = getAddressPrefix(network);
     const isDirectAddress = kpubOrAddress.includes(':') || kpubOrAddress.length > 50; // Simple heuristic
     
@@ -2638,17 +2676,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       await saveSetting('kaspa_is_logged_out', false);
     } catch (e) {}
 
+    if (duressPassword) {
+      await setDuressPassword(duressPassword);
+    }
+
     if (password) {
       await setPassword(password, [newW]);
       setIsLocked(true);
       setPasswordState(null);
-      unifiedAuthService.lock('creation', true);
+      unifiedAuthService.lock('creation_complete', true);
     } else {
       setIsLocked(false);
       unifiedAuthService.completeUnlock('none');
-    }
-    if (duressPassword) {
-      await setDuressPassword(duressPassword);
     }
 
     setActiveBottomTab('home');
@@ -2688,8 +2727,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     }
 
-    // Handle decryption if seed is encrypted at rest
-    if (!seedToUse && (activeWallet.encryptedMnemonic)) {
+    // Handle decryption if seed is encrypted at rest and no session is active
+    if (!seedToUse && (activeWallet.encryptedMnemonic) && !sessionId) {
       if (activePassword) {
         try {
           if (activeWallet.encryptedMnemonic) {
@@ -2975,7 +3014,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         feeSompi: finalFeeSompi,
         utxos: selectedUtxos,
         note,
-        lockedUtxoOutpoints: activeWallet.lockedUtxoOutpoints || []
+        lockedUtxoOutpoints: activeWallet.lockedUtxoOutpoints || [],
+        addressPaths: activeWallet.addressPaths || {}
       };
 
       if (!seedToUse) {
@@ -2983,11 +3023,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
 
       try {
+        const { cryptoWorkerManager } = await import('../utils/cryptoWorkerManager');
         const signerResult = await IsolatedSigner.signTransactionIsolated(
-          seedToUse,
+          seedToUse || '',
           passphraseToUse || undefined,
           intent,
-          addrType
+          addrType,
+          undefined,
+          false,
+          sessionId // NEW: Use Rust session if available
         );
 
         if (!signerResult.success || !signerResult.transaction) {
@@ -3118,8 +3162,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     }
 
-    // Handle decryption if seed is encrypted at rest
-    if (!seedToUse && (activeWallet.encryptedMnemonic)) {
+    // Handle decryption if seed is encrypted at rest and no session is active
+    if (!seedToUse && (activeWallet.encryptedMnemonic) && !sessionId) {
       if (activePassword) {
         try {
           if (activeWallet.encryptedMnemonic) {
@@ -3148,7 +3192,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     }
 
-    if (!seedToUse) {
+    if (!seedToUse && !sessionId) {
       showToast('Compounding requires wallet seed phrase', 'error');
       return { success: false };
     }
@@ -3246,15 +3290,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         feeSompi: feeSompi,
         utxos: utxosToCompound,
         note: 'Compounded UTXOs',
-        lockedUtxoOutpoints: activeWallet.lockedUtxoOutpoints || []
+        lockedUtxoOutpoints: activeWallet.lockedUtxoOutpoints || [],
+        addressPaths: activeWallet.addressPaths || {}
       };
 
       try {
+        const { cryptoWorkerManager } = await import('../utils/cryptoWorkerManager');
         const signerResult = await IsolatedSigner.signTransactionIsolated(
-          seedToUse,
+          seedToUse || '',
           passphraseToUse,
           compoundIntent,
-          addrType
+          addrType,
+          undefined,
+          false,
+          sessionId
         );
 
         if (!signerResult.success || !signerResult.transaction) {
@@ -3606,89 +3655,81 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       console.error('Error during duress check:', err);
     }
 
-    // 2. Normal Password Verification via ChaCha20-Poly1305 bridge
-    let passwordValid = false;
-    const canaryObj = await getSetting<{ ciphertext: string; salt: string; iv: string }>('wallet_password_canary') || await getSetting<{ ciphertext: string; salt: string; iv: string }>('wallet_pin_canary');
-    
-    if (canaryObj) {
-      passwordValid = await unifiedAuthService.verifyCanaryChaCha20(
-        canaryObj.ciphertext,
-        canaryObj.salt,
-        canaryObj.iv,
-        cleanInput,
-        "KASPRIV-WALLET-v1|KASPA-MAINNET|CANARY"
-      );
-      if (!passwordValid) {
-        return false;
-      }
-    } else {
-      // Fallback for wallets without canary (legacy)
-      const firstW = wallets.find(w => w.encryptedMnemonic);
-      if (firstW) {
+    // 2. Normal Password Verification & Session Creation via Rust Enclave
+    const activeWalletToUnlock = wallets.find(w => w.id === activeWalletId) || wallets[0];
+    if (!activeWalletToUnlock || !activeWalletToUnlock.encryptedMnemonic) {
+       // Legacy or watch-only handling
+       setPasswordState(cleanInput);
+       setIsLocked(false);
+       setIsLoggedOut(false);
+       return true;
+    }
+
+    try {
+      const { cryptoWorkerManager } = await import('../utils/cryptoWorkerManager');
+      const res = await cryptoWorkerManager.runTask<{ sessionId: string }>('unlockVaultToSession', {
+        ciphertextHex: activeWalletToUnlock.encryptedMnemonic.ciphertext,
+        saltHex: activeWalletToUnlock.encryptedMnemonic.salt,
+        ivHex: activeWalletToUnlock.encryptedMnemonic.iv,
+        password: cleanInput,
+        context: buildAadContext('MNEMONIC', activeWalletToUnlock.id),
+        passphrase: activeWalletToUnlock.encryptedPassphrase ? await decryptWithPassword(
+          activeWalletToUnlock.encryptedPassphrase.ciphertext,
+          activeWalletToUnlock.encryptedPassphrase.salt,
+          activeWalletToUnlock.encryptedPassphrase.iv,
+          cleanInput,
+          buildAadContext('PASSPHRASE', activeWalletToUnlock.id)
+        ) : undefined
+      });
+
+      if (res && res.sessionId) {
+        setSessionId(res.sessionId);
+        setPasswordState(cleanInput);
+        setIsLocked(false);
+        setIsLoggedOut(false);
+        setIsWalletSetupOpen(false);
+        unifiedAuthService.completeUnlock('password');
         try {
-          if (firstW.encryptedMnemonic) {
-            await unifiedAuthService.decryptChaCha20(
-              firstW.encryptedMnemonic.ciphertext, 
-              firstW.encryptedMnemonic.salt, 
-              firstW.encryptedMnemonic.iv, 
-              cleanInput, 
-              buildAadContext('MNEMONIC', firstW.id)
-            );
-          }
-          passwordValid = true;
-        } catch (err) {
-          return false;
+          await saveSetting('kaspa_is_logged_out', false);
+        } catch (e) {}
+
+        // Atomic Bridge: Ensure we have loaded wallets from DB into memory
+        let currentWallets = wallets;
+        if (!currentWallets || currentWallets.length === 0) {
+          try {
+            const savedWallets = await getWalletsFromDB();
+            if (savedWallets && savedWallets.length > 0) {
+              setWallets(savedWallets);
+              currentWallets = savedWallets;
+            }
+          } catch (e) {}
         }
-      } else {
-        // If no wallets and no canary, we consider it "unlocked" for now
-        passwordValid = true;
+
+        // Ensure active wallet ID is set
+        const currentActiveId = activeWalletId || (currentWallets && currentWallets.length > 0 ? currentWallets[0].id : '');
+        if (currentActiveId) {
+          setActiveWalletIdState(currentActiveId);
+          try {
+            await saveSetting('kaspa_active_wallet_id', currentActiveId);
+          } catch (e) {}
+        }
+        
+        // Ensure the navigation stack points to the main wallet viewport
+        setActiveBottomTab('home');
+
+        // Atomic Bridge: Ensure we refresh the wallet data immediately after unlocking
+        setTimeout(() => {
+          refreshBalance({ force: true });
+        }, 0);
+
+        showToast('Wallet unlocked', 'success');
+        return true;
       }
+      unifiedAuthService.failAuthentication('Incorrect password');
+      return false;
+    } catch (err) {
+      return false;
     }
-
-    if (passwordValid) {
-      unifiedAuthService.completeUnlock('password');
-      setPasswordState(cleanInput);
-      setIsLocked(false);
-      setIsLoggedOut(false);
-      setIsWalletSetupOpen(false);
-      try {
-        await saveSetting('kaspa_is_logged_out', false);
-      } catch (e) {}
-
-      // Atomic Bridge: Ensure we have loaded wallets from DB into memory
-      let currentWallets = wallets;
-      if (!currentWallets || currentWallets.length === 0) {
-        try {
-          const savedWallets = await getWalletsFromDB();
-          if (savedWallets && savedWallets.length > 0) {
-            setWallets(savedWallets);
-            currentWallets = savedWallets;
-          }
-        } catch (e) {}
-      }
-
-      // Ensure active wallet ID is set
-      const currentActiveId = activeWalletId || (currentWallets && currentWallets.length > 0 ? currentWallets[0].id : '');
-      if (currentActiveId) {
-        setActiveWalletIdState(currentActiveId);
-        try {
-          await saveSetting('kaspa_active_wallet_id', currentActiveId);
-        } catch (e) {}
-      }
-      
-      // Ensure the navigation stack points to the main wallet viewport
-      setActiveBottomTab('home');
-
-      // Atomic Bridge: Ensure we refresh the wallet data immediately after unlocking
-      setTimeout(() => {
-        refreshBalance({ force: true });
-      }, 0);
-
-      showToast('Wallet unlocked', 'success');
-      return true;
-    }
-    unifiedAuthService.failAuthentication('Incorrect password');
-    return false;
   };
 
   const enableBiometrics = async (enteredPassword: string): Promise<boolean> => {
@@ -3973,8 +4014,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setIsLoggedOut,
         isLogoutConfirmOpen,
         setIsLogoutConfirmOpen,
+        isPendingLogout,
+        setIsPendingLogout,
         openLogoutConfirm,
         confirmLogout,
+        requestLogoutWithLock,
         logoutWallet,
         setPassword,
         unlockWallet,

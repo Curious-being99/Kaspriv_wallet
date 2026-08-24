@@ -1,6 +1,5 @@
-import { generateMnemonic, mnemonicToSeedSync } from '@scure/bip39';
-import { wordlist as englishWordlist } from '@scure/bip39/wordlists/english.js';
-import { HDKey } from '@scure/bip32';
+import { Mnemonic, XPrv } from '@kasdk/web';
+import { ensureKaspaWasm } from '../crypto';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { wipe } from './common';
 import { encodeKaspaAddress, VERSION_P2PKH, VERSION_P2SH } from './address';
@@ -48,11 +47,14 @@ export function sanitizeWalletName(name: string, defaultFallback = 'Kaspa Wallet
 }
 
 /**
- * Generate a 24-word Kaspa BIP39 mnemonic seed
+ * Generate a 24-word Kaspa BIP39 mnemonic seed using WASM
  */
-export function generate24WordMnemonic(): string[] {
-  const mnemonic = generateMnemonic(englishWordlist, 256);
-  return mnemonic.split(' ');
+export async function generate24WordMnemonic(): Promise<string[]> {
+  await ensureKaspaWasm();
+  const m = Mnemonic.random(24);
+  const words = m.phrase.split(' ');
+  m.free();
+  return words;
 }
 
 /**
@@ -97,6 +99,41 @@ export function getAddressFromPublicKey(
   }
 }
 
+// Volatile, in-memory cache for seed derivation (BIP39 Seed Cache)
+let lastMnemonic = '';
+let lastPassphrase = '';
+let lastSeedHex = '';
+
+export async function getCachedSeed(mnemonic: string, passphrase = ''): Promise<Uint8Array> {
+  const cleanMnemonicStr = mnemonic.trim();
+  const cleanPassphraseStr = passphrase;
+
+  if (lastSeedHex && lastMnemonic === cleanMnemonicStr && lastPassphrase === cleanPassphraseStr) {
+    return hexToBytes(lastSeedHex);
+  }
+
+  await ensureKaspaWasm();
+
+  // Perform high-performance WASM derivation (PBKDF2-HMAC-SHA512 2,048 rounds in Rust)
+  const m = new Mnemonic(cleanMnemonicStr);
+  const newSeedHex = m.toSeed(cleanPassphraseStr);
+  m.free();
+
+  lastMnemonic = cleanMnemonicStr;
+  lastPassphrase = cleanPassphraseStr;
+  lastSeedHex = newSeedHex;
+
+  return hexToBytes(newSeedHex);
+}
+
+export function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
 /**
  * Generate a real deterministic Kaspa Address based on mnemonic words
  * Supports P2PKH (default) and P2SH, with custom index, change chain, and coinType (111111 or 972)
@@ -110,16 +147,26 @@ export async function generateDeterministicAddress(
   isChange: boolean = false,
   coinType: number = 111111
 ): Promise<string> {
-  const seedArray = mnemonicToSeedSync(mnemonic, passphrase || '');
+  const seedArray = await getCachedSeed(mnemonic, passphrase || '');
+  const seedHex = Array.from(seedArray).map(b => b.toString(16).padStart(2, '0')).join('');
+  
   try {
-    const root = HDKey.fromMasterSeed(seedArray);
+    const xprv = new XPrv(seedHex);
     const changeVal = isChange ? 1 : 0;
     const path = `m/44'/${coinType}'/0'/${changeVal}/${index}`;
-    const child = root.derive(path);
-    
-    if (!child.publicKey) throw new Error('Failed to derive public key');
+    const child = xprv.derivePath(path);
+    const pk = child.toPrivateKey();
+    const pubKey = pk.toPublicKey();
+    const pubKeyBytes = hexToBytes(pubKey.toString());
 
-    return getAddressFromPublicKey(child.publicKey, addressType, prefix);
+    const addr = getAddressFromPublicKey(pubKeyBytes, addressType, prefix);
+    
+    pk.free();
+    pubKey.free();
+    child.free();
+    xprv.free();
+    
+    return addr;
   } finally {
     wipe(seedArray);
   }
@@ -133,36 +180,47 @@ export async function generateP2SHAddress(mnemonic: string, passphrase?: string,
 }
 
 /**
+ * Derive the private key as raw bytes from a pre-computed master seed.
+ * 
+ * The caller owns the returned buffer and MUST wipe it
+ * after the signing operation.
+ */
+export async function getPrivateKeyBytesFromSeed(
+  seed: Uint8Array,
+  derivationPath = "m/44'/111111'/0'/0/0"
+): Promise<Uint8Array> {
+  await ensureKaspaWasm();
+  const seedHex = Array.from(seed).map(b => b.toString(16).padStart(2, '0')).join('');
+  const xprv = new XPrv(seedHex);
+  const child = xprv.derivePath(derivationPath);
+  const pk = child.toPrivateKey();
+  const pkBytes = hexToBytes(pk.toString());
+
+  pk.free();
+  child.free();
+  xprv.free();
+
+  return pkBytes;
+}
+
+/**
  * Derive the private key as raw bytes.
  *
  * The caller owns the returned buffer and MUST wipe it
  * after the signing operation.
  */
-export function getPrivateKeyBytesFromMnemonic(
+export async function getPrivateKeyBytesFromMnemonic(
   mnemonic: string,
   passphrase = '',
   derivationPath = "m/44'/111111'/0'/0/0"
-): Uint8Array {
-  const seed = mnemonicToSeedSync(
+): Promise<Uint8Array> {
+  const seed = await getCachedSeed(
     mnemonic,
     passphrase
   );
 
   try {
-    const root = HDKey.fromMasterSeed(seed);
-    const child = root.derive(derivationPath);
-
-    if (!child.privateKey) {
-      throw new Error(
-        'Private key derivation failed'
-      );
-    }
-
-    // Independent application-managed copy.
-    return new Uint8Array(
-      child.privateKey
-    );
-
+    return await getPrivateKeyBytesFromSeed(seed, derivationPath);
   } finally {
     // Remove the application-managed seed buffer.
     wipe(seed);

@@ -13,12 +13,12 @@ The **Kaspriv Mobile Web Wallet** is a high-security, non-custodial, client-side
     * **Cryptographic Wiping:** Secret buffers are explicitly zeroized using byte-overwriting (`wipe()`) in `finally` blocks.
 * **Independent Transaction Intent Verification:**
     * Before deriving keys or signing, `verifyTransactionIntent` independently validates recipient address prefix/network match, positive output amounts, fee parameters, and input UTXO sufficiency.
-* **Kaspa Protocol Integration & Tooling:** Kaspriv utilizes high-performance pure JavaScript/TypeScript cryptographic primitives (`@noble/secp256k1`, `@scure/bip32`, `@noble/hashes`) and `@kaspa/core-lib` for Schnorr signing, HD key derivation, and direct real Kaspa node broadcasting without requiring external WASM postinstall patches. Transaction, address, and fee logic are strictly implemented to conform to Kaspa protocol standards.
+* **Kaspa Protocol Integration & Tooling:** Kaspriv utilizes the official high-performance **Rusty Kaspa WASM SDK (`@kasdk/web`)** for Schnorr signing, HD key derivation (XPrv/XPub), BIP39 seed generation, and 2,048-round PBKDF2 derivation. All transaction, address, and fee logic are governed by the authoritative Rust core, ensuring 100% consensus parity and eliminating reliance on legacy JavaScript-bound derivation paths.
 * **Modern Mobile-First UI:** Built with React 18, TypeScript, and Tailwind CSS, featuring an intuitive touch-friendly interface, real-time balance tracking, virtual keyboard option, covenant creator, and full dev console monitoring.
 
 ## Technical Stack
 * **Frontend Framework:** React 18, TypeScript, Vite
 * **Styling:** Tailwind CSS, Lucide React (Icons), Motion (Animations)
-* **Cryptography:** Web Crypto API (`window.crypto.subtle`), `hash-wasm` (Argon2id), `@noble/secp256k1`, `@scure/bip32`, `@scure/bip39`, `@noble/hashes`
-* **Kaspa Core & Protocol:** Pure JavaScript / TypeScript signing engine, `@kaspa/core-lib`, direct real Kaspa node REST/RPC integration.
+* **Cryptography:** Web Crypto API, `hash-wasm` (Argon2id), **Rusty Kaspa WASM SDK (`@kasdk/web`)**, `@noble/hashes`
+* **Kaspa Core & Protocol:** Authoritative Rust/WASM signing and derivation engine, direct real Kaspa node REST/RPC integration.
 

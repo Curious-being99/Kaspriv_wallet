@@ -6,14 +6,6 @@ import wasmUrl from '@kasdk/web/kaspa_bg.wasm?url';
  * Resolves standard window.crypto or fallback globalThis.crypto context safely,
  * decoupling cryptography from browser WebView dependencies.
  */
-function getCrypto(): Crypto {
-  const c = (typeof window !== 'undefined' ? window.crypto : null) || (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
-  if (!c) {
-    throw new Error('Pre-derivation validation failed: Web Crypto API is not available in this environment.');
-  }
-  return c;
-}
-
 let wasmInitPromise: Promise<void> | null = null;
 
 /**
@@ -122,6 +114,12 @@ export async function unwrapKeyWithHardwareKeystore(
   return await decryptWithPassword(wrappedCiphertext, saltHex, ivHex, hardwareKeySeed, HARDWARE_KEYSTORE_BINDING_AAD);
 }
 
+let mainThreadDelegate: ((action: string, payload: any) => Promise<any>) | null = null;
+
+export function registerMainThreadDelegate(delegate: (action: string, payload: any) => Promise<any>): void {
+  mainThreadDelegate = delegate;
+}
+
 export function buildAadContext(kind: 'MNEMONIC' | 'PASSPHRASE' | 'CANARY' | string = 'MNEMONIC', walletId?: string): string {
   const baseKind = kind.toUpperCase();
   if (walletId) {
@@ -130,60 +128,23 @@ export function buildAadContext(kind: 'MNEMONIC' | 'PASSPHRASE' | 'CANARY' | str
   return `KASPRIV-WALLET-v1|KASPA-MAINNET|${baseKind}`;
 }
 
-
-
-
-
-function bytesToHex(bytes: Uint8Array): string {
-  let hex = '';
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes[i].toString(16).padStart(2, '0');
-  }
-  return hex;
-}
-
-function hexToBytes(hex: string): Uint8Array {
-  const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
-  const bytes = new Uint8Array(clean.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(clean.substr(i * 2, 2), 16);
-  }
-  return bytes;
-}
-
-async function deriveKeyWebCrypto(password: string, salt: Uint8Array): Promise<CryptoKey> {
-  const crypto = getCrypto();
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(password) as unknown as BufferSource,
-    { name: 'PBKDF2' },
-    false,
-    ['deriveKey']
-  );
-  return await crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: salt as unknown as BufferSource,
-      iterations: 100000,
-      hash: 'SHA-256'
-    },
-    keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-}
-
 /**
- * Encrypts a plaintext string using Rusty Kaspa WASM XChaCha20Poly1305,
- * with seamless fallback to Web Crypto AES-256-GCM.
+ * Encrypts a plaintext string using Rusty Kaspa WASM XChaCha20Poly1305.
+ * Seamlessly routes to CryptoWorker off-thread on main thread to prevent UI blocking.
  */
 export async function encryptWithPassword(
   plaintext: string, 
   password: string, 
   context: string = AAD_CONTEXT
 ): Promise<{ ciphertext: string; salt: string; iv: string }> {
+  const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+  if (isMainThread) {
+    if (!mainThreadDelegate) {
+      throw new Error('CRITICAL: CryptoWorker delegate is not registered on main thread.');
+    }
+    return await mainThreadDelegate('encryptWithPassword', { plaintext, password, context });
+  }
+
   try {
     await ensureKaspaWasm();
     const ciphertext = encryptXChaCha20Poly1305(plaintext, password);
@@ -191,12 +152,16 @@ export async function encryptWithPassword(
       return { ciphertext, salt: '', iv: '' };
     }
   } catch (err: any) {
-    throw new Error(`CRITICAL: Rusty Kaspa WASM XChaCha20Poly1305 encryption failed: ${err?.message || err}. Refusing silent fallback to Web Crypto.`);
+    throw new Error(`CRITICAL: Rusty Kaspa WASM XChaCha20Poly1305 encryption failed: ${err?.message || err}.`);
   }
 
   throw new Error('CRITICAL: WASM encryption produced empty ciphertext.');
 }
 
+/**
+ * Decrypts a ciphertext string using Rusty Kaspa WASM XChaCha20Poly1305.
+ * Seamlessly routes to CryptoWorker off-thread on main thread to prevent UI blocking.
+ */
 export async function decryptWithPassword(
   ciphertextHex: string, 
   saltHex: string, 
@@ -204,56 +169,15 @@ export async function decryptWithPassword(
   password: string, 
   context: string = AAD_CONTEXT
 ): Promise<string> {
-  // 1. If no salt/iv or if format matches XChaCha20 base64, attempt WASM decryption first
-  if (!saltHex || !ivHex) {
-    try {
-      await ensureKaspaWasm();
-      return decryptXChaCha20Poly1305(ciphertextHex, password);
-    } catch (err) {
-      // If failed, proceed to fallback
+  const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+  if (isMainThread) {
+    if (!mainThreadDelegate) {
+      throw new Error('CRITICAL: CryptoWorker delegate is not registered on main thread.');
     }
+    return await mainThreadDelegate('decryptWithPassword', { ciphertextHex, saltHex, ivHex, password, context });
   }
 
-  // 2. If salt and IV are present, or fallback from XChaCha20
-  if (saltHex && ivHex) {
-    try {
-      const crypto = getCrypto();
-      const salt = hexToBytes(saltHex);
-      const iv = hexToBytes(ivHex);
-      const ciphertextBytes = hexToBytes(ciphertextHex);
-      const key = await deriveKeyWebCrypto(password, salt);
-      const enc = new TextEncoder();
-
-      // Try with contextual AAD first
-      try {
-        const decryptedBuf = await crypto.subtle.decrypt(
-          {
-            name: 'AES-GCM',
-            iv: iv as unknown as BufferSource,
-            additionalData: enc.encode(context) as unknown as BufferSource
-          },
-          key,
-          ciphertextBytes as unknown as BufferSource
-        );
-        return new TextDecoder().decode(decryptedBuf);
-      } catch {
-        // Fallback without AAD for legacy data
-        const decryptedBuf = await crypto.subtle.decrypt(
-          {
-            name: 'AES-GCM',
-            iv: iv as unknown as BufferSource
-          },
-          key,
-          ciphertextBytes as unknown as BufferSource
-        );
-        return new TextDecoder().decode(decryptedBuf);
-      }
-    } catch (fallbackErr) {
-      // Fallback failed
-    }
-  }
-
-  // 3. Final attempt with WASM
+  // Enforce ultra-fast, secure Rusty Kaspa WASM ChaCha20-Poly1305 decryption inside the worker
   await ensureKaspaWasm();
   return decryptXChaCha20Poly1305(ciphertextHex, password);
 }

@@ -440,7 +440,7 @@ export const SendModal: React.FC = () => {
               authRes.decryptedPassword = undefined;
             }
           }
-        }, 100);
+        }, 0);
 
       } else if (!authRes.success && authRes.error) {
         setPasswordError(authRes.error);
@@ -531,7 +531,7 @@ export const SendModal: React.FC = () => {
         mnemonicToUse = null;
         passphraseToUse = undefined;
       }
-    }, 50);
+    }, 0);
   };
 
   if (!isSendOpen) return null;
@@ -997,33 +997,30 @@ export const SendModal: React.FC = () => {
             className="mt-3 space-y-3"
           >
             {/* Transaction Summary Card */}
-            <div className="p-2.5 rounded-xl bg-[#0B151E]  space-y-1">
+            <div className="p-3 rounded-xl bg-[#0B151E] border border-[#273E54] space-y-2">
               <div className="grid grid-cols-2 gap-2 text-[10px]">
                 <div>
                   <span className="text-slate-400 block font-medium">Sending Amount</span>
-                  <span className="font-mono font-bold text-[#70C7BA] text-[11px]">{numericAmount} KAS</span>
+                  <span className="font-mono font-bold text-[#70C7BA] text-xs block">{numericAmount} KAS</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block font-medium">Total Deduction</span>
-                  <span className="font-mono font-bold text-slate-100 text-[11px]">{(numericAmount + selectedFee).toFixed(6)} KAS</span>
+                  <span className="font-mono font-bold text-slate-100 text-xs block">{(numericAmount + selectedFee).toFixed(6)} KAS</span>
                 </div>
               </div>
-              <div className="pt-1.5 border-t border-[#273E54] text-[10px] flex items-center justify-between gap-1.5">
-                <span className="text-slate-400 font-medium shrink-0">Recipient:</span>
-                <span className="font-mono text-slate-200 truncate text-[9px]">{toAddress}</span>
+              <div className="pt-2 border-t border-[#273E54] text-[10px] space-y-1">
+                <div className="flex items-center justify-between gap-1.5">
+                  <span className="text-slate-400 font-medium shrink-0">Priority Fee:</span>
+                  <span className="font-mono text-slate-200 text-[10px]">{selectedFee} KAS</span>
+                </div>
+                <div className="flex items-center justify-between gap-1.5">
+                  <span className="text-slate-400 font-medium shrink-0">Recipient:</span>
+                  <span className="font-mono text-slate-200 truncate text-[9px] font-bold">{toAddress}</span>
+                </div>
               </div>
             </div>
 
-            {/* Zero-Storage Verification & Built-in Keyboard Security Policy */}
-            <div className="text-[9px] text-slate-400 flex items-start gap-1.5 bg-[#090D12] p-2 rounded-xl ">
-              <Lock className="w-3.5 h-3.5 text-[#70C7BA] shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <p className="font-bold text-slate-200">Zero-Storage RAM Engine</p>
-                <p className="leading-normal">
-                  Your wallet keys remain encrypted at rest. On-the-fly decryption occurs purely in ephemeral RAM to sign this transaction, then is immediately wiped.
-                </p>
-              </div>
-            </div>
+
 
             {/* BIP39 Passphrase Input Zone */}
             <div className="p-2.5 rounded-xl bg-[#0B151E]  space-y-1">

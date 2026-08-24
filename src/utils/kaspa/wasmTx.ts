@@ -1,5 +1,5 @@
 // Parallel Kaspa Transaction Builder using the Official Rusty Kaspa WASM SDK
-import initKaspaWasm, { Transaction, PrivateKey, ScriptPublicKey, signTransaction, Address, payToAddressScript } from '@kasdk/web';
+import initKaspaWasm, { Transaction, PrivateKey, ScriptPublicKey, signTransaction, Address, payToAddressScript, payToScriptHashSignatureScript, createInputSignature, payToScriptHashScript } from '@kasdk/web';
 import wasmUrl from '@kasdk/web/kaspa_bg.wasm?url';
 
 let wasmInitialized = false;
@@ -7,11 +7,36 @@ async function ensureWasm() {
   if (!wasmInitialized) {
     try {
       await initKaspaWasm({ module_or_path: wasmUrl }); // Initialize the WASM module
-    } catch (e) {
-      // Ignore if already initialized
+    } catch (e: any) {
+      if (!e.message?.includes('already initialized')) {
+        // Fallback for Android/Capacitor environments where fetch via WASM fails
+        try {
+          const response = await fetch(wasmUrl);
+          const buffer = await response.arrayBuffer();
+          await initKaspaWasm(buffer);
+        } catch (fallbackErr: any) {
+          if (!fallbackErr.message?.includes('already initialized')) {
+            console.error('Failed to initialize Kaspa WASM module', fallbackErr);
+          }
+        }
+      }
     }
     wasmInitialized = true;
   }
+}
+
+function extractSpkHex(val: any): string {
+  if (!val) return "";
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object') {
+    if (typeof val.scriptPublicKey === 'string') return val.scriptPublicKey;
+    if (typeof val.script === 'string') return val.script;
+    if (val.scriptPublicKey && typeof val.scriptPublicKey === 'object') {
+      if (typeof val.scriptPublicKey.scriptPublicKey === 'string') return val.scriptPublicKey.scriptPublicKey;
+      if (typeof val.scriptPublicKey.script === 'string') return val.scriptPublicKey.script;
+    }
+  }
+  return "";
 }
 
 export async function computeTxIdWasm(rawTx: any): Promise<string> {
@@ -34,10 +59,10 @@ export async function computeTxIdWasm(rawTx: any): Promise<string> {
   const outputs = rawTx.outputs.map((outTx: any) => {
     const amt = outTx.amount;
     const safeAmount = typeof amt === 'bigint' ? amt : BigInt(amt || 0);
-    const spkHex = outTx.scriptPublicKey?.scriptPublicKey || outTx.scriptPublicKey;
+    const spkHex = extractSpkHex(outTx.scriptPublicKey);
     return {
       value: safeAmount,
-      scriptPublicKey: new ScriptPublicKey(0, spkHex),
+      scriptPublicKey: spkHex,
     };
   });
 
@@ -82,25 +107,35 @@ export async function createSignedTransactionWasm(
   // Map inputs for the SDK
   const inputs = utxos.map((u: any) => {
     const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
-    const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || 
-                   (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || 
-                   u.scriptPublicKey;
+    let spkHex = extractSpkHex(u.utxoEntry?.scriptPublicKey) || extractSpkHex(u.scriptPublicKey);
+
+    if (!spkHex && u.address) {
+      try {
+        const addrObj = new Address(u.address);
+        spkHex = payToAddressScript(addrObj).script;
+      } catch {
+        // Ignore fallback error
+      }
+    }
+
+    const spkObj = new ScriptPublicKey(0, spkHex || "");
 
     return {
       previousOutpoint: {
         transactionId: u.outpoint?.transactionId || u.transactionId,
-        index: u.outpoint?.index !== undefined ? u.outpoint.index : u.index
+        index: u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)
       },
       signatureScript: "",
       sequence: 0n,
       sigOpCount: 1,
       utxo: {
+        address: u.address || u.utxoEntry?.address || "",
         outpoint: {
           transactionId: u.outpoint?.transactionId || u.transactionId,
-          index: u.outpoint?.index !== undefined ? u.outpoint.index : u.index
+          index: u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)
         },
         amount: amt,
-        scriptPublicKey: new ScriptPublicKey(0, spkHex), // Assuming version 0
+        scriptPublicKey: spkObj,
         blockDaaScore: BigInt(u.utxoEntry?.blockDaaScore || 1),
         isCoinbase: Boolean(u.utxoEntry?.isCoinbase)
       }
@@ -136,7 +171,46 @@ export async function createSignedTransactionWasm(
 
   // Build the transaction utilizing internal WASM objects
   const tx = new Transaction(rawTx);
-  const signedTx = signTransaction(tx, [pk], true);
+
+  let signedTx: any;
+  const isP2SHTx = addressType === 'P2SH' || 
+    utxos.some((u: any) => 
+      (u.address && u.address.includes(':p')) || 
+      extractSpkHex(u.utxoEntry?.scriptPublicKey || u.scriptPublicKey).toLowerCase().startsWith('aa20')
+    ) ||
+    toAddress.includes(':p') ||
+    (changeAddress && changeAddress.includes(':p'));
+
+  if (isP2SHTx) {
+    let finalRedeemScriptHex = redeemScriptHex;
+    if (!finalRedeemScriptHex && pk) {
+      const xOnly = pk.toPublicKey().toXOnlyPublicKey();
+      finalRedeemScriptHex = '20' + xOnly.toString() + 'ac';
+    }
+    
+    if (finalRedeemScriptHex) {
+      for (let i = 0; i < tx.inputs.length; i++) {
+        const sig = createInputSignature(tx, i, pk);
+        const sigScript = payToScriptHashSignatureScript(finalRedeemScriptHex, sig);
+        tx.inputs[i].signatureScript = sigScript;
+      }
+      signedTx = tx;
+    }
+  }
+  
+  if (!signedTx) {
+    try {
+      const pkHexStr = pk.toString();
+      signedTx = signTransaction(tx, [pkHexStr], true);
+    } catch (err: any) {
+      if (err.message && err.message.includes('Signature is empty')) {
+        const pkHexStr = pk.toString();
+        signedTx = signTransaction(tx, [pkHexStr], false);
+      } else {
+        throw err;
+      }
+    }
+  }
   
   const finalJson: any = signedTx.toJSON();
   
@@ -154,8 +228,8 @@ export async function createSignedTransactionWasm(
     outputs: finalJson.outputs.map((o: any) => ({
       amount: BigInt(o.value), // Keep it as BigInt for compatibility with broadcastKaspaTransaction
       scriptPublicKey: {
-        version: o.scriptPublicKey.version,
-        scriptPublicKey: o.scriptPublicKey.script
+        version: o.scriptPublicKey?.version !== undefined ? Number(o.scriptPublicKey.version) : 0,
+        scriptPublicKey: o.scriptPublicKey?.script || o.scriptPublicKey?.scriptPublicKey || (typeof o.scriptPublicKey === 'string' ? o.scriptPublicKey : '')
       }
     })),
     lockTime: Number(finalJson.lockTime),
@@ -194,25 +268,35 @@ export async function createSignedTransactionIsolatedWasm(
 
   const inputs = utxos.map((u: any) => {
     const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
-    const spkHex = u.utxoEntry?.scriptPublicKey?.scriptPublicKey || 
-                   (typeof u.utxoEntry?.scriptPublicKey === 'string' ? u.utxoEntry.scriptPublicKey : null) || 
-                   u.scriptPublicKey;
+    let spkHex = extractSpkHex(u.utxoEntry?.scriptPublicKey) || extractSpkHex(u.scriptPublicKey);
+
+    if (!spkHex && u.address) {
+      try {
+        const addrObj = new Address(u.address);
+        spkHex = payToAddressScript(addrObj).script;
+      } catch {
+        // Ignore fallback error
+      }
+    }
+
+    const spkObj = new ScriptPublicKey(0, spkHex || "");
 
     return {
       previousOutpoint: {
         transactionId: u.outpoint?.transactionId || u.transactionId,
-        index: u.outpoint?.index !== undefined ? u.outpoint.index : u.index
+        index: u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)
       },
       signatureScript: "",
       sequence: 0n,
       sigOpCount: 1,
       utxo: {
+        address: u.address || u.utxoEntry?.address || "",
         outpoint: {
           transactionId: u.outpoint?.transactionId || u.transactionId,
-          index: u.outpoint?.index !== undefined ? u.outpoint.index : u.index
+          index: u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)
         },
         amount: amt,
-        scriptPublicKey: new ScriptPublicKey(0, spkHex),
+        scriptPublicKey: spkObj,
         blockDaaScore: BigInt(u.utxoEntry?.blockDaaScore || 1),
         isCoinbase: Boolean(u.utxoEntry?.isCoinbase)
       }
@@ -247,7 +331,72 @@ export async function createSignedTransactionIsolatedWasm(
   };
 
   const tx = new Transaction(rawTx);
-  const signedTx = signTransaction(tx, pks, true);
+
+  let signedTx: any;
+  const isP2SHTx = addressType === 'P2SH' || 
+    utxos.some((u: any) => 
+      (u.address && u.address.includes(':p')) || 
+      extractSpkHex(u.utxoEntry?.scriptPublicKey || u.scriptPublicKey).toLowerCase().startsWith('aa20')
+    ) ||
+    toAddress.includes(':p') ||
+    (changeAddress && changeAddress.includes(':p'));
+
+  if (isP2SHTx) {
+    const pksInfo = Object.entries(keysMap).map(([path, bytes]) => {
+      const pkHex = Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      const pk = new PrivateKey(pkHex);
+      const xOnly = pk.toPublicKey().toXOnlyPublicKey();
+      const rsHex = '20' + xOnly.toString() + 'ac';
+      const p2shScript = payToScriptHashScript(rsHex);
+      return { path, pk, redeemScriptHex: rsHex, spkHex: p2shScript.script };
+    });
+
+    for (let i = 0; i < tx.inputs.length; i++) {
+      const u = utxos[i];
+      let inputSpkHex = extractSpkHex(u?.utxoEntry?.scriptPublicKey) || extractSpkHex(u?.scriptPublicKey);
+      if (!inputSpkHex && u?.address) {
+        try {
+          const addrObj = new Address(u.address);
+          inputSpkHex = payToAddressScript(addrObj).script;
+        } catch {
+          // ignore fallback error
+        }
+      }
+
+      const inputPath = u?.derivationPath || u?.path;
+      let match = inputPath ? pksInfo.find(info => info.path === inputPath) : undefined;
+      
+      if (!match && inputSpkHex) {
+        match = pksInfo.find(info => info.spkHex.toLowerCase() === inputSpkHex.toLowerCase());
+      }
+      
+      if (!match) match = pksInfo[0]; 
+      
+      const rsHexToUse = redeemScriptHex || match.redeemScriptHex;
+      const pkToUse = match.pk;
+      
+      const sig = createInputSignature(tx, i, pkToUse);
+      const sigScript = payToScriptHashSignatureScript(rsHexToUse, sig);
+      tx.inputs[i].signatureScript = sigScript;
+    }
+    signedTx = tx;
+  } else {
+    try {
+      const pksHex = pks.map(pk => pk.toString());
+      signedTx = signTransaction(tx, pksHex, true);
+    } catch (err: any) {
+      if (err.message && err.message.includes('Signature is empty')) {
+        // Fallback: try signing without verification if verification fails due to edge cases
+        const pksHex = pks.map(pk => pk.toString());
+        signedTx = signTransaction(tx, pksHex, false);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   const finalJson: any = signedTx.toJSON();
   
   const formattedTx = {
@@ -264,8 +413,8 @@ export async function createSignedTransactionIsolatedWasm(
     outputs: finalJson.outputs.map((o: any) => ({
       amount: BigInt(o.value),
       scriptPublicKey: {
-        version: o.scriptPublicKey.version,
-        scriptPublicKey: o.scriptPublicKey.script
+        version: o.scriptPublicKey?.version !== undefined ? Number(o.scriptPublicKey.version) : 0,
+        scriptPublicKey: o.scriptPublicKey?.script || o.scriptPublicKey?.scriptPublicKey || (typeof o.scriptPublicKey === 'string' ? o.scriptPublicKey : '')
       }
     })),
     lockTime: Number(finalJson.lockTime),

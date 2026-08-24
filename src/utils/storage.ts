@@ -16,8 +16,8 @@ if (!IS_NATIVE && typeof window !== 'undefined') {
 }
 
 /**
- * High-performance, compile-safe Relational SQLite Database Driver.
- * Strictly linked to Android Jetpack Room with direct native bridge queries.
+ * High-performance, compile-safe Native Database Driver.
+ * Strictly linked to Android Jetpack Room (Kotlin) with direct native bridge queries.
  * Seamless IDB fallback for web preview persistence.
  */
 class SQLiteDatabase {
@@ -25,87 +25,127 @@ class SQLiteDatabase {
   
   public async init(): Promise<void> {
     if (this.initialized) return;
-    try {
-      if (IS_NATIVE) {
-        // Build actual schemas inside the native Jetpack Room container
-        await this.executeSql('CREATE TABLE IF NOT EXISTS wallets (id TEXT PRIMARY KEY, value TEXT)');
-        await this.executeSql('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
-        await this.executeSql('CREATE TABLE IF NOT EXISTS utxos (walletId TEXT PRIMARY KEY, data TEXT)');
-        await this.executeSql('CREATE TABLE IF NOT EXISTS transactions (walletId TEXT PRIMARY KEY, data TEXT)');
-      }
-      this.initialized = true;
-    } catch (e) {
-      console.error('Native SQLite Driver: Initialization failed:', e);
-      this.initialized = true;
+    // Native side initialization is handled in Kotlin AppDatabase.getDatabase
+    this.initialized = true;
+  }
+
+  public async saveWallet(id: string, data: string): Promise<void> {
+    if (IS_NATIVE) {
+      await SQLitePlugin.saveWallet({ id, data });
+    } else if (webDbPromise) {
+      const db = await webDbPromise;
+      await db.put('wallets', { id, value: data });
     }
   }
 
-  public async executeSql(sql: string, params: any[] = []): Promise<{ rows: any[] }> {
+  public async getWallets(): Promise<{ id: string; value: string }[]> {
     if (IS_NATIVE) {
-      const res = await SQLitePlugin.executeSql({ sql, params });
-      return { rows: res?.rows || [] };
-    }
-    
-    // Web Fallback implementation using IDB
-    if (!webDbPromise) return { rows: [] };
-    try {
+      const res = await SQLitePlugin.getWallets();
+      return res.wallets || [];
+    } else if (webDbPromise) {
       const db = await webDbPromise;
-      if (sql.startsWith('INSERT OR REPLACE INTO')) {
-        const tableMatch = sql.match(/INTO\s+(\w+)/i);
-        if (tableMatch) {
-          const table = tableMatch[1];
-          const keyName = table === 'settings' ? 'key' : (table === 'wallets' ? 'id' : 'walletId');
-          const dataName = (table === 'settings' || table === 'wallets') ? 'value' : 'data';
-          await db.put(table, { [keyName]: params[0], [dataName]: params[1] });
-        }
-      } else if (sql.startsWith('SELECT * FROM')) {
-        const tableMatch = sql.match(/FROM\s+(\w+)/i);
-        if (tableMatch) {
-          const table = tableMatch[1];
-          const whereMatch = sql.match(/WHERE\s+(\w+)\s*=/i);
-          if (whereMatch) {
-            const val = await db.get(table, params[0]);
-            return { rows: val ? [val] : [] };
-          } else {
-            const all = await db.getAll(table);
-            return { rows: all };
-          }
-        }
-      } else if (sql.startsWith('DELETE FROM')) {
-        const tableMatch = sql.match(/FROM\s+(\w+)/i);
-        if (tableMatch) {
-          const table = tableMatch[1];
-          const whereMatch = sql.match(/WHERE\s+(\w+)\s*=/i);
-          if (whereMatch) {
-            await db.delete(table, params[0]);
-          } else {
-            await db.clear(table);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('IDB fallback error:', e);
+      return await db.getAll('wallets');
     }
-    return { rows: [] };
+    return [];
+  }
+
+  public async deleteWallet(id: string): Promise<void> {
+    if (IS_NATIVE) {
+      await SQLitePlugin.deleteWallet({ id });
+    } else if (webDbPromise) {
+      const db = await webDbPromise;
+      await db.delete('wallets', id);
+      await db.delete('utxos', id);
+      await db.delete('transactions', id);
+    }
+  }
+
+  public async saveSetting(key: string, value: string): Promise<void> {
+    if (IS_NATIVE) {
+      await SQLitePlugin.saveSetting({ key, value });
+    } else if (webDbPromise) {
+      const db = await webDbPromise;
+      await db.put('settings', { key, value });
+    }
+  }
+
+  public async getSettings(): Promise<{ key: string; value: string }[]> {
+    if (IS_NATIVE) {
+      const res = await SQLitePlugin.getSettings();
+      return res.settings || [];
+    } else if (webDbPromise) {
+      const db = await webDbPromise;
+      return await db.getAll('settings');
+    }
+    return [];
+  }
+
+  public async deleteSetting(key: string): Promise<void> {
+    if (IS_NATIVE) {
+      await SQLitePlugin.deleteSetting({ key });
+    } else if (webDbPromise) {
+      const db = await webDbPromise;
+      await db.delete('settings', key);
+    }
+  }
+
+  public async saveUtxos(walletId: string, data: string): Promise<void> {
+    if (IS_NATIVE) {
+      await SQLitePlugin.saveUtxo({ walletId, data });
+    } else if (webDbPromise) {
+      const db = await webDbPromise;
+      await db.put('utxos', { walletId, data });
+    }
+  }
+
+  public async getUtxos(walletId: string): Promise<{ walletId: string; data: string } | undefined> {
+    if (IS_NATIVE) {
+      const res = await SQLitePlugin.getUtxos();
+      return res.utxos.find(u => u.walletId === walletId);
+    } else if (webDbPromise) {
+      const db = await webDbPromise;
+      return await db.get('utxos', walletId);
+    }
+    return undefined;
+  }
+
+  public async saveTransactions(walletId: string, data: string): Promise<void> {
+    if (IS_NATIVE) {
+      await SQLitePlugin.saveTransaction({ walletId, data });
+    } else if (webDbPromise) {
+      const db = await webDbPromise;
+      await db.put('transactions', { walletId, data });
+    }
+  }
+
+  public async getTransactions(walletId: string): Promise<{ walletId: string; data: string } | undefined> {
+    if (IS_NATIVE) {
+      const res = await SQLitePlugin.getTransactions();
+      return res.transactions.find(t => t.walletId === walletId);
+    } else if (webDbPromise) {
+      const db = await webDbPromise;
+      return await db.get('transactions', walletId);
+    }
+    return undefined;
   }
 
   public async clearAll(): Promise<void> {
     if (IS_NATIVE) {
-      await SQLitePlugin.clearAll();
+      // In Kotlin, we use destructive migration or manual delete.
+      // For simplicity, we'll implement individual deletes if needed or a clearAll method.
+      const wallets = await this.getWallets();
+      for (const w of wallets) await this.deleteWallet(w.id);
     } else if (webDbPromise) {
-      try {
-        const db = await webDbPromise;
-        await Promise.all([
-          db.clear('wallets'),
-          db.clear('settings'),
-          db.clear('utxos'),
-          db.clear('transactions')
-        ]);
-      } catch (e) {}
+      const db = await webDbPromise;
+      await Promise.all([
+        db.clear('wallets'),
+        db.clear('settings'),
+        db.clear('utxos'),
+        db.clear('transactions')
+      ]);
     }
   }
 }
-
 
 const sqliteDb = new SQLiteDatabase();
 
@@ -131,19 +171,14 @@ export async function saveWalletToDB(wallet: Wallet): Promise<void> {
       balanceSompi: wallet.balanceSompi.toString()
     });
 
-    await db.executeSql(
-      'INSERT OR REPLACE INTO wallets (id, value) VALUES (?, ?)',
-      [wallet.id, valuePayload]
-    );
+    await db.saveWallet(wallet.id, valuePayload);
   });
 }
 
 export async function getWalletsFromDB(): Promise<Wallet[]> {
   const result = await withSQLite(async (db) => {
-    const res = await db.executeSql('SELECT * FROM wallets');
-    if (!res.rows || !Array.isArray(res.rows)) return [];
-    
-    return res.rows.map((row) => {
+    const wallets = await db.getWallets();
+    return wallets.map((row) => {
       const w = JSON.parse(row.value);
       return { ...w, balanceSompi: BigInt(w.balanceSompi || '0') };
     });
@@ -153,36 +188,28 @@ export async function getWalletsFromDB(): Promise<Wallet[]> {
 
 export async function deleteWalletFromDB(id: string): Promise<void> {
   return withSQLite(async (db) => {
-    await db.executeSql('DELETE FROM wallets WHERE id = ?', [id]);
-    await db.executeSql('DELETE FROM utxos WHERE walletid = ?', [id]);
-    await db.executeSql('DELETE FROM transactions WHERE walletid = ?', [id]);
+    await db.deleteWallet(id);
   });
 }
 
 export async function clearAllWalletsFromDB(): Promise<void> {
   return withSQLite(async (db) => {
-    await db.executeSql('DELETE FROM wallets');
-    await db.executeSql('DELETE FROM settings');
-    await db.executeSql('DELETE FROM utxos');
-    await db.executeSql('DELETE FROM transactions');
+    await db.clearAll();
   });
 }
 
 export async function saveUtxosToDB(walletId: string, utxos: UTXO[]): Promise<void> {
   return withSQLite(async (db) => {
     const serialized = JSON.stringify(utxos.map((u) => ({ ...u, amountSompi: u.amountSompi.toString() })));
-    await db.executeSql(
-      'INSERT OR REPLACE INTO utxos (walletId, data) VALUES (?, ?)',
-      [walletId, serialized]
-    );
+    await db.saveUtxos(walletId, serialized);
   });
 }
 
 export async function getUtxosFromDB(walletId: string): Promise<UTXO[]> {
   const result = await withSQLite(async (db) => {
-    const res = await db.executeSql('SELECT * FROM utxos WHERE walletId = ?', [walletId]);
-    if (!res.rows || res.rows.length === 0) return [];
-    const raw = JSON.parse(res.rows[0].data);
+    const row = await db.getUtxos(walletId);
+    if (!row) return [];
+    const raw = JSON.parse(row.data);
     if (!Array.isArray(raw)) return [];
     return raw.map((u: any) => ({ ...u, amountSompi: BigInt(u.amountSompi || '0') }));
   });
@@ -194,18 +221,15 @@ export async function saveTransactionsToDB(walletId: string, txs: KaspaTransacti
     const serialized = JSON.stringify(
       txs.map((t) => ({ ...t, amountSompi: t.amountSompi.toString(), feeSompi: t.feeSompi.toString() }))
     );
-    await db.executeSql(
-      'INSERT OR REPLACE INTO transactions (walletId, data) VALUES (?, ?)',
-      [walletId, serialized]
-    );
+    await db.saveTransactions(walletId, serialized);
   });
 }
 
 export async function getTransactionsFromDB(walletId: string): Promise<KaspaTransaction[]> {
   const result = await withSQLite(async (db) => {
-    const res = await db.executeSql('SELECT * FROM transactions WHERE walletId = ?', [walletId]);
-    if (!res.rows || res.rows.length === 0) return [];
-    const raw = JSON.parse(res.rows[0].data);
+    const row = await db.getTransactions(walletId);
+    if (!row) return [];
+    const raw = JSON.parse(row.data);
     if (!Array.isArray(raw)) return [];
     return raw.map((t: any) => ({ ...t, amountSompi: BigInt(t.amountSompi || '0'), feeSompi: BigInt(t.feeSompi || '0') }));
   });
@@ -279,25 +303,23 @@ export async function auditWalletStorage(): Promise<{ ok: boolean; walletCount: 
 export async function saveSetting(key: string, value: any): Promise<void> {
   return withSQLite(async (db) => {
     const serialized = JSON.stringify({ value });
-    await db.executeSql(
-      'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-      [key, serialized]
-    );
+    await db.saveSetting(key, serialized);
   });
 }
 
 export async function getSetting<T>(key: string): Promise<T | undefined> {
   return withSQLite(async (db) => {
-    const res = await db.executeSql('SELECT * FROM settings WHERE key = ?', [key]);
-    if (!res.rows || res.rows.length === 0) return undefined;
-    const data = JSON.parse(res.rows[0].value);
+    const settings = await db.getSettings();
+    const row = settings.find(s => s.key === key);
+    if (!row) return undefined;
+    const data = JSON.parse(row.value);
     return data?.value as T;
   });
 }
 
 export async function removeSetting(key: string): Promise<void> {
   return withSQLite(async (db) => {
-    await db.executeSql('DELETE FROM settings WHERE key = ?', [key]);
+    await db.deleteSetting(key);
   });
 }
 

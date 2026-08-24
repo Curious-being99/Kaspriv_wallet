@@ -4,9 +4,9 @@ import { Server, Hash, Activity } from 'lucide-react';
 import { formatKas, getKaspaApiUrl } from '../utils/kaspa';
 
 export const IndexingOverlay: React.FC = () => {
-  const { indexingState, isLocked } = useWallet();
+  const { indexingState } = useWallet();
 
-  if (!indexingState || !indexingState.isIndexing || isLocked) {
+  if (!indexingState || !indexingState.isIndexing) {
     return null;
   }
 

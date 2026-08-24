@@ -16,6 +16,10 @@ export const LockScreen: React.FC = () => {
     unlockWithBiometrics,
     setActiveBottomTab,
     clearPendingLockFlags,
+    isPendingLogout,
+    setIsPendingLogout,
+    confirmLogout,
+    indexingState,
   } = useWallet();
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
   const [password, setPassword] = useState('');
@@ -26,7 +30,7 @@ export const LockScreen: React.FC = () => {
 
   // Auto-trigger Biometrics if enabled, or Virtual Keyboard when LockScreen is shown
   useEffect(() => {
-    if (isLocked && wallets.length > 0) {
+    if (isLocked && !indexingState?.isIndexing && wallets.length > 0) {
       setPassword('');
       setError(null);
       if (isBiometricsEnabled) {
@@ -45,9 +49,9 @@ export const LockScreen: React.FC = () => {
       closeKeyboard();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocked, wallets.length, isBiometricsEnabled]);
+  }, [isLocked, wallets.length, isBiometricsEnabled, indexingState?.isIndexing]);
 
-  if (!isLocked || wallets.length === 0) return null;
+  if (!isLocked || (indexingState && indexingState.isIndexing)) return null;
 
   const handleBiometricUnlock = async () => {
     if (isAuthenticatingBiometrics || isDecrypting) return;
@@ -61,8 +65,13 @@ export const LockScreen: React.FC = () => {
         clearPendingLockFlags();
         unifiedAuthService.completeUnlock('biometrics');
         setIsLocked(false);
-        setActiveBottomTab('home');
         closeKeyboard();
+        if (isPendingLogout) {
+          setIsPendingLogout(false);
+          await confirmLogout();
+        } else {
+          setActiveBottomTab('home');
+        }
       } else {
         hapticError();
         setError('Biometric authentication failed or was cancelled');
@@ -89,8 +98,13 @@ export const LockScreen: React.FC = () => {
         clearPendingLockFlags();
         unifiedAuthService.completeUnlock('password');
         setIsLocked(false);
-        setActiveBottomTab('home');
         closeKeyboard();
+        if (isPendingLogout) {
+          setIsPendingLogout(false);
+          await confirmLogout();
+        } else {
+          setActiveBottomTab('home');
+        }
       } else {
         hapticError();
         setError('Incorrect password');
@@ -133,8 +147,12 @@ export const LockScreen: React.FC = () => {
         <div className="text-center space-y-1">
           <h2 className={`font-bold text-slate-100 tracking-tight transition-all duration-300 ${
             isKeyboardOpen ? 'text-lg' : 'text-xl'
-          }`}>Wallet Locked</h2>
-          <p className="text-xs text-slate-400">Enter your password to continue</p>
+          }`}>
+            {isPendingLogout ? 'Unlock to Log Out' : 'Wallet Locked'}
+          </h2>
+          <p className="text-xs text-slate-400">
+            {isPendingLogout ? 'Enter your password to authorize log out' : 'Enter your password to continue'}
+          </p>
         </div>
 
         <form onSubmit={handleUnlock} className={`w-full transition-all duration-300 ${isKeyboardOpen ? 'space-y-3' : 'space-y-4'}`}>
@@ -180,14 +198,18 @@ export const LockScreen: React.FC = () => {
             <button
               type="submit"
               disabled={!password || isDecrypting}
-              className="w-full py-3.5 rounded-xl bg-[#70C7BA] text-[#090D12] font-bold text-sm shadow-sm hover:bg-[#5eb5a8] active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 cursor-pointer"
+              className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-sm active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2 cursor-pointer ${
+                isPendingLogout
+                  ? 'bg-rose-500 hover:bg-rose-600 text-white'
+                  : 'bg-[#70C7BA] text-[#090D12] hover:bg-[#5eb5a8]'
+              }`}
             >
               {isDecrypting ? (
-                <div className="w-5 h-5 border-2 border-[#0B151E]/30 border-t-[#0B151E] rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
               ) : (
                 <>
                   <Unlock className="w-4 h-4" />
-                  <span>Unlock</span>
+                  <span>{isPendingLogout ? 'Unlock & Log Out' : 'Unlock'}</span>
                 </>
               )}
             </button>
@@ -210,6 +232,20 @@ export const LockScreen: React.FC = () => {
                     <span>Tap to unlock with Biometrics</span>
                   </>
                 )}
+              </button>
+            )}
+
+            {isPendingLogout && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPendingLogout(false);
+                  setIsLocked(false);
+                  closeKeyboard();
+                }}
+                className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                Cancel Log Out
               </button>
             )}
           </div>

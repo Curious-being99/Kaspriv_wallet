@@ -15,9 +15,8 @@
 // 6. Calculate Change (enforcing minimum spendable threshold) -> 7. Build TX -> 
 // 8. Sign in Isolated Boundary -> 9. Broadcast -> 10. Confirm & Mark Index Used.
 
-import { HDKey } from '@scure/bip32';
-import { mnemonicToSeedSync } from '@scure/bip39';
-import { getAddressFromPublicKey } from '../utils/kaspa/keys';
+import { XPrv } from '@kasdk/web';
+import { getAddressFromPublicKey, getCachedSeed, hexToBytes } from '../utils/kaspa/keys';
 import { wipe } from '../utils/kaspa/common';
 
 export const KASPA_PURPOSE = 44;
@@ -65,18 +64,22 @@ export async function deriveChangeAddress(
     throw new Error('INVALID_CHANGE_INDEX');
   }
 
-  const seedArray = mnemonicToSeedSync(mnemonic, passphrase);
+  const seedArray = await getCachedSeed(mnemonic, passphrase);
+  const seedHex = Array.from(seedArray).map(b => b.toString(16).padStart(2, '0')).join('');
 
   try {
-    const root = HDKey.fromMasterSeed(seedArray);
+    const root = new XPrv(seedHex);
     const derivationPath = `m/44'/${coinType}'/${account}'/${CHANGE_CHAIN}/${index}`;
-    const child = root.derive(derivationPath);
+    const child = root.derivePath(derivationPath);
 
-    if (!child.publicKey) {
-      throw new Error('DERIVE_PUBLIC_KEY_FAILED');
-    }
+    const pk = child.toPrivateKey();
+    const pubKey = pk.toPublicKey();
+    const address = getAddressFromPublicKey(hexToBytes(pubKey.toString()), addressType, prefix);
 
-    const address = getAddressFromPublicKey(child.publicKey, addressType, prefix);
+    pk.free();
+    pubKey.free();
+    child.free();
+    root.free();
 
     return {
       address,

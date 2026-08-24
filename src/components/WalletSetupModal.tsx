@@ -66,8 +66,8 @@ export const WalletSetupModal: React.FC = () => {
 
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
 
-  const handleStartCreate = () => {
-    const words = generate24WordMnemonic();
+  const handleStartCreate = async () => {
+    const words = await generate24WordMnemonic();
     setGeneratedWords(words);
     setStep(1);
     setMode('create');
@@ -442,9 +442,9 @@ export const WalletSetupModal: React.FC = () => {
                   </div>
 
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (generatedWords.length === 0) {
-                        const words = generate24WordMnemonic();
+                        const words = await generate24WordMnemonic();
                         setGeneratedWords(words);
                       }
                       setStep(2);
@@ -1113,36 +1113,28 @@ export const WalletSetupModal: React.FC = () => {
                       const kpub = kpubInput.trim();
                       const addr = addressInput.trim();
 
-      try {
-        setIsCreating(true);
-        const flow = pendingFlow;
-        const pass = setupPassword;
-        const duressPass = setupDuressPassword.trim() || undefined;
-        const name = sanitizeWalletName(walletName.trim(), flow === 'create' ? 'New Kaspa Wallet' : flow === 'import-seed' ? 'Imported Wallet' : 'Watch-Only');
-        const words = flow === 'create' ? [...generatedWords] : cleanMnemonic(importWordsText).split(' ');
-        const passInput = passphraseInput.trim() || undefined;
-        const addrType = addressType;
-        const kpub = kpubInput.trim();
-        const addr = addressInput.trim();
+                      try {
+                        setIsCreating(true);
+                        // Close modal and reset setup state immediately so Duress/Password setup form is removed from DOM/background
+                        setIsWalletSetupOpen(false);
+                        resetState();
 
-        if (flow === 'create') {
-          await createNewWallet(name, words, passInput, addrType, pass, duressPass);
-        } else if (flow === 'import-seed') {
-          await importSeedWallet(name, words, passInput, addrType, pass, duressPass);
-        } else if (flow === 'import-address' || (flow as string) === 'import-kpub') {
-          if ((flow as string) === 'import-kpub') {
-            await importKpubWallet(name || 'Watch-Only Kpub', kpub, addrType, pass, duressPass);
-          } else {
-            await importKpubWallet(name || 'Live Address Tracker', addr, addrType, pass, duressPass);
-          }
-        }
-        
-        setIsWalletSetupOpen(false);
-        resetState();
-      } catch (err) {
-        showToast('Failed to create wallet', 'error');
-        setIsCreating(false);
-      } finally {
+                        if (flow === 'create') {
+                          await createNewWallet(name, words, passInput, addrType, pass, duressPass);
+                        } else if (flow === 'import-seed') {
+                          await importSeedWallet(name, words, passInput, addrType, pass, duressPass);
+                        } else if (flow === 'import-address' || (flow as string) === 'import-kpub') {
+                          if ((flow as string) === 'import-kpub') {
+                            await importKpubWallet(name || 'Watch-Only Kpub', kpub, addrType, pass, duressPass);
+                          } else {
+                            await importKpubWallet(name || 'Live Address Tracker', addr, addrType, pass, duressPass);
+                          }
+                        }
+                      } catch (err) {
+                        showToast('Failed to create wallet', 'error');
+                        setIsCreating(false);
+                        setIsWalletSetupOpen(true);
+                      } finally {
                         wipeStringArray(words);
                         setGeneratedWords([]);
                         setImportWordsText('');

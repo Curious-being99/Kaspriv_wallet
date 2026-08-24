@@ -165,11 +165,11 @@ export async function testTransactionSigningHygiene(): Promise<AuditResult> {
 /**
  * Test 4: Verify key derivation zeroizes intermediate seed buffers.
  */
-export function testKeyDerivationSeedWipe(): AuditResult {
+export async function testKeyDerivationSeedWipe(): Promise<AuditResult> {
   const dummyMnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
   
   try {
-    const keyBytes = getPrivateKeyBytesFromMnemonic(dummyMnemonic);
+    const keyBytes = await getPrivateKeyBytesFromMnemonic(dummyMnemonic);
     const isValidLength = keyBytes instanceof Uint8Array && keyBytes.length === 32;
     
     // Wipe returned key bytes
@@ -206,7 +206,7 @@ export async function runSecurityAuditSuite(): Promise<AuditSuiteReport> {
     testBufferWipe(),
     await testMessageSigningHygiene(),
     await testTransactionSigningHygiene(),
-    testKeyDerivationSeedWipe(),
+    await testKeyDerivationSeedWipe(),
   ];
 
   const success = results.every(r => r.passed);

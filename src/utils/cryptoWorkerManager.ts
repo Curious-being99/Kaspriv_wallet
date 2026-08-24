@@ -1,5 +1,6 @@
 import MyWorker from './crypto.worker?worker';
 import { isAndroid } from './platform';
+import { registerMainThreadDelegate } from './crypto';
 
 interface WorkerTask {
   resolve: (value: any) => void;
@@ -43,6 +44,9 @@ class CryptoWorkerManager {
       });
 
       this.supportState = 'supported';
+      
+      // Register delegate so that direct calls to decryptWithPassword/encryptWithPassword run off-thread automatically
+      registerMainThreadDelegate((action, payload) => this.runTask(action, payload));
     } catch (e) {
       console.warn('CryptoWorkerManager: Failed to initialize background worker thread, using main thread fallback:', e);
       this.supportState = 'unsupported';

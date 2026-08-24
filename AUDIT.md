@@ -163,6 +163,16 @@ The security audit identified crucial cryptographic, platform, and software desi
 
 ---
 
+### 13. High-Performance WASM-Only Mnemonic & Seed Derivation
+* **Severity:** **High**
+* **Finding:** Mnemonic generation and PBKDF2-HMAC-SHA512 seed derivation (2,048 rounds) were handled in JavaScript via `@scure/bip39`. This was significantly slower than native execution and introduced a non-authoritative JavaScript dependency into the core derivation path.
+* **Resolution:**
+  - **Purged Legacy JS Derivation:** Completely removed `@scure/bip39`, `@scure/bip32`, and `@scure/base`.
+  - **Authoritative WASM Mnemonic Core:** Migrated all mnemonic generation, seed derivation, and HD path derivation (XPrv/XPub) to the official `@kasdk/web` Rusty Kaspa WASM core.
+  - **Single-Derivation Cache:** Implemented a thread-safe `lastSeedHex` cache to ensure the 2,048-round PBKDF2 derivation only occurs once per session/mnemonic, providing near-instant address derivation for subsequent calls.
+
+---
+
 ## Security Hardening Matrix
 
 | Module | Hardening Target | Status | Verification & Resolution Notes |

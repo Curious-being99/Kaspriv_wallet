@@ -18,9 +18,10 @@ All identified items—including hardware-bound biometric enforcements, canonica
 
 An internal security assessment confirms the following zero-trust constraints across the codebase:
 - **Zero LocalStorage / SessionStorage Dependency**: Standard browser `localStorage` and `sessionStorage` are completely eliminated. All local application data resides strictly within IndexedDB (`idb`).
+- **Rust Memory Enclave**: Decrypted mnemonics reside exclusively within the isolated memory heap of the Rust WASM worker. The main JavaScript thread is "blind" to plaintext secrets.
+- **Opaque Session Isolation**: The UI thread manages only temporary, random `sessionId` tokens. Plaintext secrets never leave the worker's secure memory boundary after the initial unlock.
 - **IndexedDB Zero-Trust Storage Guard**: The database persistence layer (`saveWalletToDB`) explicitly strips unencrypted `mnemonic` and `passphrase` credentials prior to saving any record to IndexedDB.
-- **Isolated Memory Lifecycle**: Derived private-key material is kept within transient application execution scopes and is not intentionally retained in React state, global state, or persistent storage.
-- **Best-Effort Memory Sanitization**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes as a best-effort memory-sanitization measure.
+- **Best-Effort Memory Sanitization**: Any transient sensitive byte buffers in the worker are explicitly overwritten with zeroes as a best-effort memory-sanitization measure.
 - **Pre-Execution Intent Verification**: Transactions pass through independent intent validation before key decryption or derivation begins.
 
 ---
@@ -69,21 +70,18 @@ export async function saveWalletToDB(wallet: Wallet) {
 
 ---
 
-## 3. Isolated Signing & Transaction Intent Verification
+## 3. Isolated Signing & Rust Enclave Architecture
 
-### Ephemeral Execution Scope (`IsolatedSigner`)
-To eliminate private key leaks across component render cycles or long-lived state variables:
+### Secure Memory Vault (Rust Worker)
+To eliminate private key leaks across the UI thread or browser inspection:
 
-1. **Transient Execution**: Key derivation, address re-generation, and Schnorr signing execute inside isolated helper routines (`IsolatedSigner.signTransactionIsolated` & `IsolatedSigner.signMessageIsolated`).
-2. **Transient Scope Guard**: Derived private-key material is kept within transient application execution scopes and is not intentionally retained in React state, global state, or persistent storage.
-3. **Strict Memory Sanitization & Wiping (`wipe()`)**:
-   ```typescript
-   function wipe(buffer: Uint8Array) {
-     if (buffer) buffer.fill(0);
-   }
-   ```
-   * **Byte Buffers & Wiping**: Application-managed sensitive byte buffers are explicitly overwritten with zeroes in `finally` blocks as a best-effort memory-sanitization measure. All components involved in transaction creation and signing actively scrub private buffers, leaving absolutely no plaintext hex residuals in storage or browser memory.
-   * **Zero Hex-Back Storage**: Plaintext private keys, derived hex values, or seed words are never stored back, cached in state, or logged. The context only yields final signature outputs, securely purging the underlying cryptographic parameters immediately after signing.
+1. **Rust Enclave Sessions**: Upon unlocking, the **Rust WASM Worker** decrypts the mnemonic into its own private heap and assigns it a temporary `sessionId` (e.g., `rsess_...`).
+2. **Opaque Token Handover**: Only the `sessionId` is returned to the main JavaScript thread. The mnemonic remains strictly isolated within the worker's secure environment.
+3. **Session-Bound Signing**: When the user initiates a transaction, the UI sends the `sessionId` back to the worker. The worker looks up the mnemonic in its private memory, performs the Schnorr signing, and returns only the final signature. **The plaintext secret never touches the JavaScript UI thread during the signing lifecycle.**
+4. **Strict Memory Sanitization & Wiping (`wipe()`)**:
+   - **Byte Buffers & Wiping**: Sensitive byte buffers in the Rust worker are explicitly overwritten with zeroes in `finally` blocks.
+   - **Zero Hex-Back Storage**: Plaintext private keys or seed words are never stored back, cached in state, or logged. The enclave only yields final signature outputs, securely purging the underlying cryptographic parameters immediately after signing.
+5. **Atomic Session Purging**: When the wallet locks, the `sessionId` is invalidated, and the underlying mnemonic is zeroized and deleted from the Rust worker's heap.
 
 ### Hardened Biometric Security (WebAuthn Platform Auth & PRF Key Derivation)
 To provide frictionless access without compromising the zero-trust architecture, the wallet implements WebAuthn platform biometrics (Touch ID, Face ID, Android BiometricPrompt, Windows Hello) operating in two strict security modes:
@@ -117,11 +115,11 @@ Before password verification, seed decryption, or private key derivation occurs,
 
 ## 4. Pure JavaScript / TypeScript Cryptographic Runtime & Node Signing
 
-* **Pure Native Cryptographic Runtime**: Kaspriv uses pure JavaScript/TypeScript cryptographic primitives (`@noble/secp256k1`, `@scure/bip32`, `@scure/bip39`, and `@noble/hashes`) along with `@kaspa/core-lib` for HD derivation, Schnorr signing, and transaction construction.
-* **No WASM Postinstall Dependency**: Operates cleanly without fragile postinstall patching (`kaspa-wasm`) scripts or binary WASM runtime hacks, ensuring seamless compatibility across mobile WebView, Node.js, and desktop browsers.
-* **Protocol & Signing Runtime**: Transaction, address, and fee logic are strictly written to follow Kaspa protocol rules with high-performance client-side Schnorr signing and direct real Kaspa node broadcasting.
-* **Native Web Crypto**: Encryption/decryption is performed by the official Rusty Kaspa SDK (compiled to WASM).
-* **High-Performance KDF**: Key derivation is handled internally by the Rusty Kaspa SDK using high-performance cryptographic standards.
+* **Pure Native Cryptographic Runtime**: Kaspriv uses the official high-performance **Rusty Kaspa WASM SDK (`@kasdk/web`)** for all core cryptographic operations, including BIP39 mnemonic generation, 2,048-round PBKDF2 seed derivation, HD key path derivation (XPrv/XPub), Schnorr signing, and transaction construction.
+* **No Legacy JavaScript Derivation**: The wallet has completely eliminated dependencies on `@scure/bip32`, `@scure/bip39`, and `@scure/base`, moving all sensitive computation into the authoritative Rust/WASM core.
+* **Consensus-Level Security**: Transaction, address, and fee logic are strictly governed by the official Kaspa Rust implementation, ensuring 100% consensus parity with the network.
+* **Native Web Crypto**: Encryption/decryption is performed by the official Rusty Kaspa SDK (compiled to WASM) using XChaCha20-Poly1305.
+* **High-Performance KDF**: Key derivation (PBKDF2-HMAC-SHA512) is handled internally by the Rusty Kaspa WASM core, providing native execution speeds for seed derivation.
 
 ---
 
@@ -168,11 +166,11 @@ For a mobile web wallet, JavaScript supply-chain integrity and runtime hardening
        ↓
 [ Password Input ]
        ↓
-[ SDK-Internal KDF ] (Authoritative Rusty Kaspa key derivation)
+[ SDK-Internal KDF ] (Authoritative Rusty Kaspa PBKDF2-HMAC-SHA512 in WASM)
        ↓
 [ XChaCha20-Poly1305 + AAD Validation ] (Decrypt mnemonic inside isolated scope)
        ↓
-[ Derive Signing Key & Kaspa Schnorr Signing ] (Executed via Kaspa WASM core)
+[ Derive Signing Key & Kaspa Schnorr Signing ] (Executed via Rusty Kaspa WASM core)
        ↓
 [ Signature Only Returned ]
        ↓

@@ -1,7 +1,6 @@
-import { mnemonicToSeedSync } from '@scure/bip39';
-import { HDKey } from '@scure/bip32';
+import { XPrv } from '@kasdk/web';
 import { wipe } from './common';
-import { getAddressFromPublicKey } from './keys';
+import { getAddressFromPublicKey, getCachedSeed } from './keys';
 import {
   fetchKaspaAddressBalance,
   fetchKaspaAddressUtxos,
@@ -46,21 +45,40 @@ export async function scanKaspaWalletChain(
   gapLimit: number = 30,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<ScannedWalletChainResult> {
-  const seedArray = mnemonicToSeedSync(mnemonic, passphrase || '');
+  const seedArray = await getCachedSeed(mnemonic, passphrase || '');
+  const seedHex = Array.from(seedArray).map(b => b.toString(16).padStart(2, '0')).join('');
   
   try {
-    const root = HDKey.fromMasterSeed(seedArray);
+    const root = new XPrv(seedHex);
     const discoveredAddresses: DiscoveredAddressInfo[] = [];
     const allUtxosMap = new Map<string, any>();
     const allTransactionsMap = new Map<string, any>();
     let totalBalanceSompi = 0n;
 
-    // Derive primary address and primary change address immediately (BIP44 format)
-    const primaryChild = root.derive("m/44'/111111'/0'/0/0");
-    const primaryAddress = getAddressFromPublicKey(primaryChild.publicKey!, addressType, prefix);
+    const hexToBytes = (hex: string): Uint8Array => {
+      const bytes = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+      }
+      return bytes;
+    };
 
-    const primaryChangeChild = root.derive("m/44'/111111'/0'/1/0");
-    const primaryChangeAddress = getAddressFromPublicKey(primaryChangeChild.publicKey!, addressType, prefix);
+    // Derive primary address and primary change address immediately (BIP44 format)
+    const primaryChild = root.derivePath("m/44'/111111'/0'/0/0");
+    const primaryXPub = primaryChild.toXPub();
+    const primaryPK = primaryXPub.toPublicKey();
+    const primaryAddress = getAddressFromPublicKey(hexToBytes(primaryPK.toString()), addressType, prefix);
+    primaryPK.free();
+    primaryXPub.free();
+    primaryChild.free();
+
+    const primaryChangeChild = root.derivePath("m/44'/111111'/0'/1/0");
+    const primaryChangeXPub = primaryChangeChild.toXPub();
+    const primaryChangePK = primaryChangeXPub.toPublicKey();
+    const primaryChangeAddress = getAddressFromPublicKey(hexToBytes(primaryChangePK.toString()), addressType, prefix);
+    primaryChangePK.free();
+    primaryChangeXPub.free();
+    primaryChangeChild.free();
 
     // Quick mode for brand new wallet creation (gapLimit <= 1)
     if (gapLimit <= 1) {
@@ -150,9 +168,13 @@ export async function scanKaspaWalletChain(
           const batchItems = batchIndices.map((idx) => {
             const path = `m/44'/${coinType}'/0'/${changeVal}/${idx}`;
             try {
-              const child = root.derive(path);
-              if (!child || !child.publicKey) return null;
-              const addr = getAddressFromPublicKey(child.publicKey, addressType, prefix);
+              const child = root.derivePath(path);
+              const xpub = child.toXPub();
+              const pk = xpub.toPublicKey();
+              const addr = getAddressFromPublicKey(hexToBytes(pk.toString()), addressType, prefix);
+              pk.free();
+              xpub.free();
+              child.free();
               return { idx, path, addr };
             } catch {
               return null;
@@ -266,6 +288,7 @@ export async function scanKaspaWalletChain(
       }
     }
 
+    root.free();
     return {
       primaryAddress,
       primaryChangeAddress,

@@ -159,8 +159,8 @@ export const MainLandingPage: React.FC = () => {
     setPendingFlow('none');
   };
 
-  const handleStartCreate = () => {
-    const words = generate24WordMnemonic();
+  const handleStartCreate = async () => {
+    const words = await generate24WordMnemonic();
     setCreatedWords(words);
     setStep(2);
   };
@@ -255,8 +255,7 @@ export const MainLandingPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  if (!isLoggedOut && (wallets.length > 0 || indexingState?.isIndexing)) return null;
-  if (wallets.length > 0 && isLocked) return null;
+  if (isLocked || indexingState?.isIndexing || (!isLoggedOut && wallets.length > 0)) return null;
 
   const AddressTypeSelector = () => (
     <div className="space-y-3">
@@ -296,10 +295,10 @@ export const MainLandingPage: React.FC = () => {
     </div>
   );
 
-  const handleTabChange = (tab: 'home' | 'create' | 'import-seed' | 'import-address' | 'setup-password') => {
+  const handleTabChange = async (tab: 'home' | 'create' | 'import-seed' | 'import-address' | 'setup-password') => {
     setActiveTab(tab);
     if (tab === 'create') {
-      const words = generate24WordMnemonic();
+      const words = await generate24WordMnemonic();
       setCreatedWords(words);
     }
   };

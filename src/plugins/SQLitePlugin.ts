@@ -1,8 +1,19 @@
 import { registerPlugin } from '@capacitor/core';
 
 export interface SQLitePluginInterface {
-  executeSql(options: { sql: string; params: any[] }): Promise<{ rows: any[] }>;
-  clearAll(): Promise<void>;
+  saveWallet(options: { id: string; data: string }): Promise<void>;
+  getWallets(): Promise<{ wallets: { id: string; value: string }[] }>;
+  deleteWallet(options: { id: string }): Promise<void>;
+  
+  saveSetting(options: { key: string; value: string }): Promise<void>;
+  getSettings(): Promise<{ settings: { key: string; value: string }[] }>;
+  deleteSetting(options: { key: string }): Promise<void>;
+  
+  saveUtxo(options: { walletId: string; data: string }): Promise<void>;
+  getUtxos(): Promise<{ utxos: { walletId: string; data: string }[] }>;
+  
+  saveTransaction(options: { walletId: string; data: string }): Promise<void>;
+  getTransactions(): Promise<{ transactions: { walletId: string; data: string }[] }>;
 }
 
-export const SQLitePlugin = registerPlugin<SQLitePluginInterface>('SQLitePlugin');
+export const SQLitePlugin = registerPlugin<SQLitePluginInterface>('SQLite');

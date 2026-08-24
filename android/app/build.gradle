@@ -1,4 +1,6 @@
 apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-kapt'
 
 android {
     namespace = "com.kaspriv.wallet"
@@ -28,42 +30,54 @@ android {
             storePassword 'android'
             keyAlias 'androiddebugkey'
             keyPassword 'android'
+            v1SigningEnabled true
+            v2SigningEnabled true
         }
         release {
-            def keystoreFile = null
-            def keystorePath = project.hasProperty('RELEASE_STORE_FILE') ? project.property('RELEASE_STORE_FILE') : (System.getenv('RELEASE_STORE_FILE') ?: System.getenv('KEYSTORE_FILE'))
+            def resolvedStoreFile = null
+            def keystorePath = (project.hasProperty('RELEASE_STORE_FILE') ? project.property('RELEASE_STORE_FILE').toString() : null) ?: System.getenv('RELEASE_STORE_FILE') ?: System.getenv('KEYSTORE_FILE')
+            
             if (keystorePath) {
                 def direct = file(keystorePath)
                 if (direct.exists()) {
-                    keystoreFile = direct
+                    resolvedStoreFile = direct
                 } else if (file("app/${keystorePath}").exists()) {
-                    keystoreFile = file("app/${keystorePath}")
+                    resolvedStoreFile = file("app/${keystorePath}")
                 } else if (rootProject.file(keystorePath).exists()) {
-                    keystoreFile = rootProject.file(keystorePath)
+                    resolvedStoreFile = rootProject.file(keystorePath)
+                } else if (rootProject.file("app/${keystorePath}").exists()) {
+                    resolvedStoreFile = rootProject.file("app/${keystorePath}")
                 }
             }
-            if (keystoreFile == null && file('release.keystore').exists()) {
-                keystoreFile = file('release.keystore')
+            if (resolvedStoreFile == null && file('release.keystore').exists()) {
+                resolvedStoreFile = file('release.keystore')
             }
-            if (keystoreFile == null && file('../app/release.keystore').exists()) {
-                keystoreFile = file('../app/release.keystore')
+            if (resolvedStoreFile == null && file('../app/release.keystore').exists()) {
+                resolvedStoreFile = file('../app/release.keystore')
+            }
+            if (resolvedStoreFile == null && rootProject.file('app/release.keystore').exists()) {
+                resolvedStoreFile = rootProject.file('app/release.keystore')
             }
 
-            def storePass = project.hasProperty('RELEASE_STORE_PASSWORD') ? project.property('RELEASE_STORE_PASSWORD') : (System.getenv('RELEASE_STORE_PASSWORD') ?: System.getenv('KEYSTORE_PASSWORD') ?: System.getenv('SIGNING_STORE_PASSWORD') ?: System.getenv('STORE_PASSWORD'))
-            def keyAliasVal = project.hasProperty('RELEASE_KEY_ALIAS') ? project.property('RELEASE_KEY_ALIAS') : (System.getenv('RELEASE_KEY_ALIAS') ?: System.getenv('KEY_ALIAS') ?: System.getenv('SIGNING_KEY_ALIAS') ?: System.getenv('ALIAS'))
-            def keyPass = project.hasProperty('RELEASE_KEY_PASSWORD') ? project.property('RELEASE_KEY_PASSWORD') : (System.getenv('RELEASE_KEY_PASSWORD') ?: System.getenv('KEY_PASSWORD') ?: System.getenv('SIGNING_KEY_PASSWORD') ?: storePass)
+            def storePass = (project.hasProperty('RELEASE_STORE_PASSWORD') ? project.property('RELEASE_STORE_PASSWORD').toString() : null) ?: System.getenv('RELEASE_STORE_PASSWORD') ?: System.getenv('KEYSTORE_PASSWORD') ?: System.getenv('SIGNING_STORE_PASSWORD') ?: System.getenv('STORE_PASSWORD')
+            def keyAliasVal = (project.hasProperty('RELEASE_KEY_ALIAS') ? project.property('RELEASE_KEY_ALIAS').toString() : null) ?: System.getenv('RELEASE_KEY_ALIAS') ?: System.getenv('KEY_ALIAS') ?: System.getenv('SIGNING_KEY_ALIAS') ?: System.getenv('ALIAS')
+            def keyPass = (project.hasProperty('RELEASE_KEY_PASSWORD') ? project.property('RELEASE_KEY_PASSWORD').toString() : null) ?: System.getenv('RELEASE_KEY_PASSWORD') ?: System.getenv('KEY_PASSWORD') ?: System.getenv('SIGNING_KEY_PASSWORD') ?: storePass
 
-            if (keystoreFile != null && keystoreFile.exists() && storePass && keyAliasVal) {
-                storeFile keystoreFile
-                storePassword storePass
-                keyAlias keyAliasVal
-                keyPassword (keyPass ?: storePass)
+            if (resolvedStoreFile != null && resolvedStoreFile.exists() && storePass) {
+                storeFile resolvedStoreFile
+                storePassword storePass.trim()
+                keyAlias (keyAliasVal ? keyAliasVal.trim() : 'key0')
+                keyPassword ((keyPass ?: storePass).trim())
+                v1SigningEnabled true
+                v2SigningEnabled true
             } else {
                 // Graceful fallback to debug keystore for development / dry-run builds
                 storeFile file('debug.keystore')
                 storePassword 'android'
                 keyAlias 'androiddebugkey'
                 keyPassword 'android'
+                v1SigningEnabled true
+                v2SigningEnabled true
             }
         }
     }
@@ -111,7 +125,12 @@ dependencies {
     // Jetpack Room native database storage dependencies
     def room_version = "2.6.1"
     implementation "androidx.room:room-runtime:$room_version"
-    annotationProcessor "androidx.room:room-compiler:$room_version"
+    implementation "androidx.room:room-ktx:$room_version"
+    kapt "androidx.room:room-compiler:$room_version"
+
+    // Kotlin & Coroutines
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
 }
 
 apply from: 'capacitor.build.gradle'

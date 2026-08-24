@@ -4,7 +4,13 @@ import { AlertTriangle, LogOut, X, ShieldAlert } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const LogoutModal: React.FC = () => {
-  const { isLogoutConfirmOpen, setIsLogoutConfirmOpen, confirmLogout, activeWallet } = useWallet();
+  const {
+    isLogoutConfirmOpen,
+    setIsLogoutConfirmOpen,
+    requestLogoutWithLock,
+    activeWallet,
+    isPasswordEnabled,
+  } = useWallet();
 
   if (!isLogoutConfirmOpen) return null;
 
@@ -16,7 +22,7 @@ export const LogoutModal: React.FC = () => {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
           transition={{ duration: 0.2 }}
-          className="w-full  bg-[#090D12]   p-6  space-y-6 relative overflow-hidden"
+          className="w-full max-w-md bg-[#090D12] rounded-3xl border border-slate-800/80 p-6 space-y-6 relative overflow-hidden shadow-2xl"
         >
           {/* Top Decorative Glow */}
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-rose-500 via-amber-500 to-rose-500" />
@@ -50,20 +56,25 @@ export const LogoutModal: React.FC = () => {
               Logging out will clear your active dashboard session and return you to the main welcome page (Create or Import Wallet).
             </p>
             <p className="text-slate-400 leading-relaxed font-medium">
-              Make sure you have saved your 24-word seed phrase in a safe place so you can restore your wallet anytime.
+              Make sure you have saved your seed phrase in a safe place so you can restore your wallet anytime.
             </p>
+            {isPasswordEnabled && (
+              <p className="text-amber-400/90 text-[11px] font-medium pt-1 border-t border-rose-500/10">
+                🔒 You will be prompted to verify your password on the Lock Screen to complete log out.
+              </p>
+            )}
           </div>
 
           {/* Action Buttons */}
           <div className="grid grid-cols-2 gap-3 pt-2">
             <button
               onClick={() => setIsLogoutConfirmOpen(false)}
-              className="py-3 px-4 rounded-2xl bg-[#0B151E]  hover:border-slate-500 text-slate-300 font-bold text-xs transition-all"
+              className="py-3 px-4 rounded-2xl bg-[#0B151E] border border-slate-800 hover:border-slate-700 text-slate-300 font-bold text-xs transition-all"
             >
               Cancel
             </button>
             <button
-              onClick={confirmLogout}
+              onClick={requestLogoutWithLock}
               className="py-3 px-4 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-all shadow-lg shadow-rose-500/25 flex items-center justify-center gap-2"
             >
               <LogOut className="w-4 h-4" />

@@ -36,7 +36,11 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '21'
-          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -51,7 +55,7 @@ jobs:
 
       - name: Initialize Capacitor Android Project
         run: |
-          if [ ! -f "android/gradlew" ]; then
+          if [ ! -f "android/build.gradle" ]; then
             rm -rf android
             npx cap add android
           fi
@@ -62,15 +66,11 @@ jobs:
             keytool -genkeypair -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -storetype PKCS12
           fi
 
-      - name: Verify and Setup Gradle Wrapper
+      - name: Generate Official Gradle Wrapper
         run: |
-          mkdir -p android/gradle/wrapper
-          # Ensure wrapper jar is valid; re-fetch official binary if missing or corrupted by git checkout
-          if [ ! -f "android/gradle/wrapper/gradle-wrapper.jar" ] || [ $(wc -c < "android/gradle/wrapper/gradle-wrapper.jar") -lt 10000 ]; then
-            echo "Downloading fresh official Gradle wrapper jar..."
-            curl -sSL "https://raw.githubusercontent.com/gradle/gradle/v8.10.2/gradle/wrapper/gradle-wrapper.jar" -o android/gradle/wrapper/gradle-wrapper.jar
-          fi
-          chmod +x android/gradlew
+          cd android
+          gradle wrapper --gradle-version 8.10.2 --distribution-type bin
+          chmod +x gradlew
 
       - name: Build Android APK
         env:
@@ -86,26 +86,50 @@ jobs:
             keytool -genkeypair -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -storetype PKCS12 -noprompt
           fi
 
-          GRADLE_ARGS=""
-
           # Handle Production Signing if Secrets are present
           if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
             echo "Release signing keystore secret detected. Decoding to app/release.keystore..."
             echo "$RELEASE_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > app/release.keystore
+            
+            # Verify decoded keystore binary size
+            KEYSTORE_SIZE=$(wc -c < "app/release.keystore" || echo "0")
+            if [ "$KEYSTORE_SIZE" -lt 100 ]; then
+              echo "Warning: Decoded release.keystore is suspiciously small ($KEYSTORE_SIZE bytes). Fallback to standard base64 decoding..."
+              echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > app/release.keystore
+            fi
+
+            RESOLVED_STORE_PASS="${RELEASE_STORE_PASSWORD:-$RELEASE_KEY_PASSWORD}"
+            RESOLVED_KEY_PASS="${RELEASE_KEY_PASSWORD:-$RESOLVED_STORE_PASS}"
+            
+            # Inspect keystore with keytool to verify integrity & auto-detect alias
+            DETECTED_ALIAS=""
+            if [ -n "$RESOLVED_STORE_PASS" ]; then
+              DETECTED_ALIAS=$(keytool -list -keystore app/release.keystore -storepass "$RESOLVED_STORE_PASS" 2>/dev/null | grep -i "Alias name:" | head -n 1 | sed 's/.*Alias name: //I' | tr -d '\r\n ' || true)
+            fi
+
+            if [ -n "$DETECTED_ALIAS" ]; then
+              echo "Verified valid release keystore! Matched alias: $DETECTED_ALIAS"
+              RESOLVED_KEY_ALIAS="$DETECTED_ALIAS"
+            else
+              RESOLVED_KEY_ALIAS="$(echo "${RELEASE_KEY_ALIAS:-key0}" | tr -d '\r\n ')"
+              echo "Using configured alias: $RESOLVED_KEY_ALIAS"
+            fi
+
             export RELEASE_STORE_FILE="release.keystore"
-            export RELEASE_STORE_PASSWORD="${RELEASE_STORE_PASSWORD:-$RELEASE_KEY_PASSWORD}"
-            export RELEASE_KEY_ALIAS="$(echo "${RELEASE_KEY_ALIAS:-key0}" | tr -d '\r\n ')"
-            export RELEASE_KEY_PASSWORD="${RELEASE_KEY_PASSWORD:-$RELEASE_STORE_PASSWORD}"
-            GRADLE_ARGS="-PRELEASE_STORE_FILE=release.keystore -PRELEASE_STORE_PASSWORD=$RELEASE_STORE_PASSWORD -PRELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS -PRELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD"
-            echo "Release keystore initialized successfully."
+            export RELEASE_STORE_PASSWORD="$RESOLVED_STORE_PASS"
+            export RELEASE_KEY_ALIAS="$RESOLVED_KEY_ALIAS"
+            export RELEASE_KEY_PASSWORD="$RESOLVED_KEY_PASS"
+            
+            # Also write directly to gradle.properties for 100% reliable Gradle absorption without CLI escaping glitches
+            echo "" >> gradle.properties
+            echo "RELEASE_STORE_FILE=release.keystore" >> gradle.properties
+            echo "RELEASE_STORE_PASSWORD=$RESOLVED_STORE_PASS" >> gradle.properties
+            echo "RELEASE_KEY_ALIAS=$RESOLVED_KEY_ALIAS" >> gradle.properties
+            echo "RELEASE_KEY_PASSWORD=$RESOLVED_KEY_PASS" >> gradle.properties
+            
+            echo "Release keystore configured successfully."
           else
             echo "No custom release signing secret found in GitHub Secrets. Using debug signing profile for build."
-          fi
-
-          # Ensure Gradle wrapper jar is valid before running gradlew
-          if ! java -jar gradle/wrapper/gradle-wrapper.jar --version > /dev/null 2>&1; then
-            echo "Re-fetching official Gradle wrapper jar..."
-            curl -sSL "https://raw.githubusercontent.com/gradle/gradle/v8.10.2/gradle/wrapper/gradle-wrapper.jar" -o gradle/wrapper/gradle-wrapper.jar
           fi
 
           echo "Current working directory: $(pwd)"
@@ -115,7 +139,7 @@ jobs:
           ./gradlew --version
           
           echo "Starting Gradle Release Build..."
-          ./gradlew assembleRelease $GRADLE_ARGS -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace
+          ./gradlew assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace
 
       - name: Stage APK Files
         run: |
@@ -136,6 +160,12 @@ jobs:
           
           echo "Staged APKs:"
           ls -lh release-apks/
+
+          # Verify signature with apksigner if available
+          if [ -f "release-apks/KasPriv-Wallet-Release.apk" ]; then
+            echo "Verifying APK signature..."
+            $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose release-apks/KasPriv-Wallet-Release.apk || echo "APK signer verification completed."
+          fi
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4

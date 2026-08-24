@@ -1,10 +1,12 @@
 import { 
   getPrivateKeyBytesFromMnemonic, 
+  getPrivateKeyBytesFromSeed,
   signKaspaMessage, 
   addressToScriptPublicKey,
   wipe,
   estimateTransactionMass,
-  calculateMinFeeForInputs
+  calculateMinFeeForInputs,
+  getCachedSeed
 } from './kaspa';
 import { createSignedTransactionIsolatedWasm } from './kaspa/wasmTx';
 import { NetworkType } from '../types';
@@ -234,7 +236,7 @@ function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): voi
  * Compare the entire final signed transaction against the approved intent,
  * and verify actual transaction mass/fee using the Kaspa implementation.
  */
-async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxIntent): Promise<void> {
+async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxIntent, addressType: 'P2PKH' | 'P2SH'): Promise<void> {
   // Ensure the transaction structure exists
   if (!signedTx || !Array.isArray(signedTx.inputs) || !Array.isArray(signedTx.outputs)) {
     throw new Error('Security failure: Signed transaction is missing inputs or outputs array.');
@@ -373,7 +375,6 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
   try {
     const inputsCount = signedTx.inputs?.length || intent.utxos?.length || 1;
     const outputsCount = signedTx.outputs?.length || 2;
-    const addressType = intent.toAddress.includes('kaspa:p') ? 'P2SH' : 'P2PKH';
 
     const actualMass = estimateTransactionMass(inputsCount, outputsCount, addressType);
     const minRequiredFee = calculateMinFeeForInputs(inputsCount, outputsCount, addressType);
@@ -418,29 +419,37 @@ export class IsolatedSigner {
     intentInput: UnsignedTxIntent,
     addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
     redeemScriptHex?: string,
-    skipWorker = false
+    skipWorker = false,
+    sessionId?: string | null
   ): Promise<{
     success: boolean;
     transaction?: any;
     error?: string;
   }> {
-    try {
-      if (!skipWorker) {
-        const { cryptoWorkerManager, serializeWithBigInt, deserializeWithBigInt } = await import('./cryptoWorkerManager');
-        if (cryptoWorkerManager.isSupported()) {
-          const serializedIntent = serializeWithBigInt(intentInput);
-          const res = await cryptoWorkerManager.runTask<any>('signTransactionIsolated', {
-            serializedIntent,
-            mnemonic,
-            passphrase,
-            addressType,
-            redeemScriptHex
-          });
-          return deserializeWithBigInt(res);
-        }
+    const isP2SH = addressType === 'P2SH' || 
+      intentInput.toAddress.includes(':p') || 
+      (intentInput.changeAddress && intentInput.changeAddress.includes(':p')) ||
+      intentInput.utxos.some((u: any) => u.address?.includes(':p'));
+
+    const effectiveAddressType: 'P2PKH' | 'P2SH' = isP2SH ? 'P2SH' : addressType;
+
+    const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+    if (isMainThread && !skipWorker) {
+      const { cryptoWorkerManager, serializeWithBigInt, deserializeWithBigInt } = await import('./cryptoWorkerManager');
+      if (!cryptoWorkerManager.isSupported()) {
+        throw new Error('CRITICAL: CryptoWorker is not supported or initialized on main thread.');
       }
-    } catch (err: any) {
-      console.warn('Worker signTransactionIsolated failed, falling back to local thread:', err);
+      const serializedIntent = serializeWithBigInt(intentInput);
+      const res = await cryptoWorkerManager.runTask<any>('signTransactionIsolated', {
+        serializedIntent,
+        mnemonic,
+        passphrase,
+        addressType: effectiveAddressType,
+        redeemScriptHex,
+        useSession: true, // Instruction to keep the mnemonic in Rust memory
+        sessionId
+      });
+      return deserializeWithBigInt(res);
     }
 
     // Zero-Trust Deep Clone & Freeze: Completely isolate intent to prevent post-verification memory mutation by malware
@@ -460,21 +469,28 @@ export class IsolatedSigner {
     const uniquePaths = Array.from(
       new Set(
         intent.utxos.map(u => {
-          const p = u.derivationPath || u.path;
-          if (!p) {
-            throw new Error(`CRITICAL: UTXO ${u.outpoint?.transactionId}:${u.outpoint?.index} is missing a derivation path.`);
-          }
+          const p = u.derivationPath || u.path || (u.address && (intent as any).addressPaths?.[u.address]) || "m/44'/111111'/0'/0/0";
           return p;
         })
       )
     );
 
+    // Guarantee default derivation path is present in keysMap
+    if (!uniquePaths.includes("m/44'/111111'/0'/0/0")) {
+      uniquePaths.push("m/44'/111111'/0'/0/0");
+    }
+
     const keysMap: { [path: string]: Uint8Array } = {};
+    const seed = await getCachedSeed(mnemonic, passphrase || '');
     try {
       for (const path of uniquePaths) {
-        keysMap[path] = getPrivateKeyBytesFromMnemonic(mnemonic, passphrase, path);
+        keysMap[path] = await getPrivateKeyBytesFromSeed(seed, path);
       }
+    } finally {
+      wipe(seed);
+    }
 
+    try {
       const wasmResult = await createSignedTransactionIsolatedWasm(
         intent.utxos,
         intent.toAddress,
@@ -482,7 +498,7 @@ export class IsolatedSigner {
         intent.changeAddress,
         keysMap,
         intent.feeSompi,
-        addressType,
+        effectiveAddressType,
         redeemScriptHex,
         intent.lockTime
       );
@@ -491,7 +507,7 @@ export class IsolatedSigner {
 
       // 3. Verify the built transaction and final signed transaction against intent
       verifyBuiltTransaction(signedTx, intent);
-      await verifyFinalSignedTransaction(signedTx, intent);
+      await verifyFinalSignedTransaction(signedTx, intent, effectiveAddressType);
 
       return {
         success: true,
@@ -517,19 +533,21 @@ export class IsolatedSigner {
   public static async signMessageIsolated(
     mnemonic: string,
     passphrase: string | undefined,
-    message: string
+    message: string,
+    sessionId?: string | null
   ): Promise<{ success: boolean; signature?: string; error?: string }> {
-    try {
+    const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+    if (isMainThread) {
       const { cryptoWorkerManager } = await import('./cryptoWorkerManager');
-      if (cryptoWorkerManager.isSupported()) {
-        return await cryptoWorkerManager.runTask<{ success: boolean; signature?: string; error?: string }>('signMessageIsolated', {
-          mnemonic,
-          passphrase,
-          message
-        });
+      if (!cryptoWorkerManager.isSupported()) {
+        throw new Error('CRITICAL: CryptoWorker is not supported or initialized on main thread.');
       }
-    } catch (err: any) {
-      console.warn('Worker signMessageIsolated failed, falling back to local thread:', err);
+      return await cryptoWorkerManager.runTask<{ success: boolean; signature?: string; error?: string }>('signMessageIsolated', {
+        mnemonic,
+        passphrase,
+        message,
+        sessionId
+      });
     }
 
     let privKeyBytes: Uint8Array | null = null;
@@ -538,7 +556,7 @@ export class IsolatedSigner {
       // ------------------------------------------------------
       // Derive private key
       // ------------------------------------------------------
-      privKeyBytes = getPrivateKeyBytesFromMnemonic(mnemonic, passphrase);
+      privKeyBytes = await getPrivateKeyBytesFromMnemonic(mnemonic, passphrase);
       
       // ------------------------------------------------------
       // Sign message

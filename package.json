@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build && node scripts/copy-android-icons.js",
+    "build": "npm run typecheck && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "cap:build": "npm run typecheck && vite build && cap sync && node scripts/patch-android-build-gradle.js && node scripts/copy-android-icons.js",
-    "cap:sync": "cap sync && node scripts/patch-android-build-gradle.js && node scripts/copy-android-icons.js"
+    "cap:build": "npm run typecheck && vite build && cap sync",
+    "cap:sync": "cap sync"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",
@@ -23,9 +23,6 @@
     "@kaspa/core-lib": "1.6.5",
     "@noble/hashes": "2.2.0",
     "@noble/secp256k1": "3.1.0",
-    "@scure/base": "2.2.0",
-    "@scure/bip32": "2.2.0",
-    "@scure/bip39": "2.2.0",
     "clsx": "2.1.1",
     "express": "5.2.1",
     "html5-qrcode": "^2.3.8",
