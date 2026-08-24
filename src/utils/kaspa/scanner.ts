@@ -4,8 +4,9 @@ import { getAddressFromPublicKey, getCachedSeed } from './keys';
 import {
   fetchKaspaAddressBalance,
   fetchKaspaAddressUtxos,
+  fetchKaspaAddressesBalances,
+  fetchKaspaAddressesUtxos,
   fetchKaspaAddressTransactions,
-  getKaspaApiUrl,
 } from './api';
 
 export interface DiscoveredAddressInfo {
@@ -42,7 +43,7 @@ export async function scanKaspaWalletChain(
   passphrase?: string,
   prefix: string = 'kaspa',
   addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
-  gapLimit: number = 30,
+  gapLimit: number = 50,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<ScannedWalletChainResult> {
   const seedArray = await getCachedSeed(mnemonic, passphrase || '');
@@ -89,7 +90,10 @@ export async function scanKaspaWalletChain(
           fetchKaspaAddressUtxos(primaryAddress),
           fetchKaspaAddressTransactions(primaryAddress),
         ]);
-        const currentBal = balance || 0n;
+        const utxoSum = (utxos && Array.isArray(utxos))
+          ? utxos.reduce((acc: bigint, u: any) => acc + BigInt(u.utxoEntry?.amount || u.amount || 0), 0n)
+          : 0n;
+        const currentBal = (balance !== null && balance > utxoSum) ? balance : utxoSum;
         totalBalanceSompi = currentBal;
         
         discoveredAddresses.push({
@@ -156,10 +160,19 @@ export async function scanKaspaWalletChain(
       coinType: 111111,
     });
 
+    const calculateCurrentTotalBalance = (): bigint => {
+      const addrBalSum = discoveredAddresses.reduce((acc, d) => acc + (d.balanceSompi || 0n), 0n);
+      const utxoBalSum = Array.from(allUtxosMap.values()).reduce(
+        (acc, u) => acc + BigInt(u.utxoEntry?.amount || u.amount || 0),
+        0n
+      );
+      return utxoBalSum > addrBalSum ? utxoBalSum : addrBalSum;
+    };
+
     for (const coinType of coinTypes) {
       for (const isChange of [false, true]) {
         const changeVal = isChange ? 1 : 0;
-        const batchSize = 3;
+        const batchSize = 5;
         let consecutiveEmptyBatches = 0;
 
         for (let i = 0; i < gapLimit; i += batchSize) {
@@ -183,103 +196,115 @@ export async function scanKaspaWalletChain(
 
           if (batchItems.length === 0) break;
 
+          const batchAddrs = batchItems.map(item => item.addr);
           let batchHasActivity = false;
 
-          const results = await Promise.all(
-            batchItems.map(async (item) => {
-              try {
-                // Fetch balance, UTXOs, and transactions with individual catch blocks
-                const balance = await fetchKaspaAddressBalance(item.addr).catch(() => null);
-                const utxos = await fetchKaspaAddressUtxos(item.addr).catch(() => null);
-                const txs = await fetchKaspaAddressTransactions(item.addr).catch(() => null);
+          // 1. Fetch bulk balances and bulk UTXOs for this batch
+          const [bulkBalancesRes, bulkUtxosRes] = await Promise.all([
+            fetchKaspaAddressesBalances(batchAddrs).catch(() => null),
+            fetchKaspaAddressesUtxos(batchAddrs).catch(() => null),
+          ]);
 
-                totalScanned++;
-                if (onProgress) {
-                  onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
-                }
-                return { item, balance, utxos, txs };
-              } catch {
-                totalScanned++;
-                if (onProgress) {
-                  onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
-                }
-                return { item, balance: null, utxos: null, txs: null };
+          const utxosByAddress = new Map<string, any[]>();
+          if (bulkUtxosRes && Array.isArray(bulkUtxosRes)) {
+            bulkUtxosRes.forEach((u: any) => {
+              const uAddr = u.address || (batchAddrs.length === 1 ? batchAddrs[0] : '');
+              if (uAddr) {
+                const list = utxosByAddress.get(uAddr) || [];
+                list.push(u);
+                utxosByAddress.set(uAddr, list);
               }
-            })
-          );
+            });
+          }
 
-          for (const res of results) {
-            const utxosSum = (res.utxos && Array.isArray(res.utxos))
-              ? res.utxos.reduce((sum: bigint, u: any) => sum + BigInt(u.utxoEntry?.amount || u.amount || 0), 0n)
-              : 0n;
-            const apiBal = res.balance !== null && res.balance !== undefined ? res.balance : 0n;
-            const currentBal = utxosSum > apiBal ? utxosSum : apiBal;
+          for (const item of batchItems) {
+            totalScanned++;
+            
+            // Get balance for this address
+            let addrBal: bigint = 0n;
+            if (bulkBalancesRes && bulkBalancesRes[item.addr] !== undefined && bulkBalancesRes[item.addr] !== null) {
+              addrBal = bulkBalancesRes[item.addr]!;
+            } else {
+              // Fallback single address balance fetch
+              const singleBal = await fetchKaspaAddressBalance(item.addr).catch(() => null);
+              if (singleBal !== null) addrBal = singleBal;
+            }
 
-            const hasBalance = currentBal > 0n;
-            const hasUtxos = res.utxos !== null && Array.isArray(res.utxos) && res.utxos.length > 0;
-            const hasTxs = res.txs !== null && Array.isArray(res.txs) && res.txs.length > 0;
+            // Get UTXOs for this address
+            let addrUtxos: any[] = utxosByAddress.get(item.addr) || [];
+            if (addrUtxos.length === 0 && addrBal > 0n) {
+              // Fallback single address utxo query if balance exists
+              const singleUtxos = await fetchKaspaAddressUtxos(item.addr).catch(() => null);
+              if (singleUtxos && Array.isArray(singleUtxos)) {
+                addrUtxos = singleUtxos;
+              }
+            }
 
-            if (hasBalance || hasUtxos || hasTxs) {
+            const utxosSum = addrUtxos.reduce(
+              (sum: bigint, u: any) => sum + BigInt(u.utxoEntry?.amount || u.amount || 0),
+              0n
+            );
+            const currentBal = utxosSum > addrBal ? utxosSum : addrBal;
+
+            if (currentBal > 0n || addrUtxos.length > 0) {
               batchHasActivity = true;
 
               // Check if address is already in discoveredAddresses
-              const existingIdx = discoveredAddresses.findIndex(d => d.address === res.item.addr);
+              const existingIdx = discoveredAddresses.findIndex(d => d.address === item.addr);
               if (existingIdx >= 0) {
                 discoveredAddresses[existingIdx].balanceSompi = currentBal;
               } else {
                 discoveredAddresses.push({
-                  address: res.item.addr,
+                  address: item.addr,
                   balanceSompi: currentBal,
-                  path: res.item.path,
-                  index: res.item.idx,
+                  path: item.path,
+                  index: item.idx,
                   isChange,
                   coinType,
                 });
               }
 
-              if (res.utxos && Array.isArray(res.utxos)) {
-                res.utxos.forEach((u: any) => {
-                  const outpointTxId = u.outpoint?.transactionId || u.transactionId || u.txid || '';
-                  const outpointIndex = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
-                  const outpointKey = `${outpointTxId}:${outpointIndex}`;
-                  
-                  allUtxosMap.set(outpointKey, {
-                    ...u,
-                    derivationPath: res.item.path,
-                    address: res.item.addr,
-                  });
+              addrUtxos.forEach((u: any) => {
+                const outpointTxId = u.outpoint?.transactionId || u.transactionId || u.txid || '';
+                const outpointIndex = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
+                const outpointKey = `${outpointTxId}:${outpointIndex}`;
+                
+                allUtxosMap.set(outpointKey, {
+                  ...u,
+                  derivationPath: item.path,
+                  address: item.addr,
                 });
-              }
+              });
 
-              if (res.txs && Array.isArray(res.txs)) {
-                res.txs.forEach((t: any) => {
-                  const txid = typeof t === 'string' ? t : (t.transaction_id || t.txid || t.id || '');
-                  if (txid && !allTransactionsMap.has(txid)) {
-                    allTransactionsMap.set(txid, typeof t === 'string' ? { transaction_id: txid } : t);
-                  }
-                });
-              }
+              // Fetch transactions only for active addresses to avoid flooding the node
+              fetchKaspaAddressTransactions(item.addr).then(txs => {
+                if (txs && Array.isArray(txs)) {
+                  txs.forEach((t: any) => {
+                    const txid = typeof t === 'string' ? t : (t.transaction_id || t.txid || t.id || '');
+                    if (txid && !allTransactionsMap.has(txid)) {
+                      allTransactionsMap.set(txid, typeof t === 'string' ? { transaction_id: txid } : t);
+                    }
+                  });
+                }
+              }).catch(() => {});
             }
           }
 
-          // Calculate total balance from all outpoint-deduplicated UTXOs
-          totalBalanceSompi = Array.from(allUtxosMap.values()).reduce(
-            (sum, u) => sum + BigInt(u.utxoEntry?.amount || u.amount || 0),
-            0n
-          );
+          totalBalanceSompi = calculateCurrentTotalBalance();
 
           if (onProgress) {
-            onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
+            const activeCount = discoveredAddresses.filter(d => d.balanceSompi > 0n).length || discoveredAddresses.length;
+            onProgress(totalScanned, activeCount, totalBalanceSompi);
           }
 
-          // Delay between batches to prevent rate limiting node REST endpoints
-          await new Promise((r) => setTimeout(r, 100));
+          // Spacing between batches
+          await new Promise((r) => setTimeout(r, 60));
 
           if (batchHasActivity) {
             consecutiveEmptyBatches = 0;
           } else {
             consecutiveEmptyBatches++;
-            // Stop early if 10 consecutive empty batches (30 empty addresses) and reached threshold
+            // Stop early if 10 consecutive empty batches (50 empty addresses) and reached at least 30 addresses
             if (consecutiveEmptyBatches >= 10 && i >= 30) {
               break;
             }
@@ -288,7 +313,9 @@ export async function scanKaspaWalletChain(
       }
     }
 
+    totalBalanceSompi = calculateCurrentTotalBalance();
     root.free();
+
     return {
       primaryAddress,
       primaryChangeAddress,
@@ -309,7 +336,7 @@ export async function scanKaspaWalletChain(
 export async function scanKaspaWalletChainPublic(
   deriver: PublicAddressDeriver,
   addressType: 'P2PKH' | 'P2SH' = 'P2PKH',
-  gapLimit: number = 30,
+  gapLimit: number = 50,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<{
   totalBalanceSompi: bigint;
@@ -323,9 +350,18 @@ export async function scanKaspaWalletChainPublic(
   let totalBalanceSompi = 0n;
   let totalScanned = 0;
 
+  const calculateCurrentTotalBalance = (): bigint => {
+    const addrBalSum = discoveredAddresses.reduce((acc, d) => acc + (d.balanceSompi || 0n), 0n);
+    const utxoBalSum = Array.from(allUtxosMap.values()).reduce(
+      (acc, u) => acc + BigInt(u.utxoEntry?.amount || u.amount || 0),
+      0n
+    );
+    return utxoBalSum > addrBalSum ? utxoBalSum : addrBalSum;
+  };
+
   for (const isChange of [false, true]) {
     const chainType = isChange ? 'change' : 'receive';
-    const batchSize = 3;
+    const batchSize = 5;
     let consecutiveEmptyBatches = 0;
 
     for (let i = 0; i < gapLimit; i += batchSize) {
@@ -345,87 +381,101 @@ export async function scanKaspaWalletChainPublic(
       const activeBatchItems = batchItems.filter(Boolean) as { idx: number; path: string; addr: string }[];
       if (activeBatchItems.length === 0) break;
 
+      const batchAddrs = activeBatchItems.map(item => item.addr);
       let batchHasActivity = false;
 
-      const results = await Promise.all(
-        activeBatchItems.map(async (item) => {
-          try {
-            const balance = await fetchKaspaAddressBalance(item.addr).catch(() => null);
-            const utxos = await fetchKaspaAddressUtxos(item.addr).catch(() => null);
-            const txs = await fetchKaspaAddressTransactions(item.addr).catch(() => null);
+      const [bulkBalancesRes, bulkUtxosRes] = await Promise.all([
+        fetchKaspaAddressesBalances(batchAddrs).catch(() => null),
+        fetchKaspaAddressesUtxos(batchAddrs).catch(() => null),
+      ]);
 
-            totalScanned++;
-            return { item, balance, utxos, txs };
-          } catch {
-            totalScanned++;
-            return { item, balance: null, utxos: null, txs: null };
+      const utxosByAddress = new Map<string, any[]>();
+      if (bulkUtxosRes && Array.isArray(bulkUtxosRes)) {
+        bulkUtxosRes.forEach((u: any) => {
+          const uAddr = u.address || (batchAddrs.length === 1 ? batchAddrs[0] : '');
+          if (uAddr) {
+            const list = utxosByAddress.get(uAddr) || [];
+            list.push(u);
+            utxosByAddress.set(uAddr, list);
           }
-        })
-      );
+        });
+      }
 
-      for (const res of results) {
-        const utxosSum = (res.utxos && Array.isArray(res.utxos))
-          ? res.utxos.reduce((sum: bigint, u: any) => sum + BigInt(u.utxoEntry?.amount || u.amount || 0), 0n)
-          : 0n;
-        const apiBal = res.balance !== null && res.balance !== undefined ? res.balance : 0n;
-        const currentBal = utxosSum > apiBal ? utxosSum : apiBal;
+      for (const item of activeBatchItems) {
+        totalScanned++;
 
-        const hasBalance = currentBal > 0n;
-        const hasUtxos = res.utxos !== null && Array.isArray(res.utxos) && res.utxos.length > 0;
-        const hasTxs = res.txs !== null && Array.isArray(res.txs) && res.txs.length > 0;
+        let addrBal: bigint = 0n;
+        if (bulkBalancesRes && bulkBalancesRes[item.addr] !== undefined && bulkBalancesRes[item.addr] !== null) {
+          addrBal = bulkBalancesRes[item.addr]!;
+        } else {
+          const singleBal = await fetchKaspaAddressBalance(item.addr).catch(() => null);
+          if (singleBal !== null) addrBal = singleBal;
+        }
 
-        if (hasBalance || hasUtxos || hasTxs) {
+        let addrUtxos: any[] = utxosByAddress.get(item.addr) || [];
+        if (addrUtxos.length === 0 && addrBal > 0n) {
+          const singleUtxos = await fetchKaspaAddressUtxos(item.addr).catch(() => null);
+          if (singleUtxos && Array.isArray(singleUtxos)) {
+            addrUtxos = singleUtxos;
+          }
+        }
+
+        const utxosSum = addrUtxos.reduce(
+          (sum: bigint, u: any) => sum + BigInt(u.utxoEntry?.amount || u.amount || 0),
+          0n
+        );
+        const currentBal = utxosSum > addrBal ? utxosSum : addrBal;
+
+        if (currentBal > 0n || addrUtxos.length > 0) {
           batchHasActivity = true;
 
-          const existingIdx = discoveredAddresses.findIndex(d => d.address === res.item.addr);
+          const existingIdx = discoveredAddresses.findIndex(d => d.address === item.addr);
           if (existingIdx >= 0) {
             discoveredAddresses[existingIdx].balanceSompi = currentBal;
           } else {
             discoveredAddresses.push({
-              address: res.item.addr,
+              address: item.addr,
               balanceSompi: currentBal,
-              path: res.item.path,
-              index: res.item.idx,
+              path: item.path,
+              index: item.idx,
               isChange,
               coinType: 111111,
             });
           }
 
-          if (res.utxos && Array.isArray(res.utxos)) {
-            res.utxos.forEach((u: any) => {
-              const outpointTxId = u.outpoint?.transactionId || u.transactionId || u.txid || '';
-              const outpointIndex = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
-              const outpointKey = `${outpointTxId}:${outpointIndex}`;
+          addrUtxos.forEach((u: any) => {
+            const outpointTxId = u.outpoint?.transactionId || u.transactionId || u.txid || '';
+            const outpointIndex = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0);
+            const outpointKey = `${outpointTxId}:${outpointIndex}`;
 
-              allUtxosMap.set(outpointKey, {
-                ...u,
-                derivationPath: res.item.path,
-                address: res.item.addr,
+            allUtxosMap.set(outpointKey, {
+              ...u,
+              derivationPath: item.path,
+              address: item.addr,
+            });
+          });
+
+          fetchKaspaAddressTransactions(item.addr).then(txs => {
+            if (txs && Array.isArray(txs)) {
+              txs.forEach((t: any) => {
+                const txid = typeof t === 'string' ? t : (t.transaction_id || t.txid || t.id || '');
+                if (txid && !allTransactionsMap.has(txid)) {
+                  allTransactionsMap.set(txid, typeof t === 'string' ? { transaction_id: txid } : t);
+                }
               });
-            });
-          }
-
-          if (res.txs && Array.isArray(res.txs)) {
-            res.txs.forEach((t: any) => {
-              const txid = typeof t === 'string' ? t : (t.transaction_id || t.txid || t.id || '');
-              if (txid && !allTransactionsMap.has(txid)) {
-                allTransactionsMap.set(txid, typeof t === 'string' ? { transaction_id: txid } : t);
-              }
-            });
-          }
+            }
+          }).catch(() => {});
         }
       }
 
-      totalBalanceSompi = Array.from(allUtxosMap.values()).reduce(
-        (sum, u) => sum + BigInt(u.utxoEntry?.amount || u.amount || 0),
-        0n
-      );
+      totalBalanceSompi = calculateCurrentTotalBalance();
 
       if (onProgress) {
-        onProgress(totalScanned, discoveredAddresses.length, totalBalanceSompi);
+        const activeCount = discoveredAddresses.filter(d => d.balanceSompi > 0n).length || discoveredAddresses.length;
+        onProgress(totalScanned, activeCount, totalBalanceSompi);
       }
 
-      await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 60));
 
       if (batchHasActivity) {
         consecutiveEmptyBatches = 0;
@@ -438,6 +488,8 @@ export async function scanKaspaWalletChainPublic(
     }
   }
 
+  totalBalanceSompi = calculateCurrentTotalBalance();
+
   return {
     totalBalanceSompi,
     discoveredAddresses,
@@ -445,3 +497,4 @@ export async function scanKaspaWalletChainPublic(
     allTransactions: Array.from(allTransactionsMap.values()),
   };
 }
+

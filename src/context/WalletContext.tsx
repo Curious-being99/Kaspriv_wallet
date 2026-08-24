@@ -2375,21 +2375,22 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         changeAddr
       ])).filter(Boolean);
 
+      const updatedWallet: Wallet = {
+        ...activeWallet,
+        receiveAddress: scanRes.primaryAddress || activeWallet.receiveAddress,
+        changeAddress: changeAddr || activeWallet.changeAddress || activeWallet.receiveAddress,
+        balanceSompi: scanRes.totalBalanceSompi,
+        discoveredAddresses: updatedDiscoveredAddrs,
+        addressPaths: addrPaths,
+        addressBalances: updatedBalances,
+      };
+
       setWallets((prev) =>
-        prev.map((w) =>
-          w.id === activeWallet.id
-            ? {
-                ...w,
-                receiveAddress: scanRes.primaryAddress || w.receiveAddress,
-                changeAddress: changeAddr || w.changeAddress || w.receiveAddress,
-                balanceSompi: scanRes.totalBalanceSompi,
-                discoveredAddresses: updatedDiscoveredAddrs,
-                addressPaths: addrPaths,
-                addressBalances: updatedBalances,
-              }
-            : w
-        )
+        prev.map((w) => (w.id === activeWallet.id ? updatedWallet : w))
       );
+      try {
+        await saveWalletToDB(updatedWallet);
+      } catch (e) {}
 
       // Parse and set UTXOs
       const parsedUtxos: UTXO[] = (scanRes.allUtxos || []).map((u: any, idx: number) => ({
