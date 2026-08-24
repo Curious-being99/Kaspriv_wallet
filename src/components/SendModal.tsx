@@ -67,6 +67,8 @@ export const SendModal: React.FC = () => {
     contacts,
     utxos,
     toggleLockUtxo,
+    setIsLocked,
+    setPendingTransaction,
   } = useWallet();
 
   const [toAddress, setToAddress] = useState('');
@@ -458,81 +460,100 @@ export const SendModal: React.FC = () => {
     closeKeyboard();
     setPasswordError(null);
 
-    if (isBiometricsEnabled && passwordInput.trim().length < 8) {
-      await handleBiometricSign(true);
+    // If password security is not active, we can sign instantly
+    if (!isPasswordEnabled) {
+      setIsSending(true);
+      setTimeout(async () => {
+        let mnemonicToUse: string | null = null;
+        let passphraseToUse: string | undefined = undefined;
+
+        try {
+          mnemonicToUse = await getMnemonicForSigning();
+          passphraseToUse = await getPassphraseForSigning();
+
+          if (!mnemonicToUse) {
+            showToast('Wallet key not found. Please unlock or re-import the wallet.', 'error');
+            setIsSending(false);
+            return;
+          }
+
+          const res = await sendKaspa(
+            toAddress,
+            amountInput || numericAmount,
+            selectedFee.toString(),
+            note,
+            mnemonicToUse,
+            passphraseToUse,
+            selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined
+          );
+
+          if (res.success) {
+            setSuccessTx({
+              txid: res.txid || 'kaspa-txid',
+              amountKas: numericAmount,
+              feeKas: selectedFee,
+              toAddress: toAddress.trim(),
+              fiatValue: fiatEquivalent,
+              note: note.trim() || undefined,
+              timestamp: Date.now(),
+            });
+            setIsConfirmingStep(false);
+            setToAddress('');
+            setAmountInput('');
+            setNote('');
+            setPasswordError(null);
+            showToast('Transaction successfully broadcast!', 'success');
+          } else {
+            showToast(res.error || 'Failed to send Kaspa', 'error');
+          }
+        } catch (err: any) {
+          showToast(err?.message || 'Failed to execute transaction', 'error');
+        } finally {
+          setIsSending(false);
+          mnemonicToUse = null;
+          passphraseToUse = undefined;
+        }
+      }, 0);
       return;
     }
 
-    if (isPasswordEnabled) {
-      if (passwordInput.length < 8) {
-        setPasswordError('Please enter your wallet password (min 8 chars)');
-        showToast('Please enter your wallet password (min 8 chars)', 'error');
-        return;
-      }
-    }
-
-    setIsSending(true);
-
-    setTimeout(async () => {
-      let mnemonicToUse: string | null = null;
-      let passphraseToUse: string | undefined = undefined;
-
-      try {
-        mnemonicToUse = await getMnemonicForSigning();
-        passphraseToUse = await getPassphraseForSigning();
-
-        if (!mnemonicToUse) {
-          if (isPasswordEnabled && activeWallet?.encryptedMnemonic) {
-            setPasswordError('Incorrect wallet password. Decryption failed.');
-            showToast('Incorrect wallet password. Decryption failed.', 'error');
-          } else {
-            showToast('Wallet key not found. Please unlock or re-import the wallet.', 'error');
-          }
-          setIsSending(false);
-          return;
-        }
-
-        const res = await sendKaspa(
-          toAddress,
-          amountInput || numericAmount,
-          selectedFee.toString(),
-          note,
-          mnemonicToUse,
-          passphraseToUse,
-          selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined
-        );
-
-        if (res.success) {
-          setSuccessTx({
-            txid: res.txid || 'kaspa-txid',
-            amountKas: numericAmount,
-            feeKas: selectedFee,
-            toAddress: toAddress.trim(),
-            fiatValue: fiatEquivalent,
-            note: note.trim() || undefined,
-            timestamp: Date.now(),
-          });
-          setIsConfirmingStep(false);
-          setToAddress('');
-          setAmountInput('');
-          setNote('');
-          setPasswordInput('');
-          setPassphraseInput('');
-          setPasswordError(null);
-        } else {
-          showToast(res.error || 'Failed to send Kaspa', 'error');
-        }
-      } catch (err: any) {
-        showToast(err?.message || 'Failed to execute transaction', 'error');
-      } finally {
+    // Otherwise, password is enabled. We delegate authentication to the Lock Wallet Screen!
+    setIsSending(true); // show loader inside button so it looks responsive
+    
+    // Set the pending transaction callback on our wallet context
+    setPendingTransaction({
+      toAddress,
+      amount: amountInput || numericAmount,
+      fee: selectedFee.toString(),
+      note,
+      selectedUtxoOutpoints: selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined,
+      onSuccess: (txid) => {
+        setSuccessTx({
+          txid,
+          amountKas: numericAmount,
+          feeKas: selectedFee,
+          toAddress: toAddress.trim(),
+          fiatValue: fiatEquivalent,
+          note: note.trim() || undefined,
+          timestamp: Date.now(),
+        });
+        setIsConfirmingStep(false);
+        setToAddress('');
+        setAmountInput('');
+        setNote('');
+        setPasswordError(null);
         setIsSending(false);
-        // --------------------------------------------------------
-        // ALWAYS wipe application-managed sensitive references
-        // --------------------------------------------------------
-        mnemonicToUse = null;
-        passphraseToUse = undefined;
+        showToast('Transaction successfully broadcast!', 'success');
+      },
+      onFailure: (err) => {
+        setPasswordError(err);
+        setIsSending(false);
+        showToast(err || 'Failed to broadcast transaction', 'error');
       }
-    }, 0);
+    });
+
+    // Lock the screen to prompt for password/biometrics
+    setIsLocked(true);
   };
 
   if (!isSendOpen) return null;
@@ -995,163 +1016,70 @@ export const SendModal: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, x: 10 }}
             animate={{ opacity: 1, x: 0 }}
-            className="mt-3 space-y-3"
+            className="flex-1 flex flex-col justify-between mt-1 h-full"
           >
-            {/* Transaction Summary Card */}
-            <div className="p-3 rounded-xl bg-[#0B151E] border border-[#273E54] space-y-2">
-              <div className="grid grid-cols-2 gap-2 text-[10px]">
-                <div>
-                  <span className="text-slate-400 block font-medium">Sending Amount</span>
-                  <span className="font-mono font-bold text-[#70C7BA] text-xs block">{numericAmount} KAS</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block font-medium">Total Deduction</span>
-                  <span className="font-mono font-bold text-slate-100 text-xs block">{(numericAmount + selectedFee).toFixed(6)} KAS</span>
-                </div>
-              </div>
-              <div className="pt-2 border-t border-[#273E54] text-[10px] space-y-1">
-                <div className="flex items-center justify-between gap-1.5">
-                  <span className="text-slate-400 font-medium shrink-0">Priority Fee:</span>
-                  <span className="font-mono text-slate-200 text-[10px]">{selectedFee} KAS</span>
-                </div>
-                <div className="flex items-center justify-between gap-1.5">
-                  <span className="text-slate-400 font-medium shrink-0">Recipient:</span>
-                  <span className="font-mono text-slate-200 truncate text-[9px] font-bold">{toAddress}</span>
-                </div>
-              </div>
-            </div>
-
-
-
-            {/* BIP39 Passphrase Input Zone */}
-            <div className="p-2.5 rounded-xl bg-[#0B151E]  space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1">
-                  <Key className="w-3.5 h-3.5 text-[#70C7BA]" />
-                  BIP39 Passphrase (Optional)
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowPassphrase(!showPassphrase)}
-                  className="text-[10px] text-[#70C7BA] hover:underline font-medium flex items-center gap-0.5 cursor-pointer"
-                >
-                  {showPassphrase ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  <span>{showPassphrase ? 'Hide' : 'Show'}</span>
-                </button>
-              </div>
-              <input
-                type={showPassphrase ? 'text' : 'password'}
-                value={passphraseInput}
-                onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
-                onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
-                inputMode="none" onChange={() => {}}
-                placeholder="Enter passphrase if set during creation..."
-                className="w-full px-2.5 py-1.5 rounded-lg bg-[#090D12] focus:border-[#70C7BA] text-[11px] font-mono text-slate-100 outline-none transition-colors cursor-pointer"
-              />
-            </div>
-
-            {/* Wallet Password Lock if enabled */}
-            {isPasswordEnabled && (
-              <div className="p-2.5 rounded-xl bg-[#0B151E] space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
-                  Wallet Password
-                </label>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter password to sign"
-                      value={passwordInput}
-                      onFocus={() => openKeyboard({ value: passwordInput, onChange: handlePasswordChange })}
-                      onClick={() => openKeyboard({ value: passwordInput, onChange: handlePasswordChange })}
-                      inputMode="none" onChange={() => {}}
-                      className={`w-full px-3 py-2 rounded-lg bg-[#090D12] ${passwordError ? 'border border-rose-500' : 'focus:border-[#70C7BA]'} text-sm text-slate-100 outline-none transition-colors pr-10 cursor-pointer`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+            {/* Top Info Section */}
+            <div className="space-y-3 flex-1">
+              {/* Transaction Summary Card */}
+              <div className="p-3 rounded-xl bg-[#0B151E] border border-[#273E54] space-y-2">
+                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  <div>
+                    <span className="text-slate-400 block font-medium">Sending Amount</span>
+                    <span className="font-mono font-bold text-[#70C7BA] text-xs block">{numericAmount} KAS</span>
                   </div>
-
-                  {isBiometricsEnabled && (
-                    <button
-                      type="button"
-                      onClick={() => handleBiometricSign(true)}
-                      disabled={isSending}
-                      title="Prompt Biometrics"
-                      className="p-2.5 text-[#70C7BA]/80 hover:text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0"
-                    >
-                      {isAuthenticatingBiometrics ? (
-                        <div className="w-5 h-5 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
-                      ) : (
-                        <Fingerprint className="w-5 h-5 text-[#70C7BA] animate-pulse" />
-                      )}
-                    </button>
-                  )}
+                  <div>
+                    <span className="text-slate-400 block font-medium">Total Deduction</span>
+                    <span className="font-mono font-bold text-slate-100 text-xs block">{(numericAmount + selectedFee).toFixed(6)} KAS</span>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-[#273E54] text-[10px] space-y-1">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="text-slate-400 font-medium shrink-0">Priority Fee:</span>
+                    <span className="font-mono text-slate-200 text-[10px]">{selectedFee} KAS</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="text-slate-400 font-medium shrink-0">Recipient:</span>
+                    <span className="font-mono text-slate-200 truncate text-[9px] font-bold">{toAddress}</span>
+                  </div>
                 </div>
               </div>
-            )}
 
-            {/* Live Verification Status Banner */}
-            <div
-              onClick={isBiometricsEnabled && !isSending ? () => handleBiometricSign(true) : undefined}
-              className={`p-2.5 rounded-xl border text-[10px] font-bold flex flex-col gap-1 transition-all ${
-                isBiometricsEnabled && !isSending ? 'cursor-pointer hover:border-[#70C7BA]/60 active:scale-[0.99]' : ''
-              } ${
-                isPasswordEnabled
-                  ? isSending
-                    ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
-                    : passwordError
-                    ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                    : isBiometricsEnabled || passwordInput.length >= 8
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                    : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-              }`}
-            >
-              <div className="flex items-center gap-1.5">
-                {isPasswordEnabled ? (
-                  isSending ? (
-                    <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
-                  ) : passwordError ? (
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                  ) : isBiometricsEnabled || passwordInput.length >= 8 ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  )
-                ) : (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                )}
-                <span className="leading-snug">
-                  {isPasswordEnabled
-                    ? isSending
-                      ? 'Decrypting wallet credentials in RAM & broadcasting...'
-                      : passwordError
-                      ? passwordError
-                      : isBiometricsEnabled
-                      ? passwordInput.length >= 8
-                        ? 'Password entered. Ready to sign & broadcast.'
-                        : 'Hardware biometric security active. Click button below or scan fingerprint.'
-                      : passwordInput.length < 8
-                      ? 'Please enter your wallet password (min 8 chars)'
-                      : 'Password entered. Click below to sign & broadcast.'
-                    : 'Unprotected mode. Secure in-memory keys ready for signing.'}
-                </span>
+              {/* BIP39 Passphrase Input Zone */}
+              <div className="p-2.5 rounded-xl bg-[#0B151E] space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1">
+                    <Key className="w-3.5 h-3.5 text-[#70C7BA]" />
+                    BIP39 Passphrase (Optional)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassphrase(!showPassphrase)}
+                    className="text-[10px] text-[#70C7BA] hover:underline font-medium flex items-center gap-0.5 cursor-pointer"
+                  >
+                    {showPassphrase ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    <span>{showPassphrase ? 'Hide' : 'Show'}</span>
+                  </button>
+                </div>
+                <input
+                  type={showPassphrase ? 'text' : 'password'}
+                  value={passphraseInput}
+                  onFocus={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
+                  onClick={() => openKeyboard({ value: passphraseInput, onChange: setPassphraseInput })}
+                  inputMode="none" onChange={() => {}}
+                  placeholder="Enter passphrase if set during creation..."
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-[#090D12] focus:border-[#70C7BA] text-[11px] font-mono text-slate-100 outline-none transition-colors cursor-pointer"
+                />
               </div>
             </div>
 
-            {/* Back & Broadcast Buttons */}
-            <div className="flex flex-col gap-1.5 pt-0.5">
+            {/* Back & Broadcast Buttons at the very bottom above phone edge */}
+            <div className="flex flex-col gap-1.5 pt-3 border-t border-[#1C2F42]/40 mt-auto shrink-0 pb-1">
               <button
                 type="button"
                 onClick={handleExecuteSend}
-                disabled={isSending || (isPasswordEnabled && !isBiometricsEnabled && passwordInput.length < 8)}
+                disabled={isSending}
                 className={`w-full py-3 px-4 rounded-xl font-extrabold text-xs transition-all flex items-center justify-center gap-2 ${
-                  !isSending && (!isPasswordEnabled || isBiometricsEnabled || passwordInput.length >= 8)
+                  !isSending
                     ? 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#0B151E] shadow-lg shadow-[#70C7BA]/20 cursor-pointer active:scale-[0.99]'
                     : 'bg-[#1C2F42] text-slate-500 cursor-not-allowed shadow-none'
                 }`}

@@ -234,6 +234,25 @@ interface WalletContextType {
 
   dismissToast: () => void;
   toast: { message: string; type: 'success' | 'error' | 'info' | 'warning' } | null;
+
+  pendingTransaction: {
+    toAddress: string;
+    amount: string | number;
+    fee: string | number;
+    note?: string;
+    selectedUtxoOutpoints?: string[];
+    onSuccess: (txid: string) => void;
+    onFailure: (err: string) => void;
+  } | null;
+  setPendingTransaction: (tx: {
+    toAddress: string;
+    amount: string | number;
+    fee: string | number;
+    note?: string;
+    selectedUtxoOutpoints?: string[];
+    onSuccess: (txid: string) => void;
+    onFailure: (err: string) => void;
+  } | null) => void;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -613,6 +632,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [password, setPasswordState] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState<boolean>(false);
+  const [pendingTransaction, setPendingTransaction] = useState<{
+    toAddress: string;
+    amount: string | number;
+    fee: string | number;
+    note?: string;
+    selectedUtxoOutpoints?: string[];
+    onSuccess: (txid: string) => void;
+    onFailure: (err: string) => void;
+  } | null>(null);
   const [authState, setAuthState] = useState<AuthState>(unifiedAuthService.getState());
   const [autoLockDuration, setAutoLockDuration] = useState<number>(0);
   const [lockOnExit, setLockOnExit] = useState<boolean>(true);
@@ -3710,6 +3738,64 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setIsLoggedOut(false);
         setIsWalletSetupOpen(false);
         unifiedAuthService.completeUnlock('password');
+
+        // Handle pending transaction authorization if present
+        if (pendingTransaction) {
+          try {
+            let mnemonicToUse: string | null = null;
+            let passphraseToUse: string | undefined = undefined;
+
+            if (activeWalletToUnlock.encryptedMnemonic) {
+              mnemonicToUse = await decryptWithPassword(
+                activeWalletToUnlock.encryptedMnemonic.ciphertext,
+                activeWalletToUnlock.encryptedMnemonic.salt,
+                activeWalletToUnlock.encryptedMnemonic.iv,
+                cleanInput,
+                buildAadContext('MNEMONIC', activeWalletToUnlock.id)
+              );
+            } else {
+              mnemonicToUse = activeWalletToUnlock.mnemonic || null;
+            }
+
+            if (activeWalletToUnlock.encryptedPassphrase) {
+              passphraseToUse = await decryptWithPassword(
+                activeWalletToUnlock.encryptedPassphrase.ciphertext,
+                activeWalletToUnlock.encryptedPassphrase.salt,
+                activeWalletToUnlock.encryptedPassphrase.iv,
+                cleanInput,
+                buildAadContext('PASSPHRASE', activeWalletToUnlock.id)
+              );
+            } else {
+              passphraseToUse = activeWalletToUnlock.passphrase || undefined;
+            }
+
+            if (!mnemonicToUse) {
+              throw new Error('Could not decrypt wallet credentials for signing.');
+            }
+
+            const txRes = await sendKaspa(
+              pendingTransaction.toAddress,
+              pendingTransaction.amount,
+              pendingTransaction.fee,
+              pendingTransaction.note,
+              mnemonicToUse,
+              passphraseToUse,
+              pendingTransaction.selectedUtxoOutpoints
+            );
+
+            if (txRes.success && txRes.txid) {
+              pendingTransaction.onSuccess(txRes.txid);
+            } else {
+              pendingTransaction.onFailure(txRes.error || 'Failed to send transaction.');
+            }
+          } catch (signErr: any) {
+            console.error('Pending transaction signing error:', signErr);
+            pendingTransaction.onFailure(signErr?.message || 'Failed to authorize or sign transaction.');
+          } finally {
+            setPendingTransaction(null);
+          }
+        }
+
         try {
           await saveSetting('kaspa_is_logged_out', false);
         } catch (e) {}
@@ -4025,6 +4111,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         password,
         isLocked,
         setIsLocked,
+        pendingTransaction,
+        setPendingTransaction,
         authState,
         clearPendingLockFlags,
         autoLockDuration,
