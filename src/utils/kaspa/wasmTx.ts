@@ -268,15 +268,17 @@ export async function createSignedTransactionIsolatedWasm(
 
   const inputs = utxos.map((u: any) => {
     const amt = BigInt(u.utxoEntry?.amount || u.amount || 0);
-    let spkHex = extractSpkHex(u.utxoEntry?.scriptPublicKey) || extractSpkHex(u.scriptPublicKey);
-
-    if (!spkHex && u.address) {
+    let spkHex = "";
+    if (u.address) {
       try {
         const addrObj = new Address(u.address);
         spkHex = payToAddressScript(addrObj).script;
       } catch {
-        // Ignore fallback error
+        // Fallback
       }
+    }
+    if (!spkHex) {
+      spkHex = extractSpkHex(u.utxoEntry?.scriptPublicKey) || extractSpkHex(u.scriptPublicKey);
     }
 
     const spkObj = new ScriptPublicKey(0, spkHex || "");

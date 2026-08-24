@@ -1051,33 +1051,12 @@ export const SendModal: React.FC = () => {
 
             {/* Wallet Password Lock if enabled */}
             {isPasswordEnabled && (
-              <div className="p-2.5 rounded-xl bg-[#0B151E] space-y-2">
-                {isBiometricsEnabled && (
-                  <button
-                    type="button"
-                    onClick={handleBiometricSign}
-                    disabled={isSending || isAuthenticatingBiometrics}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/30 text-xs font-bold text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-[0.98]"
-                  >
-                    {isAuthenticatingBiometrics ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
-                        <span>Prompting Biometrics...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Fingerprint className="w-4 h-4 text-[#70C7BA]" />
-                        <span>Tap to authorize with Biometrics</span>
-                      </>
-                    )}
-                  </button>
-                )}
-
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
-                    {isBiometricsEnabled ? 'Or Enter Wallet Password' : 'Wallet Password'}
-                  </label>
-                  <div className="relative">
+              <div className="p-2.5 rounded-xl bg-[#0B151E] space-y-1.5">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                  Wallet Password
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
                     <input
                       type={showPassword ? "text" : "password"}
                       placeholder="Enter password to sign"
@@ -1090,11 +1069,27 @@ export const SendModal: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-2 text-slate-400 hover:text-slate-200"
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+
+                  {isBiometricsEnabled && (
+                    <button
+                      type="button"
+                      onClick={handleBiometricSign}
+                      disabled={isSending || isAuthenticatingBiometrics}
+                      title="Authorize with Biometrics"
+                      className="p-2.5 rounded-lg bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/30 text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0"
+                    >
+                      {isAuthenticatingBiometrics ? (
+                        <div className="w-5 h-5 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
+                      ) : (
+                        <Fingerprint className="w-5 h-5 text-[#70C7BA]" />
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             )}

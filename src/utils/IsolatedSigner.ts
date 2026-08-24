@@ -6,7 +6,9 @@ import {
   wipe,
   estimateTransactionMass,
   calculateMinFeeForInputs,
-  getCachedSeed
+  getCachedSeed,
+  generateDeterministicAddress,
+  getAddressPrefix
 } from './kaspa';
 import { createSignedTransactionIsolatedWasm } from './kaspa/wasmTx';
 import { NetworkType } from '../types';
@@ -466,9 +468,80 @@ export class IsolatedSigner {
     }
 
     // 2. Build and sign the transaction using authoritative Kaspa WASM engine.
+    const prefix = getAddressPrefix(intent.network);
+    const resolvedUtxos = [...intent.utxos];
+
+    // Auto-verify and resolve accurate derivation paths for all UTXOs against mnemonic
+    for (let i = 0; i < resolvedUtxos.length; i++) {
+      const u = resolvedUtxos[i];
+      const addr = u.address;
+      if (!addr) continue;
+
+      let currentPath = u.derivationPath || u.path || (intent as any).addressPaths?.[addr];
+      let isValid = false;
+
+      if (currentPath) {
+        try {
+          const match = currentPath.match(/m\/44'\/(\d+)'\/(\d+)'\/(\d+)\/(\d+)/);
+          if (match) {
+            const coinType = parseInt(match[1], 10);
+            const isChange = parseInt(match[3], 10) === 1;
+            const index = parseInt(match[4], 10);
+            const testAddr = await generateDeterministicAddress(
+              mnemonic,
+              passphrase,
+              prefix,
+              effectiveAddressType,
+              index,
+              isChange,
+              coinType
+            );
+            if (testAddr.toLowerCase() === addr.toLowerCase()) {
+              isValid = true;
+            }
+          }
+        } catch {
+          isValid = false;
+        }
+      }
+
+      if (!isValid) {
+        // Search receive chain (0) and change chain (1) up to index 50 to find matching derivation path
+        let foundPath: string | null = null;
+        for (const isChange of [false, true]) {
+          for (let index = 0; index < 50; index++) {
+            try {
+              const testAddr = await generateDeterministicAddress(
+                mnemonic,
+                passphrase,
+                prefix,
+                effectiveAddressType,
+                index,
+                isChange
+              );
+              if (testAddr.toLowerCase() === addr.toLowerCase()) {
+                foundPath = `m/44'/111111'/0'/${isChange ? 1 : 0}/${index}`;
+                break;
+              }
+            } catch {
+              break;
+            }
+          }
+          if (foundPath) break;
+        }
+
+        if (foundPath) {
+          resolvedUtxos[i] = {
+            ...u,
+            derivationPath: foundPath,
+          };
+        }
+      }
+    }
+
     const uniquePaths = Array.from(
       new Set(
-        intent.utxos.map(u => {
+        resolvedUtxos.map(u => {
           const p = u.derivationPath || u.path || (u.address && (intent as any).addressPaths?.[u.address]) || "m/44'/111111'/0'/0/0";
           return p;
         })
@@ -492,7 +565,7 @@ export class IsolatedSigner {
 
     try {
       const wasmResult = await createSignedTransactionIsolatedWasm(
-        intent.utxos,
+        resolvedUtxos,
         intent.toAddress,
         intent.amountSompi,
         intent.changeAddress,

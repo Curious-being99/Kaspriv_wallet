@@ -2823,14 +2823,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 devPath = "m/44'/111111'/0'/0/0";
               } else if (address === activeWallet.changeAddress) {
                 devPath = "m/44'/111111'/0'/1/0";
-              } else {
-                devPath = `m/44'/111111'/0'/0/${addrIdx}`;
               }
             }
             utxosResponse.push({
               ...u,
               address,
-              derivationPath: devPath,
+              ...(devPath ? { derivationPath: devPath } : {}),
             });
           });
         } else {
@@ -3232,11 +3230,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const address = addressesToFetch[addrIdx];
         if (liveUtxosData && Array.isArray(liveUtxosData)) {
           liveUtxosData.forEach((u: any) => {
-            const devPath = activeWallet.addressPaths?.[address] || `m/44'/111111'/0'/0/${addrIdx}`;
+            let devPath = activeWallet.addressPaths?.[address] || u.derivationPath;
+            if (!devPath) {
+              if (address === activeWallet.receiveAddress) {
+                devPath = "m/44'/111111'/0'/0/0";
+              } else if (address === activeWallet.changeAddress) {
+                devPath = "m/44'/111111'/0'/1/0";
+              }
+            }
             utxosResponse.push({
               ...u,
               address,
-              derivationPath: devPath,
+              ...(devPath ? { derivationPath: devPath } : {}),
             });
           });
         } else {

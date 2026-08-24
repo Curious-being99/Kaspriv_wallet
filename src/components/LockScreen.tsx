@@ -164,26 +164,44 @@ export const LockScreen: React.FC = () => {
 
         <form onSubmit={handleUnlock} className={`w-full transition-all duration-300 ${isKeyboardOpen ? 'space-y-3' : 'space-y-4'}`}>
           <div className="space-y-1.5">
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Enter password"
-                value={password}
-                onFocus={() => openKeyboard({ value: password, onChange: (val) => { setPassword(val); setError(null); } })}
-                onClick={() => openKeyboard({ value: password, onChange: (val) => { setPassword(val); setError(null); } })}
-                inputMode="none"
-                onChange={() => {}}
-                className={`w-full px-4 py-3 rounded-xl bg-[#0B151E] border-2 transition-all text-center text-sm ${
-                  error ? 'border-rose-500/50' : 'border-[#1C2F42] focus:border-[#70C7BA]'
-                } text-slate-100 outline-none cursor-pointer`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Enter password"
+                  value={password}
+                  onFocus={() => openKeyboard({ value: password, onChange: (val) => { setPassword(val); setError(null); } })}
+                  onClick={() => openKeyboard({ value: password, onChange: (val) => { setPassword(val); setError(null); } })}
+                  inputMode="none"
+                  onChange={() => {}}
+                  className={`w-full px-4 py-3 rounded-xl bg-[#0B151E] border-2 transition-all text-center text-sm ${
+                    error ? 'border-rose-500/50' : 'border-[#1C2F42] focus:border-[#70C7BA]'
+                  } text-slate-100 outline-none cursor-pointer pr-10`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {isBiometricsEnabled && (
+                <button
+                  type="button"
+                  onClick={handleBiometricUnlock}
+                  disabled={isAuthenticatingBiometrics || isDecrypting}
+                  title="Unlock with Biometrics"
+                  className="p-3 rounded-xl bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/30 text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0"
+                >
+                  {isAuthenticatingBiometrics ? (
+                    <div className="w-5 h-5 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
+                  ) : (
+                    <Fingerprint className="w-5 h-5 text-[#70C7BA]" />
+                  )}
+                </button>
+              )}
             </div>
             
             <AnimatePresence mode="wait">
@@ -220,27 +238,6 @@ export const LockScreen: React.FC = () => {
                 </>
               )}
             </button>
-
-            {isBiometricsEnabled && (
-              <button
-                type="button"
-                onClick={handleBiometricUnlock}
-                disabled={isAuthenticatingBiometrics || isDecrypting}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/30 text-xs font-bold text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-[0.98]"
-              >
-                {isAuthenticatingBiometrics ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-[#70C7BA]/30 border-t-[#70C7BA] rounded-full animate-spin" />
-                    <span>Prompting Biometrics...</span>
-                  </>
-                ) : (
-                  <>
-                    <Fingerprint className="w-4 h-4 text-[#70C7BA]" />
-                    <span>Tap to unlock with Biometrics</span>
-                  </>
-                )}
-              </button>
-            )}
 
             {isPendingLogout && (
               <button

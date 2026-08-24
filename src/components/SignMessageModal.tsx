@@ -174,37 +174,39 @@ export const SignMessageModal: React.FC = () => {
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
                 Wallet Password
               </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter password to sign"
-                  value={passwordInput}
-                  onFocus={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
-                  onClick={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
-                  inputMode="none" onChange={() => {}}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#0B151E] focus:border-[#70C7BA] text-sm text-slate-100 outline-none transition-colors pr-10 cursor-pointer"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter password to sign"
+                    value={passwordInput}
+                    onFocus={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
+                    onClick={() => openKeyboard({ value: passwordInput, onChange: setPasswordInput })}
+                    inputMode="none" onChange={() => {}}
+                    className="w-full px-3 py-2.5 rounded-xl bg-[#0B151E] focus:border-[#70C7BA] text-sm text-slate-100 outline-none transition-colors pr-10 cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                {isBiometricsEnabled && (
+                  <button
+                    type="button"
+                    onClick={handleSign}
+                    disabled={!message.trim()}
+                    title="Unlock with Biometrics"
+                    className="p-2.5 rounded-xl bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/30 text-[#70C7BA] transition-all cursor-pointer disabled:opacity-50 active:scale-95 flex items-center justify-center shrink-0"
+                  >
+                    <Fingerprint className="w-5 h-5 text-[#70C7BA]" />
+                  </button>
+                )}
               </div>
             </div>
-          )}
-
-          {isBiometricsEnabled && (
-            <button
-              type="button"
-              onClick={handleSign}
-              disabled={!message.trim()}
-              className="w-full flex items-center justify-center gap-1.5 py-1 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-            >
-              <Fingerprint className="w-3.5 h-3.5 text-[#70C7BA]" />
-              <span>Tap to unlock with Biometrics</span>
-            </button>
           )}
 
           <button
