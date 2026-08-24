@@ -1,5 +1,6 @@
 package com.kaspriv.wallet
 
+import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -36,16 +37,16 @@ class SQLitePlugin : Plugin() {
             try {
                 val list = db.walletDao().getAll()
                 val ret = JSObject()
-                val walletList = mutableListOf<JSObject>()
+                val walletArray = JSArray()
                 
                 for (item in list) {
                     val obj = JSObject().apply {
                         put("id", item.id)
                         put("value", item.value)
                     }
-                    walletList.add(obj)
+                    walletArray.put(obj)
                 }
-                ret.put("wallets", walletList)
+                ret.put("wallets", walletArray)
                 call.resolve(ret)
             } catch (e: Exception) {
                 call.reject("Failed to fetch wallets: ${e.message}")
@@ -87,16 +88,16 @@ class SQLitePlugin : Plugin() {
             try {
                 val list = db.settingDao().getAll()
                 val ret = JSObject()
-                val settingsList = mutableListOf<JSObject>()
+                val settingsArray = JSArray()
                 
                 for (item in list) {
                     val obj = JSObject().apply {
                         put("key", item.key)
                         put("value", item.value)
                     }
-                    settingsList.add(obj)
+                    settingsArray.put(obj)
                 }
-                ret.put("settings", settingsList)
+                ret.put("settings", settingsArray)
                 call.resolve(ret)
             } catch (e: Exception) {
                 call.reject("Failed to fetch settings: ${e.message}")
@@ -138,16 +139,16 @@ class SQLitePlugin : Plugin() {
             try {
                 val list = db.utxoDao().getAll()
                 val ret = JSObject()
-                val utxoList = mutableListOf<JSObject>()
+                val utxoArray = JSArray()
                 
                 for (item in list) {
                     val obj = JSObject().apply {
                         put("walletId", item.walletId)
                         put("data", item.data)
                     }
-                    utxoList.add(obj)
+                    utxoArray.put(obj)
                 }
-                ret.put("utxos", utxoList)
+                ret.put("utxos", utxoArray)
                 call.resolve(ret)
             } catch (e: Exception) {
                 call.reject("Failed to fetch UTXOs: ${e.message}")
@@ -176,16 +177,16 @@ class SQLitePlugin : Plugin() {
             try {
                 val list = db.transactionDao().getAll()
                 val ret = JSObject()
-                val txList = mutableListOf<JSObject>()
+                val txArray = JSArray()
                 
                 for (item in list) {
                     val obj = JSObject().apply {
                         put("walletId", item.walletId)
                         put("data", item.data)
                     }
-                    txList.add(obj)
+                    txArray.put(obj)
                 }
-                ret.put("transactions", txList)
+                ret.put("transactions", txArray)
                 call.resolve(ret)
             } catch (e: Exception) {
                 call.reject("Failed to fetch transactions: ${e.message}")

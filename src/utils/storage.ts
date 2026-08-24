@@ -18,6 +18,16 @@ if (!IS_NATIVE && typeof window !== 'undefined') {
   });
 }
 
+function ensureArray<T>(val: any): T[] {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'object') {
+    // If it's a JSON object with numbered or arbitrary keys, extract values
+    return Object.values(val) as T[];
+  }
+  return [];
+}
+
 /**
  * High-performance, compile-safe Native Database Driver.
  * Strictly linked to Android Jetpack Room (Kotlin) with direct native bridge queries.
@@ -45,8 +55,13 @@ class SQLiteDatabase {
 
   public async getWallets(): Promise<{ id: string; value: string }[]> {
     if (IS_NATIVE) {
-      const res = await SQLitePlugin.getWallets();
-      return res.wallets || [];
+      try {
+        const res = await SQLitePlugin.getWallets();
+        return ensureArray<{ id: string; value: string }>(res?.wallets);
+      } catch (e) {
+        console.error('Failed to getWallets from native SQLite:', e);
+        return [];
+      }
     }
     if (webDbPromise) {
       const db = await webDbPromise;
@@ -81,8 +96,13 @@ class SQLiteDatabase {
 
   public async getSettings(): Promise<{ key: string; value: string }[]> {
     if (IS_NATIVE) {
-      const res = await SQLitePlugin.getSettings();
-      return res.settings || [];
+      try {
+        const res = await SQLitePlugin.getSettings();
+        return ensureArray<{ key: string; value: string }>(res?.settings);
+      } catch (e) {
+        console.error('Failed to getSettings from native SQLite:', e);
+        return [];
+      }
     }
     if (webDbPromise) {
       const db = await webDbPromise;
@@ -115,8 +135,14 @@ class SQLiteDatabase {
 
   public async getUtxos(walletId: string): Promise<{ walletId: string; data: string } | undefined> {
     if (IS_NATIVE) {
-      const res = await SQLitePlugin.getUtxos();
-      return (res.utxos || []).find(u => u.walletId === walletId);
+      try {
+        const res = await SQLitePlugin.getUtxos();
+        const list = ensureArray<{ walletId: string; data: string }>(res?.utxos);
+        return list.find(u => u.walletId === walletId);
+      } catch (e) {
+        console.error('Failed to getUtxos from native SQLite:', e);
+        return undefined;
+      }
     }
     if (webDbPromise) {
       const db = await webDbPromise;
@@ -138,8 +164,14 @@ class SQLiteDatabase {
 
   public async getTransactions(walletId: string): Promise<{ walletId: string; data: string } | undefined> {
     if (IS_NATIVE) {
-      const res = await SQLitePlugin.getTransactions();
-      return (res.transactions || []).find(t => t.walletId === walletId);
+      try {
+        const res = await SQLitePlugin.getTransactions();
+        const list = ensureArray<{ walletId: string; data: string }>(res?.transactions);
+        return list.find(t => t.walletId === walletId);
+      } catch (e) {
+        console.error('Failed to getTransactions from native SQLite:', e);
+        return undefined;
+      }
     }
     if (webDbPromise) {
       const db = await webDbPromise;
@@ -196,10 +228,17 @@ export async function saveWalletToDB(wallet: Wallet): Promise<void> {
 export async function getWalletsFromDB(): Promise<Wallet[]> {
   const result = await withSQLite(async (db) => {
     const wallets = await db.getWallets();
+    if (!Array.isArray(wallets)) return [];
     return wallets.map((row) => {
-      const w = JSON.parse(row.value);
-      return { ...w, balanceSompi: BigInt(w.balanceSompi || '0') };
-    });
+      try {
+        if (!row || !row.value) return null;
+        const w = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+        return { ...w, balanceSompi: BigInt(w?.balanceSompi || '0') };
+      } catch (e) {
+        console.error('Error parsing wallet row from DB:', e);
+        return null;
+      }
+    }).filter(Boolean) as Wallet[];
   });
   return result || [];
 }
@@ -226,10 +265,15 @@ export async function saveUtxosToDB(walletId: string, utxos: UTXO[]): Promise<vo
 export async function getUtxosFromDB(walletId: string): Promise<UTXO[]> {
   const result = await withSQLite(async (db) => {
     const row = await db.getUtxos(walletId);
-    if (!row) return [];
-    const raw = JSON.parse(row.data);
-    if (!Array.isArray(raw)) return [];
-    return raw.map((u: any) => ({ ...u, amountSompi: BigInt(u.amountSompi || '0') }));
+    if (!row || !row.data) return [];
+    try {
+      const raw = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+      if (!Array.isArray(raw)) return [];
+      return raw.map((u: any) => ({ ...u, amountSompi: BigInt(u?.amountSompi || '0') }));
+    } catch (e) {
+      console.error('Error parsing UTXOs row from DB:', e);
+      return [];
+    }
   });
   return result || [];
 }
@@ -246,10 +290,15 @@ export async function saveTransactionsToDB(walletId: string, txs: KaspaTransacti
 export async function getTransactionsFromDB(walletId: string): Promise<KaspaTransaction[]> {
   const result = await withSQLite(async (db) => {
     const row = await db.getTransactions(walletId);
-    if (!row) return [];
-    const raw = JSON.parse(row.data);
-    if (!Array.isArray(raw)) return [];
-    return raw.map((t: any) => ({ ...t, amountSompi: BigInt(t.amountSompi || '0'), feeSompi: BigInt(t.feeSompi || '0') }));
+    if (!row || !row.data) return [];
+    try {
+      const raw = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+      if (!Array.isArray(raw)) return [];
+      return raw.map((t: any) => ({ ...t, amountSompi: BigInt(t?.amountSompi || '0'), feeSompi: BigInt(t?.feeSompi || '0') }));
+    } catch (e) {
+      console.error('Error parsing transactions row from DB:', e);
+      return [];
+    }
   });
   return result || [];
 }
@@ -328,10 +377,16 @@ export async function saveSetting(key: string, value: any): Promise<void> {
 export async function getSetting<T>(key: string): Promise<T | undefined> {
   return withSQLite(async (db) => {
     const settings = await db.getSettings();
-    const row = settings.find(s => s.key === key);
-    if (!row) return undefined;
-    const data = JSON.parse(row.value);
-    return data?.value as T;
+    if (!Array.isArray(settings)) return undefined;
+    const row = settings.find(s => s?.key === key);
+    if (!row || !row.value) return undefined;
+    try {
+      const data = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+      return (data && typeof data === 'object' && 'value' in data) ? (data.value as T) : (data as T);
+    } catch (e) {
+      console.error(`Error parsing setting ${key} from DB:`, e);
+      return undefined;
+    }
   });
 }
 
