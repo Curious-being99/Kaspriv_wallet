@@ -71,7 +71,10 @@ android {
                 v1SigningEnabled true
                 v2SigningEnabled true
             } else {
-                // Graceful fallback to debug keystore for development / dry-run builds
+                if (System.getenv('RELEASE_KEYSTORE_BASE64') || System.getenv('RELEASE_STORE_PASSWORD') || System.getenv('KEYSTORE_BASE64')) {
+                    throw new GradleException("ERROR: Release signing credentials/keystore were provided in environment variables, but the keystore file could not be found or password was missing! (resolvedStoreFile: ${resolvedStoreFile}, hasPassword: ${storePass ? 'yes' : 'no'})")
+                }
+                // Graceful fallback to debug keystore for local development builds
                 storeFile file('debug.keystore')
                 storePassword 'android'
                 keyAlias 'androiddebugkey'
