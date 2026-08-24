@@ -97,6 +97,5 @@ bun.lock
 bun.lockb
 .env
 .env.local
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
