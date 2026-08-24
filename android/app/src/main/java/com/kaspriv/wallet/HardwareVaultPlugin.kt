@@ -1,6 +1,8 @@
 package com.kaspriv.wallet
 
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
@@ -14,6 +16,7 @@ import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import java.security.KeyStore
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -25,6 +28,7 @@ class HardwareVaultPlugin : Plugin() {
     private val KEY_STORE_NAME = "AndroidKeyStore"
     private val TRANSFORMATION = "AES/GCM/NoPadding"
     private val TAG_LENGTH = 128
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @PluginMethod
     fun checkBiometricSupport(call: PluginCall) {
@@ -164,11 +168,11 @@ class HardwareVaultPlugin : Plugin() {
             }
         }
 
-        // 1. Check biometric enrollment to decide whether auth is required on key
+        // Check biometric enrollment to decide whether auth is required on key
         val biometricManager = BiometricManager.from(context)
         val canAuthStrong = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
 
-        // 2. Try StrongBox if hardware feature is present
+        // 1. Try StrongBox if hardware feature is present
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
                 val hasStrongBox = context.packageManager.hasSystemFeature("android.hardware.strongbox_keystore")
@@ -180,11 +184,11 @@ class HardwareVaultPlugin : Plugin() {
             }
         }
 
-        // 3. Try standard TEE hardware-backed Keystore with biometric authentication
+        // 2. Try standard TEE hardware-backed Keystore with biometric authentication
         try {
             return generateAesKey(alias, useStrongBox = false, authRequired = canAuthStrong)
         } catch (e: Exception) {
-            // 4. Fallback without strict biometric auth flag if enrollment or hardware flags mismatch
+            // 3. Fallback without strict biometric auth flag if enrollment or hardware flags mismatch
             return generateAesKey(alias, useStrongBox = false, authRequired = false)
         }
     }
@@ -206,9 +210,10 @@ class HardwareVaultPlugin : Plugin() {
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 specBuilder.setUserAuthenticationValidityDurationSeconds(-1)
             }
+            // Invalidate key only if permanently removed; avoid transient disconnects
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 try {
-                    specBuilder.setInvalidatedByBiometricEnrollment(true)
+                    specBuilder.setInvalidatedByBiometricEnrollment(false)
                 } catch (e: Exception) {}
             }
         } else {
@@ -226,28 +231,41 @@ class HardwareVaultPlugin : Plugin() {
     }
 
     private fun showBiometricPromptForEncrypt(cipher: Cipher, plaintext: ByteArray, call: PluginCall) {
-        activity.runOnUiThread {
+        val resolvedOrRejected = AtomicBoolean(false)
+        mainHandler.post {
             try {
+                val currentActivity = activity
+                if (currentActivity == null || currentActivity.isFinishing || currentActivity.isDestroyed) {
+                    if (resolvedOrRejected.compareAndSet(false, true)) {
+                        call.reject("Activity is not available for BiometricPrompt")
+                    }
+                    return@post
+                }
+
                 val executor = ContextCompat.getMainExecutor(context)
-                val biometricPrompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
+                val biometricPrompt = BiometricPrompt(currentActivity, executor, object : BiometricPrompt.AuthenticationCallback() {
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                         super.onAuthenticationSucceeded(result)
-                        try {
-                            val authCipher = result.cryptoObject?.cipher ?: cipher
-                            val iv = authCipher.iv
-                            val encryptedBytes = authCipher.doFinal(plaintext)
-                            val ret = JSObject()
-                            ret.put("iv", Base64.encodeToString(iv, Base64.DEFAULT))
-                            ret.put("ciphertext", Base64.encodeToString(encryptedBytes, Base64.DEFAULT))
-                            call.resolve(ret)
-                        } catch (e: Exception) {
-                            call.reject("Encryption failed after auth: ${e.message}")
+                        if (resolvedOrRejected.compareAndSet(false, true)) {
+                            try {
+                                val authCipher = result.cryptoObject?.cipher ?: cipher
+                                val iv = authCipher.iv
+                                val encryptedBytes = authCipher.doFinal(plaintext)
+                                val ret = JSObject()
+                                ret.put("iv", Base64.encodeToString(iv, Base64.DEFAULT))
+                                ret.put("ciphertext", Base64.encodeToString(encryptedBytes, Base64.DEFAULT))
+                                call.resolve(ret)
+                            } catch (e: Exception) {
+                                call.reject("Encryption failed after auth: ${e.message}")
+                            }
                         }
                     }
 
                     override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                         super.onAuthenticationError(errorCode, errString)
-                        call.reject("Authentication cancelled or error ($errorCode): $errString")
+                        if (resolvedOrRejected.compareAndSet(false, true)) {
+                            call.reject("Authentication error ($errorCode): $errString")
+                        }
                     }
 
                     override fun onAuthenticationFailed() {
@@ -258,39 +276,55 @@ class HardwareVaultPlugin : Plugin() {
                 val promptInfo = BiometricPrompt.PromptInfo.Builder()
                     .setTitle("Authenticate to Secure Wallet")
                     .setSubtitle("Confirm biometrics to save your vault key")
-                    .setNegativeButtonText("Cancel")
+                    .setNegativeButtonText("Use Password")
+                    .setConfirmationRequired(false)
                     .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
                     .build()
 
                 biometricPrompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(cipher))
             } catch (e: Exception) {
-                call.reject("Biometric prompt failed: ${e.message}")
+                if (resolvedOrRejected.compareAndSet(false, true)) {
+                    call.reject("Biometric prompt failed: ${e.message}")
+                }
             }
         }
     }
 
     private fun showBiometricPromptForDecrypt(cipher: Cipher, ciphertext: ByteArray, call: PluginCall) {
-        activity.runOnUiThread {
+        val resolvedOrRejected = AtomicBoolean(false)
+        mainHandler.post {
             try {
+                val currentActivity = activity
+                if (currentActivity == null || currentActivity.isFinishing || currentActivity.isDestroyed) {
+                    if (resolvedOrRejected.compareAndSet(false, true)) {
+                        call.reject("Activity is not available for BiometricPrompt")
+                    }
+                    return@post
+                }
+
                 val executor = ContextCompat.getMainExecutor(context)
-                val biometricPrompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
+                val biometricPrompt = BiometricPrompt(currentActivity, executor, object : BiometricPrompt.AuthenticationCallback() {
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                         super.onAuthenticationSucceeded(result)
-                        try {
-                            val authCipher = result.cryptoObject?.cipher ?: cipher
-                            val decryptedBytes = authCipher.doFinal(ciphertext)
-                            val ret = JSObject()
-                            ret.put("data", String(decryptedBytes, Charsets.UTF_8))
-                            wipe(decryptedBytes)
-                            call.resolve(ret)
-                        } catch (e: Exception) {
-                            call.reject("Decryption failed after auth: ${e.message}")
+                        if (resolvedOrRejected.compareAndSet(false, true)) {
+                            try {
+                                val authCipher = result.cryptoObject?.cipher ?: cipher
+                                val decryptedBytes = authCipher.doFinal(ciphertext)
+                                val ret = JSObject()
+                                ret.put("data", String(decryptedBytes, Charsets.UTF_8))
+                                wipe(decryptedBytes)
+                                call.resolve(ret)
+                            } catch (e: Exception) {
+                                call.reject("Decryption failed after auth: ${e.message}")
+                            }
                         }
                     }
 
                     override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                         super.onAuthenticationError(errorCode, errString)
-                        call.reject("Authentication cancelled or error ($errorCode): $errString")
+                        if (resolvedOrRejected.compareAndSet(false, true)) {
+                            call.reject("Authentication error ($errorCode): $errString")
+                        }
                     }
 
                     override fun onAuthenticationFailed() {
@@ -300,14 +334,17 @@ class HardwareVaultPlugin : Plugin() {
 
                 val promptInfo = BiometricPrompt.PromptInfo.Builder()
                     .setTitle("Unlock Kaspriv Wallet")
-                    .setSubtitle("Confirm biometrics to access your keys")
-                    .setNegativeButtonText("Cancel")
+                    .setSubtitle("Confirm fingerprint or face biometric")
+                    .setNegativeButtonText("Use Password")
+                    .setConfirmationRequired(false)
                     .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
                     .build()
 
                 biometricPrompt.authenticate(promptInfo, BiometricPrompt.CryptoObject(cipher))
             } catch (e: Exception) {
-                call.reject("Biometric prompt failed: ${e.message}")
+                if (resolvedOrRejected.compareAndSet(false, true)) {
+                    call.reject("Biometric prompt failed: ${e.message}")
+                }
             }
         }
     }

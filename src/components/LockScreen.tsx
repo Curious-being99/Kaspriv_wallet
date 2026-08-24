@@ -30,11 +30,15 @@ export const LockScreen: React.FC = () => {
 
   // Auto-trigger Biometrics if enabled, or Virtual Keyboard when LockScreen is shown
   useEffect(() => {
+    let bioTimer: any;
     if (isLocked && !indexingState?.isIndexing && wallets.length > 0) {
       setPassword('');
       setError(null);
       if (isBiometricsEnabled) {
-        handleBiometricUnlock();
+        // Debounce slightly to ensure Android Activity window has full focus
+        bioTimer = setTimeout(() => {
+          handleBiometricUnlock();
+        }, 150);
       } else {
         openKeyboard({
           value: '',
@@ -48,6 +52,9 @@ export const LockScreen: React.FC = () => {
       setPassword('');
       closeKeyboard();
     }
+    return () => {
+      if (bioTimer) clearTimeout(bioTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLocked, wallets.length, isBiometricsEnabled, indexingState?.isIndexing]);
 

@@ -135,18 +135,15 @@ class MainActivity : BridgeActivity() {
         super.onCreate(savedInstanceState)
 
         // Tapjacking & Overlay Obstruction Defense
-        // Discards touch events if another application's window overlay obscures the wallet screen
+        // Protect webview touches against untrusted overlays while allowing system BiometricPrompt dialogs
         try {
-            val rootView = window.decorView.rootView
-            rootView?.setFilterTouchesWhenObscured(true)
-            
             val webView = bridge?.webView
             if (webView != null) {
                 webView.setFilterTouchesWhenObscured(true)
                 webView.addJavascriptInterface(SecurityEnvironmentBridge(), "AndroidSecurityEnvironment")
             }
         } catch (e: Exception) {
-            // Ignore if decor view is not available on older devices
+            // Ignore if web view is not available
         }
     }
 }
