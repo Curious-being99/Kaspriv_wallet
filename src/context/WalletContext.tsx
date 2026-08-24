@@ -1561,7 +1561,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (seedToUse) {
               const maxIdx = receiveAddressesList.reduce((max, item) => Math.max(max, item.idx), 0);
               const nextIdx = maxIdx + 1;
-              const networkType = wallet.addressType || 'P2PKH';
+              const networkType = wallet.addressType || 'P2SH';
               const prefix = getAddressPrefix(networkRef.current);
               const nextPath = `m/44'/111111'/0'/0/${nextIdx}`;
               
@@ -1659,7 +1659,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             if (seedToUse) {
               const maxIdx = changeAddressesList.reduce((max, item) => Math.max(max, item.idx), 0);
               const nextIdx = maxIdx + 1;
-              const networkType = wallet.addressType || 'P2PKH';
+              const networkType = wallet.addressType || 'P2SH';
               const prefix = getAddressPrefix(networkRef.current);
               const nextPath = `m/44'/111111'/0'/1/${nextIdx}`;
               
@@ -2047,7 +2047,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setIndexingState({ isIndexing: false, scannedAddresses: 0, foundAddresses: 0, balanceSompi: 0n });
   };
 
-  const createNewWallet = async (name: string, mnemonicWords?: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string, duressPassword?: string): Promise<Wallet> => {
+  const createNewWallet = async (name: string, mnemonicWords?: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2SH', password?: string, duressPassword?: string): Promise<Wallet> => {
     if (password) {
       setIsPasswordEnabled(true);
       setIsLocked(true);
@@ -2337,7 +2337,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         seedToUse,
         passToUse,
         prefix,
-        activeWallet.addressType || 'P2PKH',
+        activeWallet.addressType || 'P2SH',
         50,
         (scannedCount, foundCount, balanceSompi) => {
           setIndexingState({ isIndexing: true, scannedAddresses: scannedCount, foundAddresses: foundCount, balanceSompi });
@@ -2350,7 +2350,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           addrPaths[da.address] = da.path;
         });
       }
-      const changeAddr = scanRes.primaryChangeAddress || (seedToUse ? await generateDeterministicAddress(seedToUse, passToUse, prefix, activeWallet.addressType || 'P2PKH', 0, true) : activeWallet.changeAddress);
+      const changeAddr = scanRes.primaryChangeAddress || (seedToUse ? await generateDeterministicAddress(seedToUse, passToUse, prefix, activeWallet.addressType || 'P2SH', 0, true) : activeWallet.changeAddress);
 
       addrPaths[scanRes.primaryAddress] = addrPaths[scanRes.primaryAddress] || `m/44'/${activeWallet.addressType === 'P2SH' ? '111111' : '111111'}'/0'/0/0`;
       if (changeAddr) {
@@ -2439,7 +2439,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const importSeedWallet = async (name: string, words: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string, duressPassword?: string): Promise<Wallet> => {
+  const importSeedWallet = async (name: string, words: string[], passphrase?: string, addressType: 'P2PKH' | 'P2SH' = 'P2SH', password?: string, duressPassword?: string): Promise<Wallet> => {
     if (password) {
       setIsPasswordEnabled(true);
       setIsLocked(true);
@@ -2608,7 +2608,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const importKpubWallet = async (name: string, kpubOrAddress: string, addressType: 'P2PKH' | 'P2SH' = 'P2PKH', password?: string, duressPassword?: string): Promise<Wallet> => {
+  const importKpubWallet = async (name: string, kpubOrAddress: string, addressType: 'P2PKH' | 'P2SH' = 'P2SH', password?: string, duressPassword?: string): Promise<Wallet> => {
     if (password) {
       setIsPasswordEnabled(true);
       setIsLocked(true);
@@ -2772,7 +2772,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
 
     // Determine address standard (P2PKH or P2SH)
-    const addrType = activeWallet.addressType || (activeWallet.receiveAddress?.includes(':p') ? 'P2SH' : 'P2PKH');
+    const addrType = activeWallet.addressType || (activeWallet.receiveAddress?.includes(':q') ? 'P2PKH' : 'P2SH');
 
     try {
       // Ensure minimum fee for node compute mass
@@ -3290,7 +3290,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return acc + BigInt(amount || 0);
       }, 0n);
       
-      const addrType = activeWallet.addressType || (activeWallet.receiveAddress?.includes(':p') ? 'P2SH' : 'P2PKH');
+      const addrType = activeWallet.addressType || (activeWallet.receiveAddress?.includes(':q') ? 'P2PKH' : 'P2SH');
       
       const minRequiredFeeSompi = calculateDynamicFeeForTransaction(utxosToCompound.length, 1, addrType, 25, 20000n);
       const feeSompi = minRequiredFeeSompi;
@@ -3929,7 +3929,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
 
     const prefix = getAddressPrefix(network);
-    const addressType = activeWallet.addressType || 'P2PKH';
+    const addressType = activeWallet.addressType || 'P2SH';
 
     let maxRecvIdx = 0;
     const paths = activeWallet.addressPaths || {};

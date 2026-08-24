@@ -48,7 +48,7 @@ export const WalletSetupModal: React.FC = () => {
   const [addressInput, setAddressInput] = useState('');
 
   // Address Type state (P2PKH vs P2SH)
-  const [addressType, setAddressType] = useState<'P2PKH' | 'P2SH'>('P2PKH');
+  const [addressType, setAddressType] = useState<'P2PKH' | 'P2SH'>('P2SH');
 
   // Password setup state
   const [setupPassword, setSetupPassword] = useState('');
@@ -135,7 +135,7 @@ export const WalletSetupModal: React.FC = () => {
     setShowPassphrase(false);
     setKpubInput('');
     setAddressInput('');
-    setAddressType('P2PKH');
+    setAddressType('P2SH');
     setPreviewAddress('');
     setSetupPassword('');
     setConfirmSetupPassword('');
@@ -184,38 +184,16 @@ export const WalletSetupModal: React.FC = () => {
       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
         Address Standard
       </label>
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => setAddressType('P2PKH')}
-          className={`p-2.5 rounded-xl border text-left transition-all ${
-            addressType === 'P2PKH'
-              ? 'bg-[#70C7BA]/10 border-[#70C7BA] text-[#70C7BA]'
-              : 'bg-[#090D12] border-[#212B38] text-slate-400 hover:border-slate-700'
-          }`}
+      <div className="w-full">
+        <div
+          className="p-3 rounded-xl border bg-[#70C7BA]/10 border-[#70C7BA]/40 text-[#70C7BA] transition-all"
         >
           <div className="font-extrabold text-[11px] mb-0.5 flex items-center gap-1.5">
-            <div className={`w-1.5 h-1.5 rounded-full ${addressType === 'P2PKH' ? 'bg-[#70C7BA]' : 'bg-slate-700'}`} />
-            <span>Standard (q)</span>
-          </div>
-          <div className="text-[9px] text-slate-400">P2PKH Schnorr</div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setAddressType('P2SH')}
-          className={`p-2.5 rounded-xl border text-left transition-all ${
-            addressType === 'P2SH'
-              ? 'bg-[#70C7BA]/10 border-[#70C7BA] text-[#70C7BA]'
-              : 'bg-[#090D12] border-[#212B38] text-slate-400 hover:border-slate-700'
-          }`}
-        >
-          <div className="font-extrabold text-[11px] mb-0.5 flex items-center gap-1.5">
-            <div className={`w-1.5 h-1.5 rounded-full ${addressType === 'P2SH' ? 'bg-[#70C7BA]' : 'bg-slate-700'}`} />
+            <div className="w-1.5 h-1.5 rounded-full bg-[#70C7BA]" />
             <span>Secure (p)</span>
           </div>
-          <div className="text-[9px] text-slate-400">P2SH Script Hash</div>
-        </button>
+          <div className="text-[9px] text-slate-400">P2SH Script Hash Address Standard Active</div>
+        </div>
       </div>
     </div>
   );

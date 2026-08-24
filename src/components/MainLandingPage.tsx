@@ -122,7 +122,7 @@ export const MainLandingPage: React.FC = () => {
 
   // Import Address / Kpub State - pre-filled real address to track
   const [addressInput, setAddressInput] = useState('');
-  const [addressType, setAddressType] = useState<'P2PKH' | 'P2SH'>('P2PKH');
+  const [addressType, setAddressType] = useState<'P2PKH' | 'P2SH'>('P2SH');
   const [previewAddress, setPreviewAddress] = useState('');
 
   // Password Setup State
@@ -149,7 +149,7 @@ export const MainLandingPage: React.FC = () => {
     setImportWordsText('');
     setPassphraseInput('');
     setShowPassphrase(false);
-    setAddressType('P2PKH');
+    setAddressType('P2SH');
     setPreviewAddress('');
     setAddressInput('');
     setSetupPassword('');
@@ -264,33 +264,16 @@ export const MainLandingPage: React.FC = () => {
           Address Standard
         </label>
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
-        <button
-          onClick={() => setAddressType('P2PKH')}
-          className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden ${
-            addressType === 'P2PKH' 
-              ? 'bg-[#70C7BA]/10 border-[#70C7BA] text-[#70C7BA]' 
-              : 'bg-[#090D12] border-[#212B38] text-slate-400 hover:border-slate-700'
-          }`}
+      <div className="w-full">
+        <div
+          className="p-3 rounded-xl border bg-[#70C7BA]/10 border-[#70C7BA]/40 text-[#70C7BA] transition-all relative overflow-hidden"
         >
           <div className="font-bold text-xs mb-1 flex items-center gap-1.5">
-            <div className={`w-2 h-2 rounded-full ${addressType === 'P2PKH' ? 'bg-[#70C7BA]' : 'bg-slate-700'}`} />
-            Standard (q)
+            <div className="w-2 h-2 rounded-full bg-[#70C7BA]" />
+            P2SH Privacy Active
           </div>
-        </button>
-        <button
-          onClick={() => setAddressType('P2SH')}
-          className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden ${
-            addressType === 'P2SH' 
-              ? 'bg-[#70C7BA]/10 border-[#70C7BA] text-[#70C7BA]' 
-              : 'bg-[#090D12] border-[#212B38] text-slate-400 hover:border-slate-700'
-          }`}
-        >
-          <div className="font-bold text-xs mb-1 flex items-center gap-1.5">
-            <div className={`w-2 h-2 rounded-full ${addressType === 'P2SH' ? 'bg-[#70C7BA]' : 'bg-slate-700'}`} />
-            P2SH Privacy
-          </div>
-        </button>
+          <div className="text-[10px] text-slate-400">P2SH Script Hash address standard active for enhanced security</div>
+        </div>
       </div>
     </div>
   );
