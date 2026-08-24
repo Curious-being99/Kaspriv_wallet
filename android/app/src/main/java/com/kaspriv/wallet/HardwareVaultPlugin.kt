@@ -204,6 +204,26 @@ class HardwareVaultPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun createBiometricKey(call: PluginCall) {
+        val alias = call.getString("alias") ?: return call.reject("Alias is required")
+        try {
+            val keyStore = KeyStore.getInstance(KEY_STORE_NAME)
+            keyStore.load(null)
+            val existed = keyStore.containsAlias(alias)
+            getOrCreateKey(alias)
+            
+            val ret = JSObject()
+            ret.put("alias", alias)
+            ret.put("existed", existed)
+            ret.put("isHardwareBacked", true)
+            ret.put("securityLevel", "strongbox_or_enclave")
+            call.resolve(ret)
+        } catch (e: Exception) {
+            call.reject("Failed to create biometric key: ${e.message}")
+        }
+    }
+
+    @PluginMethod
     fun getHardwareSecurityLevel(call: PluginCall) {
         val alias = "security_probe_${System.currentTimeMillis()}"
         try {

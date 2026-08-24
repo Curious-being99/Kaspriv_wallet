@@ -37,7 +37,7 @@ export async function isBiometricsSupported(): Promise<boolean> {
     if (typeof window === 'undefined') return false;
 
     // 1. Check Native Android HardwareVault or container support
-    if (isNative() || !!(window as any).AndroidNativeBiometrics || typeof HardwareVault?.createBiometricKey === 'function') {
+    if (isNative() || !!(window as any).AndroidNativeBiometrics || typeof HardwareVault?.storeSecure === 'function') {
       return true;
     }
 
@@ -70,44 +70,25 @@ export async function registerBiometricUnlock(
     const alias = 'kaspriv_vault_v1';
     
     // --- Path A: Native Android HardwareVault (Android KeyStore + BiometricPrompt) ---
-    if (typeof HardwareVault?.createBiometricKey === 'function') {
+    if (isNative() && typeof HardwareVault?.storeSecure === 'function') {
       try {
-        await HardwareVault.createBiometricKey({ alias, requireStrongBox: false });
-
-        const master = new Uint8Array(32);
-        crypto.getRandomValues(master);
-        
-        let binary = '';
-        for (let i = 0; i < master.byteLength; i++) {
-          binary += String.fromCharCode(master[i]);
-        }
-        const secretBase64 = btoa(binary);
-
-        const { wrappedBase64, ivBase64 } = await HardwareVault.wrapSecret({
+        await HardwareVault.deleteKey({ alias });
+        const res = await HardwareVault.storeSecure({
           alias,
-          secretBase64,
+          data: walletPassword,
         });
-
-        const encrypted = await encryptWithPassword(
-          walletPassword,
-          secretBase64,
-          BIOMETRIC_AAD_CONTEXT
-        );
-
-        master.fill(0);
 
         return {
           credentialId: `keystore:${alias}`,
           mode: 'keystore',
-          ciphertext: encrypted.ciphertext,
-          salt: encrypted.salt,
-          iv: encrypted.iv,
+          ciphertext: res.ciphertext,
+          iv: res.iv,
+          salt: 'native-keystore',
           createdAt: Date.now(),
           alias,
-          wrappedMaster: { ciphertext: wrappedBase64, iv: ivBase64 }
         };
       } catch (err: any) {
-        console.warn('HardwareVault registration attempt failed, using secure fallback:', err);
+        console.warn('HardwareVault storeSecure failed, using secure fallback:', err);
       }
     }
 
@@ -153,34 +134,25 @@ export async function authenticateWithBiometrics(
     if (
       record.mode === 'keystore' &&
       record.alias &&
-      record.wrappedMaster &&
       record.ciphertext &&
-      record.salt &&
       record.iv &&
-      typeof HardwareVault?.unwrapSecret === 'function'
+      isNative() &&
+      typeof HardwareVault?.loadSecure === 'function'
     ) {
       try {
-        const { secretBase64 } = await HardwareVault.unwrapSecret({
+        const res = await HardwareVault.loadSecure({
           alias: record.alias,
-          wrappedBase64: record.wrappedMaster.ciphertext,
-          ivBase64: record.wrappedMaster.iv,
+          iv: record.iv,
+          ciphertext: record.ciphertext,
         });
-
-        const decryptedPassword = await decryptWithPassword(
-          record.ciphertext,
-          record.salt,
-          record.iv,
-          secretBase64,
-          BIOMETRIC_AAD_CONTEXT
-        );
 
         return {
           success: true,
           mode: 'keystore',
-          decryptedPassword,
+          decryptedPassword: res.data,
         };
       } catch (hvErr: any) {
-        console.warn('HardwareVault unwrapSecret failed:', hvErr);
+        console.warn('HardwareVault loadSecure failed:', hvErr);
         const errMsg = hvErr?.message || 'Biometric hardware authentication failed';
         return {
           success: false,
@@ -191,7 +163,7 @@ export async function authenticateWithBiometrics(
     }
 
     // --- Path B: Secure Web / PWA Fallback ---
-    if (record.ciphertext && record.salt && record.iv) {
+    if (record.ciphertext && record.salt && record.iv && record.salt !== 'native-keystore') {
       const secretKey = record.alias || 'kaspriv_vault_v1';
       try {
         const decryptedPassword = await decryptWithPassword(
