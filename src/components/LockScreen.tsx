@@ -51,7 +51,7 @@ export const LockScreen: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLocked, wallets.length, isBiometricsEnabled, indexingState?.isIndexing]);
 
-  if (!isLocked || (indexingState && indexingState.isIndexing)) return null;
+  if (!isLocked || wallets.length === 0 || (indexingState && indexingState.isIndexing)) return null;
 
   const handleBiometricUnlock = async () => {
     if (isAuthenticatingBiometrics || isDecrypting) return;
