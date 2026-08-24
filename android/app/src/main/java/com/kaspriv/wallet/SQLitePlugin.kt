@@ -1,12 +1,14 @@
 package com.kaspriv.wallet
 
+import android.content.ContentValues
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
-import com.kaspriv.wallet.room.AppDatabase
-import com.kaspriv.wallet.room.WalletEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -14,7 +16,46 @@ import kotlinx.coroutines.launch
 @CapacitorPlugin(name = "SQLite")
 class SQLitePlugin : Plugin() {
 
-    private val db by lazy { AppDatabase.getDatabase(context) }
+    private class DatabaseHelper(context: Context) :
+        SQLiteOpenHelper(context, "kaspriv_wallet_native.db", null, 1) {
+
+        override fun onCreate(db: SQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS wallets (" +
+                    "id TEXT PRIMARY KEY NOT NULL, " +
+                    "value TEXT" +
+                ")"
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS settings (" +
+                    "key TEXT PRIMARY KEY NOT NULL, " +
+                    "value TEXT" +
+                ")"
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS utxos (" +
+                    "walletId TEXT PRIMARY KEY NOT NULL, " +
+                    "data TEXT" +
+                ")"
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS transactions (" +
+                    "walletId TEXT PRIMARY KEY NOT NULL, " +
+                    "data TEXT" +
+                ")"
+            )
+        }
+
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            db.execSQL("DROP TABLE IF EXISTS wallets")
+            db.execSQL("DROP TABLE IF EXISTS settings")
+            db.execSQL("DROP TABLE IF EXISTS utxos")
+            db.execSQL("DROP TABLE IF EXISTS transactions")
+            onCreate(db)
+        }
+    }
+
+    private val dbHelper by lazy { DatabaseHelper(context) }
     private val scope = CoroutineScope(Dispatchers.IO)
 
     @PluginMethod
@@ -24,11 +65,12 @@ class SQLitePlugin : Plugin() {
 
         scope.launch {
             try {
-                val wallet = WalletEntity(
-                    id = id,
-                    value = data
-                )
-                db.walletDao().insertWallet(wallet)
+                val db = dbHelper.writableDatabase
+                val values = ContentValues().apply {
+                    put("id", id)
+                    put("value", data)
+                }
+                db.insertWithOnConflict("wallets", null, values, SQLiteDatabase.CONFLICT_REPLACE)
                 call.resolve()
             } catch (e: Exception) {
                 call.reject("Failed to save wallet: ${e.message}")
@@ -40,12 +82,18 @@ class SQLitePlugin : Plugin() {
     fun getWallets(call: PluginCall) {
         scope.launch {
             try {
-                val wallets = db.walletDao().getAllWallets()
+                val db = dbHelper.readableDatabase
+                val cursor = db.rawQuery("SELECT id, value FROM wallets", null)
                 val ret = JSObject()
-                val walletList = wallets.map { wallet ->
-                    JSObject().apply {
-                        put("id", wallet.id)
-                        put("value", wallet.value)
+                val walletList = mutableListOf<JSObject>()
+                
+                cursor.use {
+                    while (it.moveToNext()) {
+                        val obj = JSObject().apply {
+                            put("id", it.getString(0))
+                            put("value", it.getString(1))
+                        }
+                        walletList.add(obj)
                     }
                 }
                 ret.put("wallets", walletList)
@@ -61,7 +109,8 @@ class SQLitePlugin : Plugin() {
         val id = call.getString("id") ?: return call.reject("ID is required")
         scope.launch {
             try {
-                db.walletDao().deleteWallet(id)
+                val db = dbHelper.writableDatabase
+                db.delete("wallets", "id = ?", arrayOf(id))
                 call.resolve()
             } catch (e: Exception) {
                 call.reject("Failed to delete wallet: ${e.message}")
@@ -76,8 +125,12 @@ class SQLitePlugin : Plugin() {
 
         scope.launch {
             try {
-                val setting = SettingEntity(key = key, value = value)
-                db.walletDao().insertSetting(setting)
+                val db = dbHelper.writableDatabase
+                val values = ContentValues().apply {
+                    put("key", key)
+                    put("value", value)
+                }
+                db.insertWithOnConflict("settings", null, values, SQLiteDatabase.CONFLICT_REPLACE)
                 call.resolve()
             } catch (e: Exception) {
                 call.reject("Failed to save setting: ${e.message}")
@@ -89,12 +142,18 @@ class SQLitePlugin : Plugin() {
     fun getSettings(call: PluginCall) {
         scope.launch {
             try {
-                val settings = db.walletDao().getAllSettings()
+                val db = dbHelper.readableDatabase
+                val cursor = db.rawQuery("SELECT key, value FROM settings", null)
                 val ret = JSObject()
-                val settingsList = settings.map { setting ->
-                    JSObject().apply {
-                        put("key", setting.key)
-                        put("value", setting.value)
+                val settingsList = mutableListOf<JSObject>()
+                
+                cursor.use {
+                    while (it.moveToNext()) {
+                        val obj = JSObject().apply {
+                            put("key", it.getString(0))
+                            put("value", it.getString(1))
+                        }
+                        settingsList.add(obj)
                     }
                 }
                 ret.put("settings", settingsList)
@@ -110,7 +169,8 @@ class SQLitePlugin : Plugin() {
         val key = call.getString("key") ?: return call.reject("Key is required")
         scope.launch {
             try {
-                db.walletDao().deleteSetting(key)
+                val db = dbHelper.writableDatabase
+                db.delete("settings", "key = ?", arrayOf(key))
                 call.resolve()
             } catch (e: Exception) {
                 call.reject("Failed to delete setting: ${e.message}")
@@ -125,8 +185,12 @@ class SQLitePlugin : Plugin() {
 
         scope.launch {
             try {
-                val utxo = UtxoEntity(walletId = walletId, data = data)
-                db.walletDao().insertUtxo(utxo)
+                val db = dbHelper.writableDatabase
+                val values = ContentValues().apply {
+                    put("walletId", walletId)
+                    put("data", data)
+                }
+                db.insertWithOnConflict("utxos", null, values, SQLiteDatabase.CONFLICT_REPLACE)
                 call.resolve()
             } catch (e: Exception) {
                 call.reject("Failed to save UTXO: ${e.message}")
@@ -138,12 +202,18 @@ class SQLitePlugin : Plugin() {
     fun getUtxos(call: PluginCall) {
         scope.launch {
             try {
-                val utxos = db.walletDao().getAllUtxos()
+                val db = dbHelper.readableDatabase
+                val cursor = db.rawQuery("SELECT walletId, data FROM utxos", null)
                 val ret = JSObject()
-                val utxoList = utxos.map { utxo ->
-                    JSObject().apply {
-                        put("walletId", utxo.walletId)
-                        put("data", utxo.data)
+                val utxoList = mutableListOf<JSObject>()
+                
+                cursor.use {
+                    while (it.moveToNext()) {
+                        val obj = JSObject().apply {
+                            put("walletId", it.getString(0))
+                            put("data", it.getString(1))
+                        }
+                        utxoList.add(obj)
                     }
                 }
                 ret.put("utxos", utxoList)
@@ -161,8 +231,12 @@ class SQLitePlugin : Plugin() {
 
         scope.launch {
             try {
-                val tx = TransactionEntity(walletId = walletId, data = data)
-                db.walletDao().insertTransaction(tx)
+                val db = dbHelper.writableDatabase
+                val values = ContentValues().apply {
+                    put("walletId", walletId)
+                    put("data", data)
+                }
+                db.insertWithOnConflict("transactions", null, values, SQLiteDatabase.CONFLICT_REPLACE)
                 call.resolve()
             } catch (e: Exception) {
                 call.reject("Failed to save transaction: ${e.message}")
@@ -174,12 +248,18 @@ class SQLitePlugin : Plugin() {
     fun getTransactions(call: PluginCall) {
         scope.launch {
             try {
-                val txs = db.walletDao().getAllTransactions()
+                val db = dbHelper.readableDatabase
+                val cursor = db.rawQuery("SELECT walletId, data FROM transactions", null)
                 val ret = JSObject()
-                val txList = txs.map { tx ->
-                    JSObject().apply {
-                        put("walletId", tx.walletId)
-                        put("data", tx.data)
+                val txList = mutableListOf<JSObject>()
+                
+                cursor.use {
+                    while (it.moveToNext()) {
+                        val obj = JSObject().apply {
+                            put("walletId", it.getString(0))
+                            put("data", it.getString(1))
+                        }
+                        txList.add(obj)
                     }
                 }
                 ret.put("transactions", txList)
