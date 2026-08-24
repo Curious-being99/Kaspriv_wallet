@@ -43,4 +43,3 @@ jobs:
           echo "Scanning for accidental hardcoded credentials..."
           ! git grep -E "(private_key|mnemonic|seed_phrase|api_key|password)\s*=\s*['\"][a-zA-Z0-9]{12,}['\"]" -- 'src/**' || (echo "Potential credential leak detected!" && exit 1)
           echo "Credential scanning completed successfully."
- 

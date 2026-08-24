@@ -89,13 +89,3 @@ ios/Flutter/Flutter.podspec
 
 # FVM Version Cache
 .fvm/
-
-# Node & JS Development
-node_modules/
-dist/
-bun.lock
-bun.lockb
-.env
-.env.local
-yarn.lock
-pnpm-lock.yaml
