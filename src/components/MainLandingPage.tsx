@@ -97,12 +97,10 @@ export const MainLandingPage: React.FC = () => {
     setIsLocked,
     setPassword,
     indexingState,
-    isInitializing,
   } = useWallet();
 
   const [isCreating, setIsCreating] = useState(false);
   const [activeTab, setActiveTab] = useState<'home' | 'create' | 'import-seed' | 'import-address' | 'setup-password' | 'setup-duress'>('home');
-
 
   // Create Wallet State - pre-filled real values instead of placeholders
   const [walletName, setWalletName] = useState('Primary Wallet');
@@ -257,7 +255,7 @@ export const MainLandingPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  if (isInitializing || isLocked || indexingState?.isIndexing || (!isLoggedOut && wallets.length > 0)) return null;
+  if ((wallets.length > 0 && isLocked) || indexingState?.isIndexing || (!isLoggedOut && wallets.length > 0)) return null;
 
   const AddressTypeSelector = () => (
     <div className="space-y-3">

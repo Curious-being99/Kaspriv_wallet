@@ -1,6 +1,6 @@
 {
 	"appId": "com.kaspriv.wallet",
-	"appName": "KasPriv Wallet",
+	"appName": "Kaspriv Wallet",
 	"webDir": "dist",
 	"bundledWebRuntime": false,
 	"server": {

@@ -122,11 +122,11 @@ dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
 
-    // Android Room
-    def room_version = "2.6.1"
-    implementation "androidx.room:room-runtime:$room_version"
-    implementation "androidx.room:room-ktx:$room_version"
-    kapt "androidx.room:room-compiler:$room_version"
+    // Jetpack Room Database
+    def roomVersion = rootProject.ext.has('roomVersion') ? rootProject.ext.roomVersion : '2.6.1'
+    implementation "androidx.room:room-runtime:$roomVersion"
+    implementation "androidx.room:room-ktx:$roomVersion"
+    kapt "androidx.room:room-compiler:$roomVersion"
 }
 
 apply from: 'capacitor.build.gradle'

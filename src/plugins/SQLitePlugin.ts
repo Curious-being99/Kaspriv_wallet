@@ -14,6 +14,7 @@ export interface SQLitePluginInterface {
   
   saveTransaction(options: { walletId: string; data: string }): Promise<void>;
   getTransactions(): Promise<{ transactions: { walletId: string; data: string }[] }>;
+  clearAll(): Promise<void>;
 }
 
 export const SQLitePlugin = registerPlugin<SQLitePluginInterface>('SQLite');

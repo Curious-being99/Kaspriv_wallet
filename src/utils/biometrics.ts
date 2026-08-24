@@ -70,29 +70,28 @@ export async function registerBiometricUnlock(
     const alias = 'kaspriv_vault_v1';
     
     // --- Path A: Native Android HardwareVault (Android KeyStore + BiometricPrompt) ---
-    if (isNative() && typeof HardwareVault?.storeSecure === 'function') {
-      try {
-        await HardwareVault.deleteKey({ alias });
-        const res = await HardwareVault.storeSecure({
-          alias,
-          data: walletPassword,
-        });
-
-        return {
-          credentialId: `keystore:${alias}`,
-          mode: 'keystore',
-          ciphertext: res.ciphertext,
-          iv: res.iv,
-          salt: 'native-keystore',
-          createdAt: Date.now(),
-          alias,
-        };
-      } catch (err: any) {
-        console.warn('HardwareVault storeSecure failed, using secure fallback:', err);
+    if (isNative()) {
+      if (typeof HardwareVault?.storeSecure !== 'function') {
+        throw new Error('HardwareVault native plugin is unavailable on this Android build.');
       }
+      await HardwareVault.deleteKey({ alias });
+      const res = await HardwareVault.storeSecure({
+        alias,
+        data: walletPassword,
+      });
+
+      return {
+        credentialId: `keystore:${alias}`,
+        mode: 'keystore',
+        ciphertext: res.ciphertext,
+        iv: res.iv,
+        salt: 'native-keystore',
+        createdAt: Date.now(),
+        alias,
+      };
     }
 
-    // --- Path B: Secure Web / PWA Fallback ---
+    // --- Path B: Secure Web / PWA Development Fallback (ONLY when running in browser) ---
     const secretKey = 'kaspriv_vault_v1';
 
     const encrypted = await encryptWithPassword(
@@ -130,39 +129,46 @@ export async function authenticateWithBiometrics(
 
   (window as any).isBiometricPromptActive = true;
   try {
-    // --- Path A: Native Android HardwareVault ---
-    if (
-      record.mode === 'keystore' &&
-      record.alias &&
-      record.ciphertext &&
-      record.iv &&
-      isNative() &&
-      typeof HardwareVault?.loadSecure === 'function'
-    ) {
-      try {
-        const res = await HardwareVault.loadSecure({
-          alias: record.alias,
-          iv: record.iv,
-          ciphertext: record.ciphertext,
-        });
+    // --- Path A: Native Android HardwareVault (Android KeyStore + BiometricPrompt) ---
+    if (isNative()) {
+      if (
+        record.mode === 'keystore' &&
+        record.alias &&
+        record.ciphertext &&
+        record.iv &&
+        typeof HardwareVault?.loadSecure === 'function'
+      ) {
+        try {
+          const res = await HardwareVault.loadSecure({
+            alias: record.alias,
+            iv: record.iv,
+            ciphertext: record.ciphertext,
+          });
 
-        return {
-          success: true,
-          mode: 'keystore',
-          decryptedPassword: res.data,
-        };
-      } catch (hvErr: any) {
-        console.warn('HardwareVault loadSecure failed:', hvErr);
-        const errMsg = hvErr?.message || 'Biometric hardware authentication failed';
-        return {
-          success: false,
-          mode: 'keystore',
-          error: errMsg.includes('cancel') || errMsg.includes('Cancel') ? 'Biometric authentication cancelled' : errMsg
-        };
+          return {
+            success: true,
+            mode: 'keystore',
+            decryptedPassword: res.data,
+          };
+        } catch (hvErr: any) {
+          console.warn('HardwareVault loadSecure error:', hvErr);
+          const errMsg = hvErr?.message || 'Biometric hardware authentication failed';
+          return {
+            success: false,
+            mode: 'keystore',
+            error: errMsg.includes('cancel') || errMsg.includes('Cancel') ? 'Biometric authentication cancelled' : errMsg
+          };
+        }
       }
+
+      return {
+        success: false,
+        mode: 'keystore',
+        error: 'HardwareVault native credentials missing or incompatible with native KeyStore.',
+      };
     }
 
-    // --- Path B: Secure Web / PWA Fallback ---
+    // --- Path B: Secure Web / PWA Fallback (ONLY when running in web browser) ---
     if (record.ciphertext && record.salt && record.iv && record.salt !== 'native-keystore') {
       const secretKey = record.alias || 'kaspriv_vault_v1';
       try {

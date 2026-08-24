@@ -1,9 +1,12 @@
 import { Wallet, UTXO, KaspaTransaction } from '../types';
 import { SQLitePlugin } from '../plugins/SQLitePlugin';
+import { Capacitor } from '@capacitor/core';
 import { openDB, IDBPDatabase } from 'idb';
 
-const IS_NATIVE = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.();
+const IS_NATIVE = Capacitor.isNativePlatform() || (typeof window !== 'undefined' && Boolean((window as any).Capacitor?.isNativePlatform?.()));
+
 let webDbPromise: Promise<IDBPDatabase> | null = null;
+// ONLY initialize IndexedDB in pure browser preview mode; NEVER in native Android APK
 if (!IS_NATIVE && typeof window !== 'undefined') {
   webDbPromise = openDB('kaspriv_db_v3', 1, {
     upgrade(db) {
@@ -18,7 +21,7 @@ if (!IS_NATIVE && typeof window !== 'undefined') {
 /**
  * High-performance, compile-safe Native Database Driver.
  * Strictly linked to Android Jetpack Room (Kotlin) with direct native bridge queries.
- * Seamless IDB fallback for web preview persistence.
+ * In native APK builds, Room SQLite is the ONLY storage backend.
  */
 class SQLiteDatabase {
   private initialized = false;
@@ -32,7 +35,9 @@ class SQLiteDatabase {
   public async saveWallet(id: string, data: string): Promise<void> {
     if (IS_NATIVE) {
       await SQLitePlugin.saveWallet({ id, data });
-    } else if (webDbPromise) {
+      return;
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       await db.put('wallets', { id, value: data });
     }
@@ -42,7 +47,8 @@ class SQLiteDatabase {
     if (IS_NATIVE) {
       const res = await SQLitePlugin.getWallets();
       return res.wallets || [];
-    } else if (webDbPromise) {
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       return await db.getAll('wallets');
     }
@@ -52,7 +58,9 @@ class SQLiteDatabase {
   public async deleteWallet(id: string): Promise<void> {
     if (IS_NATIVE) {
       await SQLitePlugin.deleteWallet({ id });
-    } else if (webDbPromise) {
+      return;
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       await db.delete('wallets', id);
       await db.delete('utxos', id);
@@ -63,7 +71,9 @@ class SQLiteDatabase {
   public async saveSetting(key: string, value: string): Promise<void> {
     if (IS_NATIVE) {
       await SQLitePlugin.saveSetting({ key, value });
-    } else if (webDbPromise) {
+      return;
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       await db.put('settings', { key, value });
     }
@@ -73,7 +83,8 @@ class SQLiteDatabase {
     if (IS_NATIVE) {
       const res = await SQLitePlugin.getSettings();
       return res.settings || [];
-    } else if (webDbPromise) {
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       return await db.getAll('settings');
     }
@@ -83,7 +94,9 @@ class SQLiteDatabase {
   public async deleteSetting(key: string): Promise<void> {
     if (IS_NATIVE) {
       await SQLitePlugin.deleteSetting({ key });
-    } else if (webDbPromise) {
+      return;
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       await db.delete('settings', key);
     }
@@ -92,7 +105,9 @@ class SQLiteDatabase {
   public async saveUtxos(walletId: string, data: string): Promise<void> {
     if (IS_NATIVE) {
       await SQLitePlugin.saveUtxo({ walletId, data });
-    } else if (webDbPromise) {
+      return;
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       await db.put('utxos', { walletId, data });
     }
@@ -101,8 +116,9 @@ class SQLiteDatabase {
   public async getUtxos(walletId: string): Promise<{ walletId: string; data: string } | undefined> {
     if (IS_NATIVE) {
       const res = await SQLitePlugin.getUtxos();
-      return res.utxos.find(u => u.walletId === walletId);
-    } else if (webDbPromise) {
+      return (res.utxos || []).find(u => u.walletId === walletId);
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       return await db.get('utxos', walletId);
     }
@@ -112,7 +128,9 @@ class SQLiteDatabase {
   public async saveTransactions(walletId: string, data: string): Promise<void> {
     if (IS_NATIVE) {
       await SQLitePlugin.saveTransaction({ walletId, data });
-    } else if (webDbPromise) {
+      return;
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       await db.put('transactions', { walletId, data });
     }
@@ -121,8 +139,9 @@ class SQLiteDatabase {
   public async getTransactions(walletId: string): Promise<{ walletId: string; data: string } | undefined> {
     if (IS_NATIVE) {
       const res = await SQLitePlugin.getTransactions();
-      return res.transactions.find(t => t.walletId === walletId);
-    } else if (webDbPromise) {
+      return (res.transactions || []).find(t => t.walletId === walletId);
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       return await db.get('transactions', walletId);
     }
@@ -131,11 +150,10 @@ class SQLiteDatabase {
 
   public async clearAll(): Promise<void> {
     if (IS_NATIVE) {
-      // In Kotlin, we use destructive migration or manual delete.
-      // For simplicity, we'll implement individual deletes if needed or a clearAll method.
-      const wallets = await this.getWallets();
-      for (const w of wallets) await this.deleteWallet(w.id);
-    } else if (webDbPromise) {
+      await SQLitePlugin.clearAll();
+      return;
+    }
+    if (webDbPromise) {
       const db = await webDbPromise;
       await Promise.all([
         db.clear('wallets'),

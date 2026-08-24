@@ -624,11 +624,23 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (payload.state === 'UNLOCKED') {
         setIsLocked(false);
       } else if (payload.state === 'LOCKED') {
-        setIsLocked(true);
+        if (wallets.length > 0) {
+          setIsLocked(true);
+        } else {
+          setIsLocked(false);
+        }
       }
     });
     return unsub;
-  }, []);
+  }, [wallets.length]);
+
+  // Ensure isLocked is false whenever no wallets exist
+  useEffect(() => {
+    if (wallets.length === 0 && isLocked) {
+      setIsLocked(false);
+      unifiedAuthService.completeUnlock('none');
+    }
+  }, [wallets.length, isLocked]);
 
   const clearPendingLockFlags = React.useCallback(() => {
     unifiedAuthService.clearPendingLockFlags();
