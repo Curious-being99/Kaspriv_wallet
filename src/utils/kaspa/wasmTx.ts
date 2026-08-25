@@ -6,7 +6,7 @@ let wasmInitialized = false;
 async function ensureWasm() {
   if (!wasmInitialized) {
     try {
-      await initKaspaWasm({ module_or_path: wasmUrl }); // Initialize the WASM module
+      await initKaspaWasm(wasmUrl); // Initialize the WASM module
     } catch (e: any) {
       if (!e.message?.includes('already initialized')) {
         // Fallback for Android/Capacitor environments where fetch via WASM fails
@@ -16,7 +16,7 @@ async function ensureWasm() {
           await initKaspaWasm(buffer);
         } catch (fallbackErr: any) {
           if (!fallbackErr.message?.includes('already initialized')) {
-            console.error('Failed to initialize Kaspa WASM module', fallbackErr);
+            throw new Error(`Critical: Failed to initialize official Kaspa WASM SDK: ${fallbackErr.message || fallbackErr}`);
           }
         }
       }

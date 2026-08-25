@@ -66,6 +66,7 @@ import {
   getAddressFromPublicKey,
   getAddressPrefix,
   validateKaspaAddress,
+  addressToScriptPublicKey,
   SOMPI_PER_KAS,
   fetchKaspaPrice,
   fetchKaspaAddressBalance,
@@ -2314,6 +2315,25 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       return normalizedAddresses.has(addr.trim().toLowerCase());
     };
 
+    const normalizedSpks = new Set<string>();
+    for (const a of addressesToMatch) {
+      try {
+        const network = a.toLowerCase().startsWith('kaspatest') ? 'testnet-10' : (a.toLowerCase().startsWith('kaspadev') ? 'devnet' : 'mainnet');
+        const spk = addressToScriptPublicKey(a.trim(), network as any).toLowerCase();
+        if (spk) normalizedSpks.add(spk);
+      } catch (e) {
+      }
+    }
+
+    const spkBelongsToUs = (spkVal: any) => {
+      if (!spkVal) return false;
+      let spkHex = '';
+      if (typeof spkVal === 'string') spkHex = spkVal;
+      else if (spkVal.scriptPublicKey) spkHex = spkVal.scriptPublicKey;
+      else if (spkVal.script) spkHex = spkVal.script;
+      return spkHex ? normalizedSpks.has(spkHex.toLowerCase()) : false;
+    };
+
     rawTxsData.forEach((tx: any) => {
       if (!tx) return;
       const txid = typeof tx === 'string' ? tx : (tx.transaction_id || tx.txid || tx.id || '');
@@ -2324,13 +2344,20 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const inputs = Array.isArray(tx.inputs) ? tx.inputs : [];
 
       const hasOurAddressInOutputs = outputs.some((out: any) => {
-        const outAddr = out.script_public_key_address || out.address;
-        return belongsToUs(outAddr);
+        const outAddr = out.script_public_key_address || out.address || out.scriptPublicKeyAddress;
+        if (outAddr && belongsToUs(outAddr)) return true;
+        const spk = out.scriptPublicKey || out.script_public_key;
+        if (spk && spkBelongsToUs(spk)) return true;
+        return false;
       });
 
-      const hasOurAddressInInputs = inputs.some((inp: any) => 
-        belongsToUs(inp.previous_outpoint_address) || belongsToUs(inp.address)
-      );
+      const hasOurAddressInInputs = inputs.some((inp: any) => {
+        const inpAddr = inp.previous_outpoint_address || inp.address || inp.previous_address;
+        if (inpAddr && belongsToUs(inpAddr)) return true;
+        const spk = inp.scriptPublicKey || inp.script_public_key || inp.utxoEntry?.scriptPublicKey;
+        if (spk && spkBelongsToUs(spk)) return true;
+        return false;
+      });
 
       const isOut = hasOurAddressInInputs || (outputs.length > 0 && !hasOurAddressInOutputs);
       

@@ -1,0 +1,8 @@
+{
+  "name": "Kaspriv Wallet",
+  "description": "Kaspriv Wallet is a high-security mobile-first Kaspa wallet application featuring a Rust-based memory enclave, JavaScript secret isolation via Opaque Sessions, and a zero-trust hardware-bound persistence model.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}

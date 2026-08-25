@@ -229,7 +229,7 @@ export function parseKaspaUri(uriString: string): { address: string; amountKas?:
 
 /**
  * Helper to convert a Kaspa address into a scriptPublicKey bytes.
- * Relies on the official Rusty Kaspa SDK (payToAddressScript) with full pure-JS fallback.
+ * Relies exclusively on the official Rusty Kaspa SDK (payToAddressScript).
  */
 export function addressToScriptPublicKeyBytes(address: string, network: NetworkType = 'mainnet'): Uint8Array {
   if (!address || typeof address !== 'string') {
@@ -237,7 +237,7 @@ export function addressToScriptPublicKeyBytes(address: string, network: NetworkT
   }
   const trimmed = address.trim();
 
-  // 1. Rely on official Rusty Kaspa SDK (payToAddressScript)
+  // Rely on official Rusty Kaspa SDK (payToAddressScript)
   try {
     const addrObj = new Address(trimmed);
     const scriptObj = payToAddressScript(addrObj);
@@ -249,11 +249,19 @@ export function addressToScriptPublicKeyBytes(address: string, network: NetworkT
       }
       return bytes;
     }
-  } catch {
-    // Fallback to pure JS decoding if WASM is not yet initialized
+    throw new Error('Failed to generate script from address');
+  } catch (err: any) {
+    throw new Error(`Official Kaspa SDK failed or is not initialized: ${err.message || err}`);
   }
+}
 
-  // 2. Pure JS decoding and validation
+export function addressToScriptPublicKeyBytes_DEPRECATED_FALLBACK(address: string, network: NetworkType = 'mainnet'): Uint8Array {
+  // This part was removed to ensure only official SDK is used.
+  throw new Error("Pure JS fallback is disabled.");
+}
+
+function addressToScriptPublicKeyBytes_INTERNAL(address: string, network: NetworkType = 'mainnet'): Uint8Array {
+  const trimmed = address.trim();
   const validation = validateKaspaAddress(trimmed, network);
   if (!validation.isValid) {
     throw new Error(`Invalid address or network mismatch: ${validation.error || 'validation failed'}`);

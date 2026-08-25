@@ -24,7 +24,7 @@ function parseHexBytes(hex: string): Uint8Array {
 
 /**
  * Create a P2SH Redeem Script from a public key or custom script bytes.
- * Relies on the official Rusty Kaspa SDK (payToScriptHashScript) with pure JS fallback.
+ * Relies exclusively on the official Rusty Kaspa SDK (payToScriptHashScript).
  */
 export function createP2SHRedeemScript(publicKeyHex: string): { redeemScriptHex: string; scriptHashHex: string } {
   const pubKey = parseHexBytes(publicKeyHex);
@@ -32,7 +32,7 @@ export function createP2SHRedeemScript(publicKeyHex: string): { redeemScriptHex:
   const xOnlyHex = Array.from(xOnly).map(b => b.toString(16).padStart(2, '0')).join('');
   const redeemScriptHex = '20' + xOnlyHex + 'ac';
 
-  // 1. Rely on official Rusty Kaspa WASM SDK
+  // Rely on official Rusty Kaspa WASM SDK
   try {
     const spk = payToScriptHashScript(redeemScriptHex);
     // spk.script format: aa20<32-byte-hash>87
@@ -43,21 +43,10 @@ export function createP2SHRedeemScript(publicKeyHex: string): { redeemScriptHex:
         scriptHashHex,
       };
     }
-  } catch {
-    // Fallback if WASM is not yet active
+    throw new Error('Invalid script generated from WASM SDK');
+  } catch (err: any) {
+    throw new Error(`Official Kaspa SDK failed or is not initialized: ${err.message || err}`);
   }
-
-  // 2. Pure JS fallback
-  const redeemScript = new Uint8Array(34);
-  redeemScript[0] = 0x20; // PUSH 32 bytes
-  redeemScript.set(xOnly, 1);
-  redeemScript[33] = 0xac; // OP_CHECKSIG
-
-  const scriptHash = blake2b(redeemScript, { dkLen: 32 });
-  return {
-    redeemScriptHex: Buffer.from(redeemScript).toString('hex'),
-    scriptHashHex: Buffer.from(scriptHash).toString('hex'),
-  };
 }
 
 /**

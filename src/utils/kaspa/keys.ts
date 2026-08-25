@@ -59,8 +59,7 @@ export async function generate24WordMnemonic(): Promise<string[]> {
 
 /**
  * Derive a Kaspa address from a 33-byte compressed public key or 32-byte Schnorr pubkey.
- * Utilizes the official Rusty Kaspa SDK (payToScriptHashScript + addressFromScriptPublicKey)
- * with robust pure JS fallback.
+ * Utilizes exclusively the official Rusty Kaspa SDK (payToScriptHashScript + addressFromScriptPublicKey).
  */
 export function getAddressFromPublicKey(
   publicKey: Uint8Array | string, 
@@ -101,25 +100,17 @@ export function getAddressFromPublicKey(
     networkTypeStr = 'simnet';
   }
 
-  // 1. Rely on official Rusty Kaspa WASM SDK
+  // Rely on official Rusty Kaspa WASM SDK
   try {
     const spk = payToScriptHashScript(redeemScriptHex);
     const addr = addressFromScriptPublicKey(spk, networkTypeStr);
     if (addr) {
       return addr.toString();
     }
-  } catch {
-    // Gracefully continue to pure-JS fallback if WASM is not yet active
+    throw new Error('Failed to derive address from SDK');
+  } catch (err: any) {
+    throw new Error(`Official Kaspa SDK failed or is not initialized: ${err.message || err}`);
   }
-
-  // 2. Pure JS fallback (BLAKE2b-256 + Bech32 P2SH)
-  const redeemScript = new Uint8Array(34);
-  redeemScript[0] = 0x20; // PUSH 32 bytes
-  redeemScript.set(xOnlyPubKey, 1);
-  redeemScript[33] = 0xac; // OP_CHECKSIG
-  
-  const scriptHash = blake2b(redeemScript, { dkLen: 32 });
-  return encodeKaspaAddress(prefix, VERSION_P2SH, scriptHash);
 }
 
 // Volatile, in-memory cache for seed derivation (BIP39 Seed Cache)

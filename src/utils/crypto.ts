@@ -41,9 +41,20 @@ export async function ensureKaspaWasm(): Promise<void> {
   if (!wasmInitPromise) {
     wasmInitPromise = (async () => {
       try {
-        await initKaspaWasm({ module_or_path: resolvedWasmUrl });
-      } catch (err) {
-        console.warn('Kaspa WASM initialization note:', err);
+        await initKaspaWasm(resolvedWasmUrl);
+      } catch (err: any) {
+        if (!err.message?.includes('already initialized')) {
+          // Transport fallback for Android/Capacitor environments where fetch via WASM internally fails
+          try {
+            const response = await fetch(resolvedWasmUrl);
+            const buffer = await response.arrayBuffer();
+            await initKaspaWasm(buffer);
+          } catch (retryErr: any) {
+             if (!retryErr.message?.includes('already initialized')) {
+                throw new Error(`Failed to initialize official Kaspa WASM SDK (APK Sync): ${retryErr.message || retryErr}`);
+             }
+          }
+        }
       }
     })();
   }
