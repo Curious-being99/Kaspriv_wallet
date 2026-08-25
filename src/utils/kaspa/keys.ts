@@ -51,10 +51,19 @@ export function sanitizeWalletName(name: string, defaultFallback = 'Kaspa Wallet
  */
 export async function generate24WordMnemonic(): Promise<string[]> {
   await ensureKaspaWasm();
-  const m = Mnemonic.random(24);
-  const words = m.phrase.split(' ');
-  m.free();
-  return words;
+  try {
+    const m = Mnemonic.random(24);
+    const phrase = m.phrase || m.toString();
+    if (!phrase) {
+      throw new Error('Mnemonic generated but phrase is empty');
+    }
+    const words = phrase.trim().split(/\s+/);
+    m.free();
+    return words;
+  } catch (err: any) {
+    console.error('Mnemonic.random failed:', err);
+    throw err;
+  }
 }
 
 /**

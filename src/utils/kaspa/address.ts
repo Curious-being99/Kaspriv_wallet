@@ -1,5 +1,5 @@
 import { NetworkType } from '../../types';
-import { Address, payToAddressScript } from '@kasdk/web';
+import { Address, payToAddressScript, ScriptPublicKey, addressFromScriptPublicKey } from '@kasdk/web';
 
 // Kaspa address version constants
 export const VERSION_P2SH = 0x08;
@@ -69,24 +69,46 @@ export function hrpExpand(hrp: string): bigint[] {
  * version: 0x08 for P2SH
  */
 export function encodeKaspaAddress(prefix: string, version: number, payload: Uint8Array): string {
-  const words = convertBits([version, ...payload], 8, 5, true);
-  const hrpActual = prefix.replace(':', '');
-  const checksumWords = [...hrpExpand(hrpActual), ...words.map(w => BigInt(w)), 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n];
-  const checksum = polyMod(checksumWords);
-  
-  let result = hrpActual + ':';
-  for (const w of words) {
-    result += CHARSET[w];
+  // Rely on official Rusty Kaspa WASM SDK for encoding
+  try {
+    // Note: The SDK typically handles this via ScriptPublicKey or existing Address objects.
+    // For raw payload encoding, we ensure the SDK is initialized.
+    const networkTypeStr = prefix.includes('test') ? 'testnet-10' : prefix.includes('dev') ? 'devnet' : 'mainnet';
+    
+    // Create a script from payload (P2SH version 0x08)
+    const script = new Uint8Array(payload.length + 3);
+    script[0] = 0xAA;
+    script[1] = 0x20;
+    script.set(payload, 2);
+    script[payload.length + 2] = 0x87;
+    
+    const hex = Array.from(script).map(b => b.toString(16).padStart(2, '0')).join('');
+    const spk = new ScriptPublicKey(0, hex);
+    const addr = addressFromScriptPublicKey(spk, networkTypeStr);
+    if (!addr) {
+      throw new Error('Failed to derive address from script');
+    }
+    return addr.toString();
+  } catch (err: any) {
+    // Fallback to manual if SDK is not ready, though we prefer SDK
+    const words = convertBits([version, ...payload], 8, 5, true);
+    const hrpActual = prefix.replace(':', '');
+    const checksumWords = [...hrpExpand(hrpActual), ...words.map(w => BigInt(w)), 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n];
+    const checksum = polyMod(checksumWords);
+    
+    let result = hrpActual + ':';
+    for (const w of words) {
+      result += CHARSET[w];
+    }
+    
+    for (let i = 0; i < 8; i++) {
+      const shift = BigInt(5 * (7 - i));
+      const charIdx = Number((checksum >> shift) & 0x1fn);
+      result += CHARSET[charIdx];
+    }
+    
+    return result;
   }
-  
-  // 40-bit checksum is 8 characters in 5-bit groups
-  for (let i = 0; i < 8; i++) {
-    const shift = BigInt(5 * (7 - i));
-    const charIdx = Number((checksum >> shift) & 0x1fn);
-    result += CHARSET[charIdx];
-  }
-  
-  return result;
 }
 
 /**
@@ -99,7 +121,7 @@ export function shortenAddress(address: string, leadChars: number = 10, tailChar
 }
 
 /**
- * Validate Kaspa Address based on network prefix
+ * Validate Kaspa Address based on network prefix using the official Rusty Kaspa SDK
  */
 export function validateKaspaAddress(address: string, network: NetworkType = 'mainnet'): { isValid: boolean; error?: string } {
   if (!address || typeof address !== 'string') {
@@ -108,82 +130,23 @@ export function validateKaspaAddress(address: string, network: NetworkType = 'ma
 
   const trimmed = address.trim();
 
-  // Strict: Address must contain exactly one colon
-  const parts = trimmed.split(':');
-  if (parts.length !== 2) {
-    return { isValid: false, error: 'Address must contain exactly one colon' };
-  }
-
-  const hrpActual = parts[0].toLowerCase();
-  const payload = parts[1];
-
-  let expectedPrefix = 'kaspa';
-  if (network === 'testnet-10' || network === 'testnet-11') expectedPrefix = 'kaspatest';
-  if (network === 'devnet') expectedPrefix = 'kaspadev';
-
-  if (hrpActual !== expectedPrefix) {
-    return { isValid: false, error: `Invalid network prefix. Expected ${expectedPrefix}, got ${hrpActual}` };
-  }
-
-  const firstChar = payload[0].toLowerCase();
-  if (!['q', 'p', 'z'].includes(firstChar)) {
-    return { isValid: false, error: "Invalid Kaspa address format (must start with 'q' or 'p')" };
-  }
-
-  const validBech32Chars = /^[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/i;
-  if (!validBech32Chars.test(payload)) {
-    return { isValid: false, error: 'Address contains invalid characters' };
-  }
-
-  // Convert characters to 5-bit values
-  const words: number[] = [];
-  for (let i = 0; i < payload.length; i++) {
-    const idx = CHARSET.indexOf(payload[i].toLowerCase());
-    if (idx === -1) {
-      return { isValid: false, error: 'Address contains invalid characters' };
-    }
-    words.push(idx);
-  }
-
-  // Checksum is 8 characters
-  if (words.length < 8) {
-    return { isValid: false, error: 'Address is too short' };
-  }
-
-  // Verify polynomial checksum
-  const checksumWords = [...hrpExpand(hrpActual), ...words.map(w => BigInt(w))];
-  const remainder = polyMod(checksumWords);
-  if (remainder !== 0n) {
-    return { isValid: false, error: 'Address checksum verification failed' };
-  }
-
-  // Verify version byte and payload size
-  const dataWords = words.slice(0, words.length - 8);
-  
-  let bytes: number[];
   try {
-    bytes = convertBits(dataWords, 5, 8, false);
+    // Use the official Rust-based Address class for validation
+    const addr = new Address(trimmed);
+    
+    // Verify prefix matches network context
+    const expectedPrefix = getAddressPrefix(network);
+    const actualPrefix = trimmed.split(':')[0].toLowerCase();
+    
+    if (actualPrefix !== expectedPrefix) {
+      return { isValid: false, error: `Invalid network prefix. Expected ${expectedPrefix}, got ${actualPrefix}` };
+    }
+
+    return { isValid: true };
   } catch (err: any) {
-    return { isValid: false, error: err.message || 'Invalid bits conversion' };
+    // Detailed error reporting from the Rust core
+    return { isValid: false, error: err.message || 'Invalid Kaspa address format' };
   }
-
-  if (bytes.length === 0) {
-    return { isValid: false, error: 'Invalid address data encoding' };
-  }
-
-  const version = bytes[0];
-  if (version !== VERSION_P2SH && version !== 0x00 && version !== 0x01) {
-    return { isValid: false, error: `Unsupported address version 0x${version.toString(16)}. Only P2SH and standard P2PKH/P2PK (0x00/0x01) are supported.` };
-  }
-
-  const pubkeyHashLength = bytes.length - 1;
-  const expectedLength = version === 0x01 ? 33 : 32;
-  // Standard Kaspa addresses have a 32-byte public key hash/script hash (or 33-byte for ECDSA).
-  if (pubkeyHashLength !== expectedLength) {
-    return { isValid: false, error: `Invalid payload length (${pubkeyHashLength} bytes, expected ${expectedLength})` };
-  }
-
-  return { isValid: true };
 }
 
 /**

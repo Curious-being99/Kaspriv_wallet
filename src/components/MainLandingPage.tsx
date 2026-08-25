@@ -159,10 +159,26 @@ export const MainLandingPage: React.FC = () => {
     setPendingFlow('none');
   };
 
+  const [isGeneratingMnemonic, setIsGeneratingMnemonic] = useState(false);
+
   const handleStartCreate = async () => {
-    const words = await generate24WordMnemonic();
-    setCreatedWords(words);
-    setStep(2);
+    if (isGeneratingMnemonic) return;
+    try {
+      setIsGeneratingMnemonic(true);
+      console.log('Generating mnemonic...');
+      const words = await generate24WordMnemonic();
+      if (!words || words.length === 0) {
+        throw new Error('Mnemonic generation returned empty result');
+      }
+      console.log('Mnemonic generated successfully:', words.length, 'words');
+      setCreatedWords(words);
+      setStep(2);
+    } catch (err: any) {
+      console.error('Failed to generate mnemonic:', err);
+      showToast(`Failed to generate mnemonic: ${err.message || err}`, 'error');
+    } finally {
+      setIsGeneratingMnemonic(false);
+    }
   };
 
 
@@ -262,8 +278,13 @@ export const MainLandingPage: React.FC = () => {
   const handleTabChange = async (tab: 'home' | 'create' | 'import-seed' | 'import-address' | 'setup-password') => {
     setActiveTab(tab);
     if (tab === 'create') {
-      const words = await generate24WordMnemonic();
-      setCreatedWords(words);
+      try {
+        const words = await generate24WordMnemonic();
+        setCreatedWords(words);
+      } catch (err: any) {
+        console.error('Initial mnemonic generation failed:', err);
+        showToast('Failed to pre-generate mnemonic. You can try again on the next screen.', 'error');
+      }
     }
   };
 
@@ -479,10 +500,20 @@ export const MainLandingPage: React.FC = () => {
 
                   <button
                     onClick={handleStartCreate}
-                    className="w-full py-3 rounded-xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] font-extrabold text-xs transition-all shadow-lg shadow-[#70C7BA]/20 flex items-center justify-center gap-1.5"
+                    disabled={isGeneratingMnemonic}
+                    className="w-full py-3 rounded-xl bg-[#70C7BA] hover:bg-[#5eead4] text-[#090D12] font-extrabold text-xs transition-all shadow-lg shadow-[#70C7BA]/20 flex items-center justify-center gap-1.5 disabled:opacity-70 disabled:cursor-wait"
                   >
-                    <span>Generate Mnemonic</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    {isGeneratingMnemonic ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-[#090D12]/20 border-t-[#090D12] rounded-full animate-spin" />
+                        <span>Generating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Generate Mnemonic</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
                   </button>
                 </div>
               ) : (

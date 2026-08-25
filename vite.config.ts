@@ -28,7 +28,7 @@ export default defineConfig({
   ],
   optimizeDeps: {
     entries: ['index.html'],
-    include: ['react', 'react-dom', 'react-simple-keyboard', 'qrcode.react', 'html5-qrcode', '@kaspa/core-lib'],
+    include: ['react', 'react-dom', 'react-simple-keyboard', 'qrcode.react', 'html5-qrcode', '@kasdk/web'],
   },
   worker: {
     format: 'es',
