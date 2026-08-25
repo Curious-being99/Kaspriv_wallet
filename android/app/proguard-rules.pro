@@ -16,11 +16,19 @@
 # debugging stack traces.
 #-keepattributes SourceFile,LineNumberTable
 
-# Keep Capacitor and WebKit interfaces
+# Keep Capacitor and Wallet plugins
 -keep class com.getcapacitor.** { *; }
--keep class com.aparajita.capacitor.biometricauth.** { *; }
+-keep class com.kaspriv.wallet.** { *; }
+
+# Keep Room Database
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class *
+-dontwarn androidx.room.**
+
+# Keep WebKit Javascript Interfaces
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
+
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
