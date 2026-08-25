@@ -7,6 +7,7 @@ import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanIntentResult
 import com.journeyapps.barcodescanner.ScanOptions
 
 @CapacitorPlugin(name = "NativeScanner")
@@ -17,7 +18,7 @@ class NativeScannerPlugin : Plugin() {
 
     override fun load() {
         super.load()
-        scanLauncher = bridge.activity.registerForActivityResult(ScanContract()) { result ->
+        scanLauncher = bridge.activity.registerForActivityResult(ScanContract()) { result: ScanIntentResult? ->
             val call = savedCall ?: return@registerForActivityResult
             if (result != null && result.contents != null) {
                 val ret = JSObject()

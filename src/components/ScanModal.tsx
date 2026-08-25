@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useWallet } from '../context/WalletContext';
 import { validateKaspaAddress } from '../utils/kaspa';
-import { X, Camera, AlertCircle, RefreshCw } from 'lucide-react';
+import { isNativeScannerSupported, scanNativeQrCode } from '../utils/nativeScanner';
+import { X, Camera, AlertCircle, RefreshCw, QrCode } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const ScanModal: React.FC = () => {
@@ -20,6 +21,11 @@ export const ScanModal: React.FC = () => {
   const [cameras, setCameras] = useState<any[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isNative, setIsNative] = useState(false);
+
+  useEffect(() => {
+    isNativeScannerSupported().then(setIsNative);
+  }, []);
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const containerId = 'kaspriv-qr-reader';
@@ -72,6 +78,14 @@ export const ScanModal: React.FC = () => {
       showToast(`Invalid Kaspa Address scanned: ${validationResult.error || 'Check network type'}`, 'error');
     }
   }, [network, setIsScanOpen, setIsSendOpen, showToast]);
+
+  const handleNativeScan = async () => {
+    await stopScanner();
+    const result = await scanNativeQrCode();
+    if (result && result.text) {
+      handleScannedText(result.text);
+    }
+  };
 
   const startScanner = React.useCallback(async (cameraId: string) => {
     if (isStartingRef.current) return;
@@ -273,6 +287,17 @@ export const ScanModal: React.FC = () => {
 
           {/* Action Toolbar / Camera Selector */}
           <div className="p-4 bg-[#0a0f14] border-t border-slate-800/60 flex flex-col gap-3">
+            {isNative && (
+              <button
+                type="button"
+                onClick={handleNativeScan}
+                className="w-full py-3 px-4 bg-[#70C7BA]/15 hover:bg-[#70C7BA]/25 border border-[#70C7BA]/40 rounded-xl text-xs font-extrabold text-[#70C7BA] transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95"
+              >
+                <QrCode className="w-4 h-4 text-[#70C7BA]" />
+                Launch Device Camera Scanner
+              </button>
+            )}
+
             {cameras.length > 1 && (
               <div className="flex items-center justify-between gap-3 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/40">
                 <label className="text-xs font-bold text-slate-400">Switch Camera:</label>
