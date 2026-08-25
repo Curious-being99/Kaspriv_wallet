@@ -14,6 +14,7 @@ export const Header: React.FC = () => {
     setIsWalletSetupOpen,
     isPasswordEnabled,
     lockWallet,
+    isSyncing,
   } = useWallet();
 
   const { openKeyboard } = useKeyboard();
@@ -48,6 +49,13 @@ export const Header: React.FC = () => {
                 <h1 className="text-sm font-extrabold text-slate-100 tracking-tight leading-none max-w-[180px] sm:max-w-xs truncate">
                   {sanitizeWalletName(activeWallet.name)}
                 </h1>
+                {isSyncing && (
+                  <motion.div
+                    animate={{ opacity: [0.4, 1, 0.4] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                    className="w-1.5 h-1.5 rounded-full bg-[#70C7BA]"
+                  />
+                )}
                 {activeWallet.isImportedKpub && (
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono shrink-0">
                     Watch

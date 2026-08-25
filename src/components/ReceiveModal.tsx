@@ -33,11 +33,22 @@ export const ReceiveModal: React.FC = () => {
       all.add(activeWallet.receiveAddress);
     }
     
-    // Include other discovered addresses that are NOT change addresses
+    // Include all addresses tracked in addressPaths that are NOT change addresses
+    if (activeWallet.addressPaths) {
+      Object.keys(activeWallet.addressPaths).forEach((addr) => {
+        const path = activeWallet.addressPaths?.[addr] || '';
+        const isChange = path.includes('/1/'); // standard bip44 change path includes /1/
+        if (!isChange) {
+          all.add(addr);
+        }
+      });
+    }
+    
+    // Also check discoveredAddresses just in case (though they should be in addressPaths)
     if (activeWallet.discoveredAddresses) {
       activeWallet.discoveredAddresses.forEach((addr) => {
         const path = activeWallet.addressPaths?.[addr] || '';
-        const isChange = path.includes('/1/'); // standard bip44 change path includes /1/
+        const isChange = path.includes('/1/');
         if (!isChange) {
           all.add(addr);
         }

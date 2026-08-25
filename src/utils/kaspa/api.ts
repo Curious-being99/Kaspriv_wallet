@@ -146,7 +146,7 @@ export async function fetchKaspaPrice(): Promise<{ price: number; usd24hChange?:
     return cachedPriceData;
   }
 
-  return cachedPriceData || { price: 0.0278, usd24hChange: 0.0 };
+  return cachedPriceData || { price: 0.0, usd24hChange: 0.0 };
 }
 
 export async function pingKaspaNode(apiUrl: string): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
@@ -427,7 +427,16 @@ export async function fetchKaspaAddressesUtxos(addresses: string[], network?: st
         const data = await res.json();
         if (Array.isArray(data)) {
           bulkUtxosSupported = true;
-          const validUtxos = data
+          
+          // Support both flat array of UTXOs and grouped [{ address, utxos: [] }] formats
+          const flattened = data.reduce((acc: any[], item: any) => {
+            if (item && item.utxos && Array.isArray(item.utxos)) {
+              return acc.concat(item.utxos.map((u: any) => ({ ...u, address: item.address || u.address })));
+            }
+            return acc.concat(item);
+          }, []);
+
+          const validUtxos = flattened
             .map(u => {
               const fallbackAddr = cleanAddresses.length === 1 ? cleanAddresses[0] : undefined;
               return validateAndCleanUtxo({ ...u, address: u.address || fallbackAddr });

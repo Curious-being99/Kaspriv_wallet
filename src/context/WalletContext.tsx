@@ -213,6 +213,7 @@ interface WalletContextType {
   scanWalletChainIndex: () => Promise<void>;
   generateNewReceiveAddress: () => Promise<string | null>;
   switchReceiveAddress: (addr: string) => void;
+  isSyncing: boolean;
   isScanningChain: boolean;
   isBalanceVisible: boolean;
   setIsBalanceVisible: (visible: boolean) => void;
@@ -340,12 +341,12 @@ const INITIAL_NODES: KaspaNode[] = [
 ];
 
 const INITIAL_MARKET_DATA: MarketData = {
-  priceUsd: 0.0325,
-  priceBtc: 0.00000035,
+  priceUsd: 0.0,
+  priceBtc: 0.0,
   change24h: 0.0,
-  marketCapUsd: 850000000,
-  volume24hUsd: 45000000,
-  lastUpdated: Date.now(),
+  marketCapUsd: 0,
+  volume24hUsd: 0,
+  lastUpdated: 0,
 };
 
 export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -682,6 +683,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     utxosRef.current = utxos;
   }, [utxos]);
   const [isScanningChain, setIsScanningChain] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [indexingState, setIndexingState] = useState<IndexingState>({
     isIndexing: false,
     scannedAddresses: 0,
@@ -1030,7 +1032,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   }, [lockWallet]);
 
   // On-chain DAA Score
-  const [currentDaaScore, setCurrentDaaScore] = useState<number>(89500000);
+  const [currentDaaScore, setCurrentDaaScore] = useState<number>(0);
 
   const currentDaaScoreRef = React.useRef(currentDaaScore);
   useEffect(() => {
@@ -1105,6 +1107,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (!options?.force && now - lastRefreshTimeRef.current < 2000) return;
 
     isRefreshingBalance.current = true;
+    setIsSyncing(true);
     lastRefreshTimeRef.current = now;
 
     try {
@@ -1274,12 +1277,17 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // If all network calls failed (e.g. offline, rate limited or API down), retain existing cached UTXOs and balance
         if (allAddressResponsesFailed) {
           consecutiveFailuresRef.current += 1;
+          setIsSyncing(false);
           return;
         }
 
         consecutiveFailuresRef.current = 0;
 
         const totalLiveBalance = (balances as (bigint | null)[]).reduce<bigint>((sum, bal) => sum + (bal !== null && bal !== undefined ? bal : 0n), 0n);
+
+        // Count how many address balance queries actually succeeded
+        const successfulBalanceQueries = (balances as (bigint | null)[]).filter(b => b !== null).length;
+        const allBalanceQueriesSuccessful = successfulBalanceQueries === addressesToFetch.length;
 
         // Assemble UTXOs for all addresses
         const allMergedUtxos: UTXO[] = [];
@@ -1288,8 +1296,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           if (liveUtxosData && Array.isArray(liveUtxosData)) {
             liveUtxosData.forEach((u: any, idx: number) => {
               const devPath = wallet.addressPaths?.[address];
+              const utxoId = `utxo-live-${u.transactionId || u.txid || u.outpoint?.transactionId || ''}-${u.index || u.vout || u.outpoint?.index || idx}`;
               allMergedUtxos.push({
-                id: `utxo-live-${u.outpoint?.transactionId || u.transaction_id || u.txid || idx}-${idx}`,
+                id: utxoId,
                 txid: u.outpoint?.transactionId || u.transaction_id || u.txid || '',
                 vout: u.outpoint?.index !== undefined ? Number(u.outpoint.index) : (u.index !== undefined ? Number(u.index) : (u.vout ?? 0)),
                 amountSompi: BigInt(u.utxoEntry?.amount || u.amount || u.amountSompi || 0),
@@ -1345,16 +1354,18 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         // Calculate verified live spendable balance from actual unspent UTXO set
         const utxoSum = filteredUtxos.reduce((sum, u) => sum + u.amountSompi, 0n);
+        
+        // Trust the calculated UTXO sum if we had a successful query across all addresses.
+        // This ensures that balance accurately reflects 'spent' and 'change' states even if 
+        // the node balance endpoint is lagging.
         let verifiedBalance = wallet.balanceSompi;
-        if (utxoSum > 0n) {
+        if (allAddressesValid && allBalanceQueriesSuccessful) {
           verifiedBalance = utxoSum;
-        } else if (totalLiveBalance > 0n && spentUtxoOutpointsRef.current.length === 0) {
-          verifiedBalance = totalLiveBalance;
-        } else if (allAddressesValid && (balances as (bigint | null)[]).every(b => b !== null) && stillPendingChange.length === 0 && spentUtxoOutpointsRef.current.length === 0) {
-          // Only drop to 0 if all address queries affirmatively completed with 0 AND no pending changes/spent locks remain
+        } else if (utxoSum > 0n) {
+          // Partial success: if we found some UTXOs, at least use that as a floor
           verifiedBalance = utxoSum;
         } else {
-          // Retain existing balance if any query failed or pending change is settling
+          // Only fallback to cached balance if network requests failed
           verifiedBalance = wallet.balanceSompi;
         }
 
@@ -1762,6 +1773,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     } finally {
       isRefreshingBalance.current = false;
+      setIsSyncing(false);
     }
   }, [refreshDaaScore, password, triggerNativeNotification]);
 
@@ -4325,6 +4337,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         scanWalletChainIndex,
         generateNewReceiveAddress,
         switchReceiveAddress,
+        isSyncing,
         isScanningChain,
         currentDaaScore,
         refreshDaaScore,
