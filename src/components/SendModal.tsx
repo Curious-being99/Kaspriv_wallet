@@ -28,13 +28,16 @@ import {
   Clipboard,
   Trash2,
   Key,
+  ShieldCheck,
   Layers,
   ChevronDown,
   ChevronUp,
   Unlock,
-  Fingerprint,
+  Scan,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { isNative } from '../utils/platform';
+import { scanNativeQrCode } from '../utils/nativeScanner';
 
 interface SuccessTxData {
   txid: string;
@@ -56,11 +59,10 @@ export const SendModal: React.FC = () => {
     fiatRate,
     isSendOpen,
     setIsSendOpen,
+    setIsScanOpen,
     sendKaspa,
     isPasswordEnabled,
     password,
-    isBiometricsEnabled,
-    authorizeSigningWithBiometrics,
     showToast,
     transactions,
     refreshBalance,
@@ -85,7 +87,6 @@ export const SendModal: React.FC = () => {
 
   const [isConfirmingStep, setIsConfirmingStep] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [isAuthenticatingBiometrics, setIsAuthenticatingBiometrics] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
 
   const [successTx, setSuccessTx] = useState<SuccessTxData | null>(null);
@@ -130,17 +131,6 @@ export const SendModal: React.FC = () => {
       }
     }
   }, [isSendOpen, activeWallet, isPasswordEnabled, handleAddressChange]);
-
-  // Auto-trigger biometrics when confirmation step is shown
-  useEffect(() => {
-    if (isSendOpen && isConfirmingStep && isBiometricsEnabled && !successTx && !isSending) {
-      const timer = setTimeout(() => {
-        handleBiometricSign(false);
-      }, 150);
-      return () => clearTimeout(timer);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSendOpen, isConfirmingStep, isBiometricsEnabled, successTx]);
 
   const getMnemonicForSigning = async (): Promise<string | null> => {
     if (activeWallet?.mnemonic) {
@@ -350,112 +340,6 @@ export const SendModal: React.FC = () => {
     setTimeout(() => setCopiedAddr(false), 2000);
   };
 
-  const handleBiometricSign = async (isManualTrigger: boolean = false) => {
-    if (isSending) return;
-    if (isAuthenticatingBiometrics && !isManualTrigger) return;
-    setIsAuthenticatingBiometrics(true);
-    setPasswordError(null);
-    try {
-      const authRes = await authorizeSigningWithBiometrics();
-      if (authRes.success && authRes.decryptedPassword) {
-        showToast('Biometric authorization successful!', 'success');
-        
-        setIsSending(true);
-        setTimeout(async () => {
-          let mnemonicToUse: string | null = null;
-          let passphraseToUse: string | undefined = undefined;
-
-          try {
-            if (activeWallet?.encryptedMnemonic) {
-              mnemonicToUse = await decryptWithPassword(
-                activeWallet.encryptedMnemonic.ciphertext,
-                activeWallet.encryptedMnemonic.salt,
-                activeWallet.encryptedMnemonic.iv,
-                authRes.decryptedPassword!,
-                buildAadContext('MNEMONIC', activeWallet.id)
-              );
-            } else {
-              mnemonicToUse = activeWallet?.mnemonic || null;
-            }
-
-            if (activeWallet?.encryptedPassphrase) {
-              passphraseToUse = await decryptWithPassword(
-                activeWallet.encryptedPassphrase.ciphertext,
-                activeWallet.encryptedPassphrase.salt,
-                activeWallet.encryptedPassphrase.iv,
-                authRes.decryptedPassword!,
-                buildAadContext('PASSPHRASE', activeWallet.id)
-              );
-            } else if (passphraseInput) {
-              passphraseToUse = passphraseInput;
-            } else {
-              passphraseToUse = activeWallet?.passphrase || undefined;
-            }
-
-            if (!mnemonicToUse) {
-              setPasswordError('Biometric decryption error: Wallet key decryption failed.');
-              showToast('Biometric decryption error: Wallet key decryption failed.', 'error');
-              setIsSending(false);
-              return;
-            }
-
-            const res = await sendKaspa(
-              toAddress,
-              amountInput || numericAmount,
-              selectedFee.toString(),
-              note,
-              mnemonicToUse,
-              passphraseToUse,
-              selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined
-            );
-
-            if (res.success) {
-              setSuccessTx({
-                txid: res.txid || 'kaspa-txid',
-                amountKas: numericAmount,
-                feeKas: selectedFee,
-                toAddress: toAddress.trim(),
-                fiatValue: fiatEquivalent,
-                note: note.trim() || undefined,
-                timestamp: Date.now(),
-              });
-              setIsConfirmingStep(false);
-              setToAddress('');
-              setAmountInput('');
-              setNote('');
-              setPasswordInput('');
-              setPassphraseInput('');
-              setPasswordError(null);
-              showToast('Transaction successfully broadcast!', 'success');
-            } else {
-              showToast(res.error || 'Failed to broadcast transaction', 'error');
-            }
-          } catch (err: any) {
-            showToast(err.message || 'Biometric authorization failed', 'error');
-          } finally {
-            setIsSending(false);
-            // --------------------------------------------------------
-            // ZERO-TRUST MEMORY WIPE: Zeroize sensitive key references
-            // --------------------------------------------------------
-            mnemonicToUse = null;
-            passphraseToUse = undefined;
-            if (authRes) {
-              authRes.decryptedPassword = undefined;
-            }
-          }
-        }, 0);
-
-      } else if (!authRes.success && authRes.error) {
-        setPasswordError(authRes.error);
-        showToast(authRes.error, 'error');
-      }
-    } catch (err: any) {
-      showToast(err.message || 'Biometric authentication failed', 'error');
-    } finally {
-      setIsAuthenticatingBiometrics(false);
-    }
-  };
-
   const handleExecuteSend = async () => {
     closeKeyboard();
     setPasswordError(null);
@@ -526,6 +410,7 @@ export const SendModal: React.FC = () => {
       amount: amountInput || numericAmount,
       fee: selectedFee.toString(),
       note,
+      passphrase: passphraseInput || undefined,
       selectedUtxoOutpoints: selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined,
       onSuccess: (txid) => {
         setSuccessTx({
@@ -559,43 +444,46 @@ export const SendModal: React.FC = () => {
   if (!isSendOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#090D12] flex flex-col overflow-hidden">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="w-full max-w-3xl mx-auto h-full flex flex-col px-4 sm:px-6 py-4 overflow-y-auto no-scrollbar"
+    <div className="fixed inset-0 z-50 bg-[#090D12] flex flex-col overflow-hidden select-none">
+      {/* Header */}
+      <div 
+        className="w-full max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between border-b border-[#212B38] bg-[#090D12] shrink-0" 
         style={{ 
-          paddingTop: 'max(calc(env(safe-area-inset-top, 0px) + 0.75rem), 1.25rem)',
+          paddingTop: 'max(calc(env(safe-area-inset-top, 0px) + 0.75rem), 1rem)' 
+        }}
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-[#70C7BA]/20 border border-[#70C7BA]/40 flex items-center justify-center text-[#70C7BA]">
+            {successTx ? (
+              <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+            ) : (
+              <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+            )}
+          </div>
+          <div>
+            <h3 className="text-base font-extrabold text-slate-100 leading-tight">
+              {successTx ? 'Transaction Success' : isConfirmingStep ? 'Sign & Broadcast' : 'Send Kaspa'}
+            </h3>
+            <p className="text-[10px] text-slate-400 font-medium">
+              {successTx ? 'Broadcasted & Accepted' : isConfirmingStep ? 'In-Memory Key Signing Zone' : 'Kaspa Fast Settlement Network'}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={handleClose}
+          className="p-1.5 rounded-xl bg-[#131E29] hover:bg-[#1C2F42] border border-[#212B38] text-slate-400 hover:text-white transition-colors cursor-pointer"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Content Body */}
+      <div 
+        className="flex-1 w-full max-w-2xl mx-auto overflow-y-auto no-scrollbar px-4 sm:px-6 py-4 flex flex-col justify-between"
+        style={{ 
           paddingBottom: isKeyboardOpen ? '220px' : 'max(1.5rem, env(safe-area-inset-bottom, 0px))' 
         }}
       >
-        {/* Modal Header */}
-        <div className="pb-3 mb-4 flex items-center justify-between border-b border-[#212B38]">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#70C7BA]/20 border border-[#70C7BA]/40 flex items-center justify-center text-[#70C7BA]">
-              {successTx ? (
-                <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-              ) : (
-                <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
-              )}
-            </div>
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-100 leading-tight">
-                {successTx ? 'Transaction Success' : isConfirmingStep ? 'Sign & Broadcast' : 'Send Kaspa'}
-              </h3>
-              <p className="text-[9px] text-slate-400">
-                {successTx ? 'Broadcasted & Accepted' : isConfirmingStep ? 'In-Memory Key Signing Zone' : 'Kaspa Fast Settlement Network'}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleClose}
-            className="p-1 rounded-lg hover:bg-[#1C2F42] text-slate-400 hover:text-white transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
 
         {/* Content Body */}
         {successTx ? (
@@ -603,7 +491,7 @@ export const SendModal: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="space-y-2.5 py-1 mt-1"
+            className="flex-1 flex flex-col justify-between space-y-3 pt-1"
           >
             {/* Success Badge */}
             <div className="flex flex-col items-center justify-center text-center pt-1">
@@ -676,7 +564,7 @@ export const SendModal: React.FC = () => {
             </div>
 
             {/* Bottom Actions */}
-            <div className="flex flex-col sm:flex-row items-center gap-1.5 pt-0.5">
+            <div className="flex flex-col sm:flex-row items-center gap-1.5 pt-2 mt-auto">
               <div className="flex items-center gap-1.5 w-full">
                 <a
                   href={`https://explorer.kaspa.org/txs/${successTx.txid}`}
@@ -708,7 +596,7 @@ export const SendModal: React.FC = () => {
           </motion.div>
         ) : !isConfirmingStep ? (
           /* Step 1: Send Form */
-          <form onSubmit={handleProceedToConfirm} className="mt-3 space-y-3">
+          <form onSubmit={handleProceedToConfirm} className="flex-1 flex flex-col justify-between space-y-3 pt-1">
             {(activeWallet?.isWatchOnly || activeWallet?.isImportedKpub) && (
               <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-start gap-2.5 text-xs leading-relaxed">
                 <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
@@ -726,30 +614,58 @@ export const SendModal: React.FC = () => {
                 <label className="block text-[10px] font-bold text-slate-300 uppercase tracking-wider">
                   Recipient Kaspa Address
                 </label>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
-                        const text = await navigator.clipboard.readText();
-                        if (text) {
-                          const trimmed = text.trim();
-                          handleAddressChange(trimmed);
-                          openKeyboard({ value: trimmed, onChange: handleAddressChange });
-                          showToast('Address pasted from clipboard!', 'success');
-                          return;
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (isNative()) {
+                        try {
+                          const result = await scanNativeQrCode();
+                          if (result && result.text) {
+                            let clean = result.text.trim();
+                            if (clean.toLowerCase().startsWith('kaspa:') || clean.toLowerCase().startsWith('kaspadev:')) {
+                              clean = clean.split('?')[0];
+                            }
+                            handleAddressChange(clean);
+                            showToast('Address scanned successfully!', 'success');
+                          }
+                        } catch (e: any) {
+                          showToast(e?.message || 'Failed to open native camera scan', 'error');
                         }
+                      } else {
+                        setIsScanOpen(true);
                       }
-                      openKeyboard({ value: toAddress, onChange: handleAddressChange });
-                    } catch (e) {
-                      openKeyboard({ value: toAddress, onChange: handleAddressChange });
-                    }
-                  }}
-                  className="text-[10px] text-[#70C7BA] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
-                >
-                  <Clipboard className="w-3 h-3" />
-                  <span>Paste</span>
-                </button>
+                    }}
+                    className="text-[10px] text-[#70C7BA] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Scan className="w-3 h-3" />
+                    <span>Scan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+                          const text = await navigator.clipboard.readText();
+                          if (text) {
+                            const trimmed = text.trim();
+                            handleAddressChange(trimmed);
+                            openKeyboard({ value: trimmed, onChange: handleAddressChange });
+                            showToast('Address pasted from clipboard!', 'success');
+                            return;
+                          }
+                        }
+                        openKeyboard({ value: toAddress, onChange: handleAddressChange });
+                      } catch (e) {
+                        openKeyboard({ value: toAddress, onChange: handleAddressChange });
+                      }
+                    }}
+                    className="text-[10px] text-[#70C7BA] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Clipboard className="w-3 h-3" />
+                    <span>Paste</span>
+                  </button>
+                </div>
               </div>
 
               {/* Contact Selector Dropdown */}
@@ -997,13 +913,13 @@ export const SendModal: React.FC = () => {
             </div>
 
             {/* Submit Button */}
-            <div className="pt-1">
+            <div className="pt-3 mt-auto">
               <button
                 type="submit"
                 disabled={!isFormValid}
-                className={`w-full py-2.5 rounded-xl font-bold text-xs transition-all shadow-md ${
+                className={`w-full py-3 rounded-xl font-extrabold text-xs transition-all shadow-md ${
                   isFormValid
-                    ? 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#0B151E] shadow-[#70C7BA]/20 cursor-pointer'
+                    ? 'bg-[#70C7BA] hover:bg-[#5eead4] text-[#0B151E] shadow-[#70C7BA]/20 cursor-pointer active:scale-[0.99]'
                     : 'bg-[#1C2F42] text-slate-500 cursor-not-allowed'
                 }`}
               >
@@ -1016,10 +932,10 @@ export const SendModal: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, x: 10 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex-1 flex flex-col justify-between mt-1 h-full"
+            className="flex-1 flex flex-col justify-between space-y-3 pt-1"
           >
             {/* Top Info Section */}
-            <div className="space-y-3 flex-1">
+            <div className="space-y-3">
               {/* Transaction Summary Card */}
               <div className="p-3 rounded-xl bg-[#0B151E] border border-[#273E54] space-y-2">
                 <div className="grid grid-cols-2 gap-2 text-[10px]">
@@ -1070,10 +986,21 @@ export const SendModal: React.FC = () => {
                   className="w-full px-2.5 py-1.5 rounded-lg bg-[#090D12] focus:border-[#70C7BA] text-[11px] font-mono text-slate-100 outline-none transition-colors cursor-pointer"
                 />
               </div>
+
+              {/* Zero-Knowledge In-Memory Security Notice */}
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-300 space-y-0.5">
+                <div className="flex items-center gap-1.5 font-bold text-amber-400">
+                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>Zero-Knowledge In-Memory Signing</span>
+                </div>
+                <p className="text-[9.5px] text-amber-200/80 leading-normal">
+                  Your private key stays strictly in memory during transaction signing and is never transmitted over the network.
+                </p>
+              </div>
             </div>
 
-            {/* Back & Broadcast Buttons at the very bottom above phone edge */}
-            <div className="flex flex-col gap-1.5 pt-3 border-t border-[#1C2F42]/40 mt-auto shrink-0 pb-1">
+            {/* Back & Broadcast Buttons at the bottom */}
+            <div className="flex flex-col gap-2 pt-3 border-t border-[#1C2F42]/40 shrink-0 mt-auto">
               <button
                 type="button"
                 onClick={handleExecuteSend}
@@ -1110,7 +1037,7 @@ export const SendModal: React.FC = () => {
             </div>
           </motion.div>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 };

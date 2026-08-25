@@ -1,4 +1,4 @@
-import { Mnemonic, XPrv } from '@kasdk/web';
+import { Mnemonic, XPrv, payToScriptHashScript, addressFromScriptPublicKey } from '@kasdk/web';
 import { ensureKaspaWasm } from '../crypto';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { wipe } from './common';
@@ -58,7 +58,9 @@ export async function generate24WordMnemonic(): Promise<string[]> {
 }
 
 /**
- * Derive a Kaspa address from a 33-byte compressed public key or 32-byte Schnorr pubkey using pure JS Bech32/checksum encoding
+ * Derive a Kaspa address from a 33-byte compressed public key or 32-byte Schnorr pubkey.
+ * Utilizes the official Rusty Kaspa SDK (payToScriptHashScript + addressFromScriptPublicKey)
+ * with robust pure JS fallback.
  */
 export function getAddressFromPublicKey(
   publicKey: Uint8Array | string, 
@@ -85,7 +87,32 @@ export function getAddressFromPublicKey(
   }
 
   const xOnlyPubKey = pubKey.length === 33 ? pubKey.slice(1) : pubKey;
+  const xOnlyHex = Array.from(xOnlyPubKey).map(b => b.toString(16).padStart(2, '0')).join('');
+  const redeemScriptHex = '20' + xOnlyHex + 'ac';
 
+  // Map prefix to standard Kaspa SDK network type parameter
+  const cleanPrefix = prefix.replace(':', '').toLowerCase();
+  let networkTypeStr = 'mainnet';
+  if (cleanPrefix.includes('test')) {
+    networkTypeStr = 'testnet-10';
+  } else if (cleanPrefix.includes('dev')) {
+    networkTypeStr = 'devnet';
+  } else if (cleanPrefix.includes('sim')) {
+    networkTypeStr = 'simnet';
+  }
+
+  // 1. Rely on official Rusty Kaspa WASM SDK
+  try {
+    const spk = payToScriptHashScript(redeemScriptHex);
+    const addr = addressFromScriptPublicKey(spk, networkTypeStr);
+    if (addr) {
+      return addr.toString();
+    }
+  } catch {
+    // Gracefully continue to pure-JS fallback if WASM is not yet active
+  }
+
+  // 2. Pure JS fallback (BLAKE2b-256 + Bech32 P2SH)
   const redeemScript = new Uint8Array(34);
   redeemScript[0] = 0x20; // PUSH 32 bytes
   redeemScript.set(xOnlyPubKey, 1);

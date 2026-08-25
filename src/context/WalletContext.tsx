@@ -35,7 +35,6 @@ import {
   buildAadContext,
 } from '../utils/crypto';
 import { App as CapacitorApp } from '@capacitor/app';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import {
   isBiometricsSupported as checkBiometricsSupported,
   registerBiometricUnlock,
@@ -55,6 +54,7 @@ import {
 } from '../utils/haptics';
 import { IsolatedSigner } from '../utils/IsolatedSigner';
 import { isNative } from '../utils/platform';
+import { DecentralizedNotification } from '../plugins/DecentralizedNotification';
 import { unifiedAuthService, AuthState } from '../services/unifiedAuthService';
 import {
   kasToSompi,
@@ -240,6 +240,7 @@ interface WalletContextType {
     amount: string | number;
     fee: string | number;
     note?: string;
+    passphrase?: string;
     selectedUtxoOutpoints?: string[];
     onSuccess: (txid: string) => void;
     onFailure: (err: string) => void;
@@ -249,6 +250,7 @@ interface WalletContextType {
     amount: string | number;
     fee: string | number;
     note?: string;
+    passphrase?: string;
     selectedUtxoOutpoints?: string[];
     onSuccess: (txid: string) => void;
     onFailure: (err: string) => void;
@@ -363,18 +365,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await ensureKaspaRuntime();
 
         await runDatabaseMigrations();
-
-        // Request local notification permissions on app startup if native
-        try {
-          if (isNative()) {
-            const permStatus = await LocalNotifications.checkPermissions();
-            if (permStatus.display !== 'granted') {
-              await LocalNotifications.requestPermissions();
-            }
-          }
-        } catch (e) {
-          // Ignore web platform notification unsupported errors
-        }
         
         const savedWallets = await getWalletsFromDB();
         const cleanedWallets = savedWallets.map(w => {
@@ -553,46 +543,137 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     transactionsRef.current = transactions;
   }, [transactions]);
 
+  // Haptic feedback state
+  const [isHapticsSupported] = useState<boolean>(() => checkHapticsSupported());
+  const [isHapticsEnabledState, setIsHapticsEnabledState] = useState<boolean>(() => getHapticsEnabled());
+
+  const setIsHapticsEnabled = React.useCallback((enabled: boolean) => {
+    setIsHapticsEnabledState(enabled);
+    setHapticsStorage(enabled);
+    if (enabled) {
+      executeHaptic('medium');
+    }
+  }, []);
+
+  const triggerHaptic = React.useCallback((type?: HapticType) => {
+    return executeHaptic(type);
+  }, []);
+
+  // Toast
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+  const toastTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const showToast = React.useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToast({ message, type });
+
+    // Tactile haptic feedback for notifications
+    if (type === 'success') {
+      hapticSuccess();
+    } else if (type === 'error') {
+      hapticError();
+    } else {
+      hapticLight();
+    }
+
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  }, []);
+
+  // Notifications state
+  const [isNotificationsEnabledState, setIsNotificationsEnabledState] = useState<boolean>(() => {
+    try {
+      const val = localStorage.getItem('kaspa_notifications_enabled');
+      return val !== null ? JSON.parse(val) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const isNotificationsEnabledRef = React.useRef(isNotificationsEnabledState);
+  useEffect(() => {
+    isNotificationsEnabledRef.current = isNotificationsEnabledState;
+  }, [isNotificationsEnabledState]);
+
+  // Request Android notification permissions on native startup if enabled
+  useEffect(() => {
+    if (isNative() && isNotificationsEnabledState) {
+      DecentralizedNotification.checkPermissions().then((res) => {
+        if (res.display === 'prompt') {
+          DecentralizedNotification.requestPermissions().catch(() => {});
+        }
+      }).catch(() => {});
+    }
+  }, [isNotificationsEnabledState]);
+
+  const setIsNotificationsEnabled = React.useCallback(async (enabled: boolean) => {
+    setIsNotificationsEnabledState(enabled);
+    try {
+      localStorage.setItem('kaspa_notifications_enabled', JSON.stringify(enabled));
+    } catch {}
+    saveSetting('kaspa_notifications_enabled', enabled).catch(() => {});
+
+    if (enabled && isNative()) {
+      try {
+        await DecentralizedNotification.requestPermissions();
+      } catch {}
+    }
+  }, []);
+
   const knownTxidsRef = React.useRef<Record<string, Set<string>>>({});
   const walletFirstFetchDone = React.useRef<Record<string, boolean>>({});
   const isAppActiveRef = React.useRef(true);
 
-  const triggerNativeNotification = React.useCallback(async (title: string, body: string) => {
-    if (!isNotificationsEnabledRef.current) return;
-    try {
-      if (isNative()) {
-        const hasPerm = await LocalNotifications.checkPermissions();
-        if (hasPerm.display === 'granted') {
-          await LocalNotifications.schedule({
-            notifications: [
-              {
-                title,
-                body,
-                id: Math.floor(Math.random() * 1000000),
-                sound: 'beep.wav',
-              }
-            ]
-          });
-        } else {
-          await LocalNotifications.requestPermissions();
-        }
-      } else {
-        // Web / PWA browser notification support when out of app / backgrounded
-        if (typeof window !== 'undefined' && 'Notification' in window) {
-          if (Notification.permission === 'granted') {
+  const lastNotificationTimeRef = React.useRef<number>(0);
+
+  const triggerNativeNotification = React.useCallback(
+    async (
+      title: string,
+      body: string,
+      options?: { txid?: string; type?: 'receive' | 'broadcast'; amount?: string }
+    ) => {
+      if (!isNotificationsEnabledRef.current) return;
+
+      // Anti-spam rate limiter: max 1 notification every 2 seconds
+      const now = Date.now();
+      if (now - lastNotificationTimeRef.current < 2000) {
+        return;
+      }
+      lastNotificationTimeRef.current = now;
+
+      try {
+        // 1. Sleek In-App Toast Alert (Active View)
+        const isReceive = options?.type === 'receive' || title.toLowerCase().includes('received');
+        showToast(`${title}: ${body}`, isReceive ? 'success' : 'info');
+
+        // 2. Decentralized Native Android Notification (No Google / No FCM)
+        if (isNative()) {
+          try {
+            await DecentralizedNotification.notifyTransaction({
+              title,
+              message: body,
+              txid: options?.txid,
+              type: options?.type || (isReceive ? 'receive' : 'broadcast'),
+              amount: options?.amount,
+            });
+          } catch (nativeErr) {
+            console.warn('Decentralized Android notification error:', nativeErr);
+          }
+        } else if (document.hidden) {
+          // Quiet browser notification when tab/window is in the background on Web
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
             new Notification(title, { body, icon: '/favicon.ico' });
-          } else if (Notification.permission !== 'denied') {
-            const perm = await Notification.requestPermission();
-            if (perm === 'granted') {
-              new Notification(title, { body, icon: '/favicon.ico' });
-            }
           }
         }
+      } catch (err) {
+        console.warn('Failed to trigger notification:', err);
       }
-    } catch (err) {
-      console.warn('Failed to trigger notification:', err);
-    }
-  }, []);
+    },
+    [showToast]
+  );
 
   const [utxos, setUtxos] = useState<UTXO[]>([]);
   const utxosRef = React.useRef(utxos);
@@ -637,6 +718,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     amount: string | number;
     fee: string | number;
     note?: string;
+    passphrase?: string;
     selectedUtxoOutpoints?: string[];
     onSuccess: (txid: string) => void;
     onFailure: (err: string) => void;
@@ -819,70 +901,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isNodeManagerOpen, setIsNodeManagerOpen] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'history' | 'contacts' | 'settings'>('home');
   const [isBalanceVisible, setIsBalanceVisible] = useState<boolean>(true);
-
-  // Haptic feedback state
-  const [isHapticsSupported] = useState<boolean>(() => checkHapticsSupported());
-  const [isHapticsEnabledState, setIsHapticsEnabledState] = useState<boolean>(() => getHapticsEnabled());
-
-  // Notifications state
-  const [isNotificationsEnabledState, setIsNotificationsEnabledState] = useState<boolean>(() => {
-    try {
-      const val = localStorage.getItem('kaspa_notifications_enabled');
-      return val !== null ? JSON.parse(val) : true;
-    } catch {
-      return true;
-    }
-  });
-
-  const isNotificationsEnabledRef = React.useRef(isNotificationsEnabledState);
-  useEffect(() => {
-    isNotificationsEnabledRef.current = isNotificationsEnabledState;
-  }, [isNotificationsEnabledState]);
-
-  const setIsNotificationsEnabled = React.useCallback((enabled: boolean) => {
-    setIsNotificationsEnabledState(enabled);
-    try {
-      localStorage.setItem('kaspa_notifications_enabled', JSON.stringify(enabled));
-    } catch {}
-    saveSetting('kaspa_notifications_enabled', enabled).catch(() => {});
-  }, []);
-
-
-  const setIsHapticsEnabled = React.useCallback((enabled: boolean) => {
-    setIsHapticsEnabledState(enabled);
-    setHapticsStorage(enabled);
-    if (enabled) {
-      executeHaptic('medium');
-    }
-  }, []);
-
-  const triggerHaptic = React.useCallback((type?: HapticType) => {
-    return executeHaptic(type);
-  }, []);
-
-  // Toast
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
-  const toastTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-
-  const showToast = React.useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
-    if (toastTimeoutRef.current) {
-      clearTimeout(toastTimeoutRef.current);
-    }
-    setToast({ message, type });
-
-    // Tactile haptic feedback for notifications
-    if (type === 'success') {
-      hapticSuccess();
-    } else if (type === 'error') {
-      hapticError();
-    } else {
-      hapticLight();
-    }
-
-    toastTimeoutRef.current = setTimeout(() => {
-      setToast(null);
-    }, 4000);
-  }, []);
 
   // Local pending transactions and spent UTXOs to prevent balance and list flickering during node syncing
   const [localPendingTxs, setLocalPendingTxs] = useState<KaspaTransaction[]>([]);
@@ -1106,9 +1124,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       // 2. Live Kaspa address balance & UTXOs from api.kaspa.org
       const wallet = activeWalletRef.current;
       if (wallet && wallet.receiveAddress) {
-        const addressesToFetch = wallet.discoveredAddresses && wallet.discoveredAddresses.length > 0
-          ? wallet.discoveredAddresses
-          : [wallet.receiveAddress];
+        const addressesToFetch = Array.from(new Set([
+          wallet.receiveAddress,
+          wallet.changeAddress,
+          ...(wallet.discoveredAddresses || []),
+          ...Object.keys(wallet.addressPaths || {})
+        ])).filter((a): a is string => Boolean(a && a.trim()));
 
         // 1. Fetch live balances, UTXOs and transactions
         let balances: (bigint | null)[] = [];
@@ -1428,8 +1449,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           const isFirstFetchForWallet = !walletFirstFetchDone.current[walletId];
 
           if (isFirstFetchForWallet) {
-            // First live fetch for this wallet (e.g. fresh wallet or import)
-            // Just populate the known transaction IDs without notifications so we don't spam history
+            // First live fetch for this wallet (e.g. fresh wallet or import/restore)
+            // Just populate the known transaction IDs without notifications so history never spams
             allMergedTxs.forEach((tx) => {
               if (tx && tx.txid) {
                 existingSet.add(tx.txid);
@@ -1437,27 +1458,50 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             });
             walletFirstFetchDone.current[walletId] = true;
           } else {
-            // Subsequent fetches: any transaction not in existingSet is NEW!
+            // Subsequent fetches: strictly notify ONLY for BRAND NEW, RECENT incoming funds received on this wallet's owned addresses
+            const ownedAddressesSet = new Set(
+              [
+                wallet.receiveAddress,
+                wallet.changeAddress,
+                ...(wallet.discoveredAddresses || []).map((d: any) => d.address || d),
+                ...addressesToFetch,
+              ]
+                .filter(Boolean)
+                .map((a) => a.trim().toLowerCase())
+            );
+
+            const nowMs = Date.now();
+
             allMergedTxs.forEach((tx) => {
               if (tx && tx.txid && !existingSet.has(tx.txid)) {
                 existingSet.add(tx.txid);
 
-                // Format amount
-                const formattedAmt = sompiToKas(tx.amountSompi).toLocaleString(undefined, {
-                  minimumFractionDigits: 0,
-                  maximumFractionDigits: 8,
-                });
+                // Ignore historical/old transactions (> 3 mins old) from triggering popups
+                const txAgeMs = nowMs - (tx.timestamp || nowMs);
+                const isRecent = txAgeMs <= 180000; // 3 minutes
 
-                if (tx.type === 'receive') {
-                  triggerNativeNotification(
-                    'Received Kaspa 🟢',
-                    `+${formattedAmt} KAS received in your wallet`
-                  );
-                } else if (tx.type === 'send') {
-                  triggerNativeNotification(
-                    'Sent Kaspa 🔴',
-                    `-${formattedAmt} KAS sent from your wallet`
-                  );
+                // 1. Incoming receive transaction on this wallet's owned addresses
+                if (tx.type === 'receive' && tx.amountSompi > 0n && isRecent) {
+                  const formattedAmt = sompiToKas(tx.amountSompi).toLocaleString(undefined, {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 8,
+                  });
+
+                  const targetAddress = tx.address || wallet.receiveAddress;
+                  const isOwnedReceiveAddress = !targetAddress || ownedAddressesSet.has(targetAddress.trim().toLowerCase());
+
+                  if (isOwnedReceiveAddress) {
+                    const shortAddr = targetAddress ? `${targetAddress.slice(0, 10)}...${targetAddress.slice(-6)}` : '';
+                    triggerNativeNotification(
+                      'Received Kaspa 🟢',
+                      `+${formattedAmt} KAS received on ${shortAddr || 'your wallet'}`,
+                      {
+                        txid: tx.txid,
+                        type: 'receive',
+                        amount: formattedAmt,
+                      }
+                    );
+                  }
                 }
               }
             });
@@ -1896,8 +1940,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     };
 
+    const handleOnline = () => {
+      console.log('[Network] Regained connectivity, refreshing balance...');
+      if (!isLocked && activeWalletId) {
+        isRefreshingBalance.current = false;
+        consecutiveFailuresRef.current = 0;
+        refreshBalanceRef.current();
+      }
+    };
+
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('focus', handleVisibilityChange);
     }
 
     const listenerPromise = CapacitorApp.addListener('appStateChange', handleStateChange);
@@ -1906,6 +1963,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       listenerPromise.then(h => h.remove()).catch(() => {});
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('focus', handleVisibilityChange);
       }
     };
   }, [isLocked, activeWalletId]);
@@ -2082,7 +2143,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setPasswordState(null);
       unifiedAuthService.lock('creation', true);
     }
-    const words = mnemonicWords && mnemonicWords.length === 24 ? mnemonicWords : await generate24WordMnemonic();
+    const isRestoration = !!(mnemonicWords && mnemonicWords.length > 0);
+    const words = isRestoration && mnemonicWords ? mnemonicWords : await generate24WordMnemonic();
     const prefix = getAddressPrefix(network);
     let mStr = cleanMnemonic(words.join(' '));
     
@@ -2091,7 +2153,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let scanRes;
     try {
       scanRes = await scanKaspaWalletChain(
-        mStr, passphrase, prefix, addressType, 1
+        mStr, passphrase, prefix, addressType, isRestoration ? 100 : 1,
+        (scannedCount, foundCount, balanceSompi) => {
+          setIndexingState({ isIndexing: true, scannedAddresses: scannedCount, foundAddresses: foundCount, balanceSompi });
+        }
       );
     } catch (err) {
       const derivedAddr = await generateDeterministicAddress(mStr, passphrase, prefix, addressType, 0, false);
@@ -2164,7 +2229,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       const newW: Wallet = {
         id: walletId,
-        name: sanitizeWalletName(name, 'Primary Wallet'),
+        name: sanitizeWalletName(name, isRestoration ? 'Restored Wallet' : 'Primary Wallet'),
         receiveAddress: scanRes.primaryAddress,
         changeAddress: changeAddr || scanRes.primaryAddress,
         mnemonic: activePassword ? undefined : mStr, // Do not store plaintext if password is active
@@ -2178,6 +2243,30 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         addressPaths: addrPaths,
         addressBalances: initialBalances,
       };
+
+      // Parse UTXOs
+      const parsedUtxos: UTXO[] = (scanRes.allUtxos || []).map((u: any, idx: number) => ({
+        id: `utxo-${u.outpoint?.transactionId || u.transactionId || u.txid || idx}-${u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)}-${idx}`,
+        txid: u.outpoint?.transactionId || u.transactionId || u.txid || '',
+        vout: Number(u.outpoint?.index !== undefined ? u.outpoint.index : (u.index || 0)),
+        amountSompi: BigInt(u.utxoEntry?.amount || u.amount || 0),
+        address: u.address || scanRes.primaryAddress,
+        blockDaaScore: Number(u.utxoEntry?.blockDaaScore || u.blockDaaScore || 0),
+        derivationPath: u.derivationPath || u.path,
+      }));
+      setUtxos(parsedUtxos);
+      try {
+        await saveUtxosToDB(newW.id, parsedUtxos);
+      } catch (e) {}
+
+      // Parse Transactions & populate known historical transactions
+      const parsedTxs = parseRawKaspaTransactions(scanRes.allTransactions || [], discoveredAddressesList, scanRes.primaryAddress);
+      setTransactions(parsedTxs);
+      knownTxidsRef.current[newW.id] = new Set(parsedTxs.map((tx) => tx.txid).filter(Boolean));
+      walletFirstFetchDone.current[newW.id] = true;
+      try {
+        await saveTransactionsToDB(newW.id, parsedTxs);
+      } catch (e) {}
 
       setWallets((prev) => [...prev, newW]);
       setActiveWalletIdState(newW.id);
@@ -2366,7 +2455,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         passToUse,
         prefix,
         activeWallet.addressType || 'P2SH',
-        50,
+        100,
         (scannedCount, foundCount, balanceSompi) => {
           setIndexingState({ isIndexing: true, scannedAddresses: scannedCount, foundAddresses: foundCount, balanceSompi });
         }
@@ -2441,6 +2530,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       // Parse and set Transactions
       const parsedTxs = parseRawKaspaTransactions(scanRes.allTransactions || [], updatedDiscoveredAddrs, scanRes.primaryAddress);
       setTransactions(parsedTxs);
+      knownTxidsRef.current[activeWallet.id] = new Set(parsedTxs.map((tx) => tx.txid).filter(Boolean));
+      walletFirstFetchDone.current[activeWallet.id] = true;
       try {
         await saveTransactionsToDB(activeWallet.id, parsedTxs);
         if (typeof window !== 'undefined' && window.localStorage) {
@@ -2591,9 +2682,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       } catch (e) {}
 
-      // Parse Transactions
+      // Parse Transactions & mark historical transactions as known
       const parsedTxs = parseRawKaspaTransactions(scanRes.allTransactions || [], discoveredAddressesList, scanRes.primaryAddress);
       setTransactions(parsedTxs);
+      knownTxidsRef.current[newW.id] = new Set(parsedTxs.map((tx) => tx.txid).filter(Boolean));
+      walletFirstFetchDone.current[newW.id] = true;
       try {
         await saveTransactionsToDB(newW.id, parsedTxs);
         if (typeof window !== 'undefined' && window.localStorage) {
@@ -3165,6 +3258,26 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
           // Schedule jittered post-transaction refreshes to avoid rate-limit bursts while indexing on-chain
           scheduleJitteredPostTxRefreshes(refreshBalance);
+
+          // Register broadcasted txid immediately in knownTxidsRef so polling doesn't duplicate
+          if (broadcastResult.txId && activeWallet?.id) {
+            if (!knownTxidsRef.current[activeWallet.id]) {
+              knownTxidsRef.current[activeWallet.id] = new Set();
+            }
+            knownTxidsRef.current[activeWallet.id].add(broadcastResult.txId);
+          }
+
+          // Trigger native notification for output transaction sent out from the wallet
+          const shortTo = toAddress ? `${toAddress.slice(0, 10)}...${toAddress.slice(-6)}` : '';
+          triggerNativeNotification(
+            'Sent Kaspa 🔴',
+            `-${amountKas} KAS sent from your wallet${shortTo ? ` to ${shortTo}` : ''}`,
+            {
+              txid: broadcastResult.txId,
+              type: 'broadcast',
+              amount: String(amountKas),
+            }
+          );
           
           return { success: true, txid: broadcastResult.txId, inputs: selectedUtxos };
         } else {
@@ -3739,6 +3852,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setIsWalletSetupOpen(false);
         unifiedAuthService.completeUnlock('password');
 
+        const wasPendingTx = !!pendingTransaction;
+
         // Handle pending transaction authorization if present
         if (pendingTransaction) {
           try {
@@ -3765,6 +3880,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 cleanInput,
                 buildAadContext('PASSPHRASE', activeWalletToUnlock.id)
               );
+            } else if (pendingTransaction.passphrase) {
+              passphraseToUse = pendingTransaction.passphrase;
             } else {
               passphraseToUse = activeWalletToUnlock.passphrase || undefined;
             }
@@ -3829,7 +3946,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           refreshBalance({ force: true });
         }, 0);
 
-        showToast('Wallet unlocked', 'success');
+        if (!wasPendingTx) {
+          showToast('Wallet unlocked', 'success');
+        }
         return true;
       }
       unifiedAuthService.failAuthentication('Incorrect password');

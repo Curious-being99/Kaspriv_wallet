@@ -131,6 +131,7 @@ class MainActivity : BridgeActivity() {
         // Register custom local Capacitor plugins
         registerPlugin(HardwareVaultPlugin::class.java)
         registerPlugin(SQLitePlugin::class.java)
+        registerPlugin(DecentralizedNotificationPlugin::class.java)
 
         super.onCreate(savedInstanceState)
 
@@ -144,6 +145,13 @@ class MainActivity : BridgeActivity() {
             }
         } catch (e: Exception) {
             // Ignore if web view is not available
+        }
+
+        // Schedule decentralized background on-chain transaction monitoring
+        try {
+            KaspaSyncWorker.schedulePeriodicSync(this)
+        } catch (e: Exception) {
+            // Ignore if background scheduler fails
         }
     }
 }

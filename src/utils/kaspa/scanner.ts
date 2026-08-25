@@ -43,7 +43,7 @@ export async function scanKaspaWalletChain(
   passphrase?: string,
   prefix: string = 'kaspa',
   addressType: 'P2SH' = 'P2SH',
-  gapLimit: number = 50,
+  gapLimit: number = 100,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<ScannedWalletChainResult> {
   const seedArray = await getCachedSeed(mnemonic, passphrase || '');
@@ -174,6 +174,7 @@ export async function scanKaspaWalletChain(
         const changeVal = isChange ? 1 : 0;
         const batchSize = 5;
         let consecutiveEmptyBatches = 0;
+        let foundActiveInChain = false;
 
         for (let i = 0; i < gapLimit; i += batchSize) {
           const batchIndices = Array.from({ length: Math.min(batchSize, gapLimit - i) }, (_, idx) => i + idx);
@@ -199,16 +200,18 @@ export async function scanKaspaWalletChain(
           const batchAddrs = batchItems.map(item => item.addr);
           let batchHasActivity = false;
 
-          // 1. Fetch bulk balances and bulk UTXOs for this batch
-          const [bulkBalancesRes, bulkUtxosRes] = await Promise.all([
+          // 1. Fetch bulk balances, bulk UTXOs, and transaction history concurrently for this batch
+          const [bulkBalancesRes, bulkUtxosRes, batchTxsList] = await Promise.all([
             fetchKaspaAddressesBalances(batchAddrs).catch(() => null),
             fetchKaspaAddressesUtxos(batchAddrs).catch(() => null),
+            Promise.all(batchItems.map(item => fetchKaspaAddressTransactions(item.addr, 50).catch(() => []))),
           ]);
 
           const utxosByAddress = new Map<string, any[]>();
           if (bulkUtxosRes && Array.isArray(bulkUtxosRes)) {
             bulkUtxosRes.forEach((u: any) => {
-              const uAddr = u.address || (batchAddrs.length === 1 ? batchAddrs[0] : '');
+              const rawAddr = u.address || (batchAddrs.length === 1 ? batchAddrs[0] : '');
+              const uAddr = rawAddr ? rawAddr.trim().toLowerCase() : '';
               if (uAddr) {
                 const list = utxosByAddress.get(uAddr) || [];
                 list.push(u);
@@ -217,13 +220,23 @@ export async function scanKaspaWalletChain(
             });
           }
 
-          for (const item of batchItems) {
+          const normBulkBalances: { [lowAddr: string]: bigint | null } = {};
+          if (bulkBalancesRes && typeof bulkBalancesRes === 'object') {
+            Object.entries(bulkBalancesRes).forEach(([k, v]) => {
+              if (k) normBulkBalances[k.trim().toLowerCase()] = v;
+            });
+          }
+
+          for (let idx = 0; idx < batchItems.length; idx++) {
+            const item = batchItems[idx];
+            const lowAddr = item.addr.trim().toLowerCase();
+            const addrTxs = batchTxsList[idx] || [];
             totalScanned++;
             
             // Get balance for this address
             let addrBal: bigint = 0n;
-            if (bulkBalancesRes && bulkBalancesRes[item.addr] !== undefined && bulkBalancesRes[item.addr] !== null) {
-              addrBal = bulkBalancesRes[item.addr]!;
+            if (normBulkBalances[lowAddr] !== undefined && normBulkBalances[lowAddr] !== null) {
+              addrBal = normBulkBalances[lowAddr]!;
             } else {
               // Fallback single address balance fetch
               const singleBal = await fetchKaspaAddressBalance(item.addr).catch(() => null);
@@ -231,7 +244,7 @@ export async function scanKaspaWalletChain(
             }
 
             // Get UTXOs for this address
-            let addrUtxos: any[] = utxosByAddress.get(item.addr) || [];
+            let addrUtxos: any[] = utxosByAddress.get(lowAddr) || [];
             if (addrUtxos.length === 0 && addrBal > 0n) {
               // Fallback single address utxo query if balance exists
               const singleUtxos = await fetchKaspaAddressUtxos(item.addr).catch(() => null);
@@ -245,12 +258,14 @@ export async function scanKaspaWalletChain(
               0n
             );
             const currentBal = utxosSum > addrBal ? utxosSum : addrBal;
+            const hasTxs = Array.isArray(addrTxs) && addrTxs.length > 0;
 
-            if (currentBal > 0n || addrUtxos.length > 0) {
+            if (currentBal > 0n || addrUtxos.length > 0 || hasTxs) {
               batchHasActivity = true;
+              foundActiveInChain = true;
 
               // Check if address is already in discoveredAddresses
-              const existingIdx = discoveredAddresses.findIndex(d => d.address === item.addr);
+              const existingIdx = discoveredAddresses.findIndex(d => d.address.toLowerCase() === lowAddr);
               if (existingIdx >= 0) {
                 discoveredAddresses[existingIdx].balanceSompi = currentBal;
               } else {
@@ -276,17 +291,14 @@ export async function scanKaspaWalletChain(
                 });
               });
 
-              // Fetch transactions only for active addresses to avoid flooding the node
-              fetchKaspaAddressTransactions(item.addr).then(txs => {
-                if (txs && Array.isArray(txs)) {
-                  txs.forEach((t: any) => {
-                    const txid = typeof t === 'string' ? t : (t.transaction_id || t.txid || t.id || '');
-                    if (txid && !allTransactionsMap.has(txid)) {
-                      allTransactionsMap.set(txid, typeof t === 'string' ? { transaction_id: txid } : t);
-                    }
-                  });
-                }
-              }).catch(() => {});
+              if (Array.isArray(addrTxs)) {
+                addrTxs.forEach((t: any) => {
+                  const txid = typeof t === 'string' ? t : (t.transaction_id || t.txid || t.id || '');
+                  if (txid && !allTransactionsMap.has(txid)) {
+                    allTransactionsMap.set(txid, typeof t === 'string' ? { transaction_id: txid } : t);
+                  }
+                });
+              }
             }
           }
 
@@ -304,8 +316,11 @@ export async function scanKaspaWalletChain(
             consecutiveEmptyBatches = 0;
           } else {
             consecutiveEmptyBatches++;
-            // Stop early if 10 consecutive empty batches (50 empty addresses) and reached at least 30 addresses
-            if (consecutiveEmptyBatches >= 10 && i >= 30) {
+            // Stop after 4 consecutive empty batches (20 empty addresses) if an active address was found in this chain,
+            // or after 10 consecutive empty batches (50 addresses) if no active address found yet.
+            if (foundActiveInChain && consecutiveEmptyBatches >= 4) {
+              break;
+            } else if (!foundActiveInChain && consecutiveEmptyBatches >= 10) {
               break;
             }
           }
@@ -336,7 +351,7 @@ export async function scanKaspaWalletChain(
 export async function scanKaspaWalletChainPublic(
   deriver: PublicAddressDeriver,
   addressType: 'P2SH' = 'P2SH',
-  gapLimit: number = 50,
+  gapLimit: number = 100,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<{
   totalBalanceSompi: bigint;
@@ -363,6 +378,7 @@ export async function scanKaspaWalletChainPublic(
     const chainType = isChange ? 'change' : 'receive';
     const batchSize = 5;
     let consecutiveEmptyBatches = 0;
+    let foundActiveInChain = false;
 
     for (let i = 0; i < gapLimit; i += batchSize) {
       const batchIndices = Array.from({ length: Math.min(batchSize, gapLimit - i) }, (_, idx) => i + idx);
@@ -384,15 +400,17 @@ export async function scanKaspaWalletChainPublic(
       const batchAddrs = activeBatchItems.map(item => item.addr);
       let batchHasActivity = false;
 
-      const [bulkBalancesRes, bulkUtxosRes] = await Promise.all([
+      const [bulkBalancesRes, bulkUtxosRes, batchTxsList] = await Promise.all([
         fetchKaspaAddressesBalances(batchAddrs).catch(() => null),
         fetchKaspaAddressesUtxos(batchAddrs).catch(() => null),
+        Promise.all(activeBatchItems.map(item => fetchKaspaAddressTransactions(item.addr, 50).catch(() => []))),
       ]);
 
       const utxosByAddress = new Map<string, any[]>();
       if (bulkUtxosRes && Array.isArray(bulkUtxosRes)) {
         bulkUtxosRes.forEach((u: any) => {
-          const uAddr = u.address || (batchAddrs.length === 1 ? batchAddrs[0] : '');
+          const rawAddr = u.address || (batchAddrs.length === 1 ? batchAddrs[0] : '');
+          const uAddr = rawAddr ? rawAddr.trim().toLowerCase() : '';
           if (uAddr) {
             const list = utxosByAddress.get(uAddr) || [];
             list.push(u);
@@ -401,18 +419,28 @@ export async function scanKaspaWalletChainPublic(
         });
       }
 
-      for (const item of activeBatchItems) {
+      const normBulkBalances: { [lowAddr: string]: bigint | null } = {};
+      if (bulkBalancesRes && typeof bulkBalancesRes === 'object') {
+        Object.entries(bulkBalancesRes).forEach(([k, v]) => {
+          if (k) normBulkBalances[k.trim().toLowerCase()] = v;
+        });
+      }
+
+      for (let idx = 0; idx < activeBatchItems.length; idx++) {
+        const item = activeBatchItems[idx];
+        const lowAddr = item.addr.trim().toLowerCase();
+        const addrTxs = batchTxsList[idx] || [];
         totalScanned++;
 
         let addrBal: bigint = 0n;
-        if (bulkBalancesRes && bulkBalancesRes[item.addr] !== undefined && bulkBalancesRes[item.addr] !== null) {
-          addrBal = bulkBalancesRes[item.addr]!;
+        if (normBulkBalances[lowAddr] !== undefined && normBulkBalances[lowAddr] !== null) {
+          addrBal = normBulkBalances[lowAddr]!;
         } else {
           const singleBal = await fetchKaspaAddressBalance(item.addr).catch(() => null);
           if (singleBal !== null) addrBal = singleBal;
         }
 
-        let addrUtxos: any[] = utxosByAddress.get(item.addr) || [];
+        let addrUtxos: any[] = utxosByAddress.get(lowAddr) || [];
         if (addrUtxos.length === 0 && addrBal > 0n) {
           const singleUtxos = await fetchKaspaAddressUtxos(item.addr).catch(() => null);
           if (singleUtxos && Array.isArray(singleUtxos)) {
@@ -425,11 +453,13 @@ export async function scanKaspaWalletChainPublic(
           0n
         );
         const currentBal = utxosSum > addrBal ? utxosSum : addrBal;
+        const hasTxs = Array.isArray(addrTxs) && addrTxs.length > 0;
 
-        if (currentBal > 0n || addrUtxos.length > 0) {
+        if (currentBal > 0n || addrUtxos.length > 0 || hasTxs) {
           batchHasActivity = true;
+          foundActiveInChain = true;
 
-          const existingIdx = discoveredAddresses.findIndex(d => d.address === item.addr);
+          const existingIdx = discoveredAddresses.findIndex(d => d.address.toLowerCase() === lowAddr);
           if (existingIdx >= 0) {
             discoveredAddresses[existingIdx].balanceSompi = currentBal;
           } else {
@@ -455,16 +485,14 @@ export async function scanKaspaWalletChainPublic(
             });
           });
 
-          fetchKaspaAddressTransactions(item.addr).then(txs => {
-            if (txs && Array.isArray(txs)) {
-              txs.forEach((t: any) => {
-                const txid = typeof t === 'string' ? t : (t.transaction_id || t.txid || t.id || '');
-                if (txid && !allTransactionsMap.has(txid)) {
-                  allTransactionsMap.set(txid, typeof t === 'string' ? { transaction_id: txid } : t);
-                }
-              });
-            }
-          }).catch(() => {});
+          if (Array.isArray(addrTxs)) {
+            addrTxs.forEach((t: any) => {
+              const txid = typeof t === 'string' ? t : (t.transaction_id || t.txid || t.id || '');
+              if (txid && !allTransactionsMap.has(txid)) {
+                allTransactionsMap.set(txid, typeof t === 'string' ? { transaction_id: txid } : t);
+              }
+            });
+          }
         }
       }
 
@@ -481,7 +509,9 @@ export async function scanKaspaWalletChainPublic(
         consecutiveEmptyBatches = 0;
       } else {
         consecutiveEmptyBatches++;
-        if (consecutiveEmptyBatches >= 10 && i >= 30) {
+        if (foundActiveInChain && consecutiveEmptyBatches >= 4) {
+          break;
+        } else if (!foundActiveInChain && consecutiveEmptyBatches >= 10) {
           break;
         }
       }

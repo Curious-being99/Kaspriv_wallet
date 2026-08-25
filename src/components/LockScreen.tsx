@@ -20,6 +20,9 @@ export const LockScreen: React.FC = () => {
     setIsPendingLogout,
     confirmLogout,
     indexingState,
+    pendingTransaction,
+    setPendingTransaction,
+    setIsSendOpen,
   } = useWallet();
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
   const [password, setPassword] = useState('');
@@ -27,6 +30,8 @@ export const LockScreen: React.FC = () => {
   const [isAuthenticatingBiometrics, setIsAuthenticatingBiometrics] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  const isPendingTx = !!pendingTransaction;
 
   // Auto-trigger Biometrics if enabled, or Virtual Keyboard when LockScreen is shown
   useEffect(() => {
@@ -77,6 +82,8 @@ export const LockScreen: React.FC = () => {
         if (isPendingLogout) {
           setIsPendingLogout(false);
           await confirmLogout();
+        } else if (isPendingTx) {
+          setIsSendOpen(true);
         } else {
           setActiveBottomTab('home');
         }
@@ -110,6 +117,8 @@ export const LockScreen: React.FC = () => {
         if (isPendingLogout) {
           setIsPendingLogout(false);
           await confirmLogout();
+        } else if (isPendingTx) {
+          setIsSendOpen(true);
         } else {
           setActiveBottomTab('home');
         }
@@ -156,10 +165,14 @@ export const LockScreen: React.FC = () => {
           <h2 className={`font-bold text-slate-100 tracking-tight transition-all duration-300 ${
             isKeyboardOpen ? 'text-lg' : 'text-xl'
           }`}>
-            {isPendingLogout ? 'Unlock to Log Out' : 'Wallet Locked'}
+            {isPendingLogout ? 'Unlock to Log Out' : isPendingTx ? 'Authorize Transaction' : 'Wallet Locked'}
           </h2>
           <p className="text-xs text-slate-400">
-            {isPendingLogout ? 'Enter your password to authorize log out' : 'Enter your password to continue'}
+            {isPendingLogout
+              ? 'Enter your password to authorize log out'
+              : isPendingTx
+              ? 'Enter your password or use biometrics to broadcast'
+              : 'Enter your password to continue'}
           </p>
         </div>
 
@@ -195,7 +208,13 @@ export const LockScreen: React.FC = () => {
                 className="w-full py-1.5 text-[#70C7BA]/80 hover:text-[#70C7BA] text-xs font-medium transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
               >
                 <Fingerprint className="w-4 h-4 text-[#70C7BA]/80" />
-                <span>{isAuthenticatingBiometrics ? 'Prompting Biometrics...' : 'Tap fingerprint icon to unlock with Biometrics'}</span>
+                <span>
+                  {isAuthenticatingBiometrics
+                    ? 'Prompting Biometrics...'
+                    : isPendingTx
+                    ? 'Tap fingerprint icon to authorize & broadcast'
+                    : 'Tap fingerprint icon to unlock with Biometrics'}
+                </span>
               </button>
             )}
             
@@ -229,10 +248,29 @@ export const LockScreen: React.FC = () => {
               ) : (
                 <>
                   <Unlock className="w-4 h-4" />
-                  <span>{isPendingLogout ? 'Unlock & Log Out' : 'Unlock'}</span>
+                  <span>
+                    {isPendingLogout ? 'Unlock & Log Out' : isPendingTx ? 'Broadcast' : 'Unlock'}
+                  </span>
                 </>
               )}
             </button>
+
+            {isPendingTx && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (pendingTransaction?.onFailure) {
+                    pendingTransaction.onFailure('Transaction authorization cancelled by user.');
+                  }
+                  setPendingTransaction(null);
+                  setIsLocked(false);
+                  closeKeyboard();
+                }}
+                className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                Cancel Transaction
+              </button>
+            )}
 
             {isPendingLogout && (
               <button
@@ -242,7 +280,7 @@ export const LockScreen: React.FC = () => {
                   setIsLocked(false);
                   closeKeyboard();
                 }}
-                className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
+                className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
               >
                 Cancel Log Out
               </button>

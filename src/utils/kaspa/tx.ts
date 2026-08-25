@@ -1,4 +1,5 @@
 import { createSignedTransactionWasm } from './wasmTx';
+import { payToScriptHashScript } from '@kasdk/web';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { NetworkType } from '../../types';
 
@@ -22,12 +23,31 @@ function parseHexBytes(hex: string): Uint8Array {
 }
 
 /**
- * Create a P2SH Redeem Script from a public key or custom script bytes
+ * Create a P2SH Redeem Script from a public key or custom script bytes.
+ * Relies on the official Rusty Kaspa SDK (payToScriptHashScript) with pure JS fallback.
  */
 export function createP2SHRedeemScript(publicKeyHex: string): { redeemScriptHex: string; scriptHashHex: string } {
   const pubKey = parseHexBytes(publicKeyHex);
   const xOnly = pubKey.length === 33 ? pubKey.slice(1) : pubKey;
+  const xOnlyHex = Array.from(xOnly).map(b => b.toString(16).padStart(2, '0')).join('');
+  const redeemScriptHex = '20' + xOnlyHex + 'ac';
 
+  // 1. Rely on official Rusty Kaspa WASM SDK
+  try {
+    const spk = payToScriptHashScript(redeemScriptHex);
+    // spk.script format: aa20<32-byte-hash>87
+    if (spk && spk.script && spk.script.startsWith('aa20') && spk.script.endsWith('87')) {
+      const scriptHashHex = spk.script.slice(4, -2);
+      return {
+        redeemScriptHex,
+        scriptHashHex,
+      };
+    }
+  } catch {
+    // Fallback if WASM is not yet active
+  }
+
+  // 2. Pure JS fallback
   const redeemScript = new Uint8Array(34);
   redeemScript[0] = 0x20; // PUSH 32 bytes
   redeemScript.set(xOnly, 1);

@@ -13,10 +13,10 @@
     "cap:sync": "cap sync"
   },
   "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "^8.1.0",
     "@capacitor/android": "^8.5.0",
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.0",
-    "@capacitor/local-notifications": "^8.3.1",
     "@kasdk/nodejs": "^0.15.2",
     "@kasdk/web": "^0.15.2",
     "@kaspa/core-lib": "1.6.5",

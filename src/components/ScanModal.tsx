@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useWallet } from '../context/WalletContext';
 import { validateKaspaAddress } from '../utils/kaspa';
+import { isNative } from '../utils/platform';
+import { scanNativeQrCode } from '../utils/nativeScanner';
 import { X, Camera, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -68,12 +70,47 @@ export const ScanModal: React.FC = () => {
       setIsSendOpen(true);
       showToast('Address scanned successfully!', 'success');
     } else {
+      setIsScanOpen(false);
       showToast(`Invalid Kaspa Address scanned: ${validationResult.error || 'Check network type'}`, 'error');
     }
   }, [network, setIsScanOpen, setIsSendOpen, showToast]);
 
+  // Native device camera scanning flow (Android APK / iOS Native)
+  useEffect(() => {
+    if (!isScanOpen || !isNative()) return;
+
+    let isMounted = true;
+    const runNativeScan = async () => {
+      try {
+        const result = await scanNativeQrCode();
+        if (!isMounted) return;
+        if (result && result.text) {
+          handleScannedText(result.text);
+        } else {
+          // User dismissed or canceled native camera scan
+          setIsScanOpen(false);
+        }
+      } catch (err: any) {
+        if (!isMounted) return;
+        setIsScanOpen(false);
+        if (err?.message?.toLowerCase().includes('permission')) {
+          showToast('Camera permission required to scan QR codes.', 'error');
+        } else {
+          console.error('Native camera scan error:', err);
+          showToast(err?.message || 'Failed to start native camera scan.', 'error');
+        }
+      }
+    };
+
+    runNativeScan();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isScanOpen, handleScannedText, setIsScanOpen, showToast]);
+
   const startScanner = React.useCallback(async (cameraId: string) => {
-    if (isStartingRef.current) return;
+    if (isStartingRef.current || isNative()) return;
     try {
       isStartingRef.current = true;
       setIsInitializing(true);
@@ -119,9 +156,9 @@ export const ScanModal: React.FC = () => {
     }
   }, [handleScannedText]);
 
-  // Request permissions and list cameras
+  // Request permissions and list cameras for Web fallback
   useEffect(() => {
-    if (!isScanOpen) {
+    if (!isScanOpen || isNative()) {
       return;
     }
 
@@ -170,7 +207,8 @@ export const ScanModal: React.FC = () => {
     startScanner(id);
   };
 
-  if (!isScanOpen) return null;
+  // If scanner is not open or if native camera is running overlay, don't render web DOM modal
+  if (!isScanOpen || isNative()) return null;
 
   return (
     <AnimatePresence>
@@ -303,3 +341,4 @@ export const ScanModal: React.FC = () => {
     </AnimatePresence>
   );
 };
+
