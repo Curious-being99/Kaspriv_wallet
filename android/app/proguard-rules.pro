@@ -25,6 +25,12 @@
 -keep @androidx.room.Entity class *
 -dontwarn androidx.room.**
 
+# Dontwarn for optional/external native dependencies
+-dontwarn net.zetetic.database.sqlcipher.**
+-dontwarn org.apache.commons.io.**
+-dontwarn org.json.**
+-dontwarn org.sol4k.**
+
 # Keep WebKit Javascript Interfaces
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
