@@ -2,8 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useWallet } from '../context/WalletContext';
 import { validateKaspaAddress } from '../utils/kaspa';
-import { isNative } from '../utils/platform';
-import { scanNativeQrCode } from '../utils/nativeScanner';
 import { X, Camera, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -75,42 +73,8 @@ export const ScanModal: React.FC = () => {
     }
   }, [network, setIsScanOpen, setIsSendOpen, showToast]);
 
-  // Native device camera scanning flow (Android APK / iOS Native)
-  useEffect(() => {
-    if (!isScanOpen || !isNative()) return;
-
-    let isMounted = true;
-    const runNativeScan = async () => {
-      try {
-        const result = await scanNativeQrCode();
-        if (!isMounted) return;
-        if (result && result.text) {
-          handleScannedText(result.text);
-        } else {
-          // User dismissed or canceled native camera scan
-          setIsScanOpen(false);
-        }
-      } catch (err: any) {
-        if (!isMounted) return;
-        setIsScanOpen(false);
-        if (err?.message?.toLowerCase().includes('permission')) {
-          showToast('Camera permission required to scan QR codes.', 'error');
-        } else {
-          console.error('Native camera scan error:', err);
-          showToast(err?.message || 'Failed to start native camera scan.', 'error');
-        }
-      }
-    };
-
-    runNativeScan();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isScanOpen, handleScannedText, setIsScanOpen, showToast]);
-
   const startScanner = React.useCallback(async (cameraId: string) => {
-    if (isStartingRef.current || isNative()) return;
+    if (isStartingRef.current) return;
     try {
       isStartingRef.current = true;
       setIsInitializing(true);
@@ -156,9 +120,9 @@ export const ScanModal: React.FC = () => {
     }
   }, [handleScannedText]);
 
-  // Request permissions and list cameras for Web fallback
+  // Request permissions and list cameras
   useEffect(() => {
-    if (!isScanOpen || isNative()) {
+    if (!isScanOpen) {
       return;
     }
 
@@ -190,7 +154,7 @@ export const ScanModal: React.FC = () => {
         .catch((err) => {
           console.error('Camera permission/access error:', err);
           setHasPermission(false);
-          setScannerError('Camera access denied or blocked by browser policies.');
+          setScannerError('Camera access denied or blocked by policies.');
           setIsInitializing(false);
         });
     }, 300);
@@ -207,8 +171,7 @@ export const ScanModal: React.FC = () => {
     startScanner(id);
   };
 
-  // If scanner is not open or if native camera is running overlay, don't render web DOM modal
-  if (!isScanOpen || isNative()) return null;
+  if (!isScanOpen) return null;
 
   return (
     <AnimatePresence>

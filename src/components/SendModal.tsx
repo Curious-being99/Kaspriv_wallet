@@ -36,8 +36,6 @@ import {
   Scan,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { isNative } from '../utils/platform';
-import { scanNativeQrCode } from '../utils/nativeScanner';
 
 interface SuccessTxData {
   txid: string;
@@ -617,24 +615,8 @@ export const SendModal: React.FC = () => {
                 <div className="flex items-center gap-2.5">
                   <button
                     type="button"
-                    onClick={async () => {
-                      if (isNative()) {
-                        try {
-                          const result = await scanNativeQrCode();
-                          if (result && result.text) {
-                            let clean = result.text.trim();
-                            if (clean.toLowerCase().startsWith('kaspa:') || clean.toLowerCase().startsWith('kaspadev:')) {
-                              clean = clean.split('?')[0];
-                            }
-                            handleAddressChange(clean);
-                            showToast('Address scanned successfully!', 'success');
-                          }
-                        } catch (e: any) {
-                          showToast(e?.message || 'Failed to open native camera scan', 'error');
-                        }
-                      } else {
-                        setIsScanOpen(true);
-                      }
+                    onClick={() => {
+                      setIsScanOpen(true);
                     }}
                     className="text-[10px] text-[#70C7BA] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
                   >

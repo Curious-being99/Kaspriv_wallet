@@ -132,6 +132,7 @@ class MainActivity : BridgeActivity() {
         registerPlugin(HardwareVaultPlugin::class.java)
         registerPlugin(SQLitePlugin::class.java)
         registerPlugin(DecentralizedNotificationPlugin::class.java)
+        registerPlugin(NativeScannerPlugin::class.java)
 
         super.onCreate(savedInstanceState)
 
