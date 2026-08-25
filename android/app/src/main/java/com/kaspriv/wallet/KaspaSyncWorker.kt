@@ -207,7 +207,7 @@ class KaspaSyncWorker(
             val editor = prefs.edit()
             editor.putStringSet("initialized_wallets_set", initializedWallets)
             if (notifiedSet.size > 1000) {
-                val trimmed = notifiedSet.takeLast(500).toSet()
+                val trimmed = notifiedSet.toList().takeLast(500).toSet()
                 editor.putStringSet(KEY_NOTIFIED_TXIDS, trimmed)
             } else {
                 editor.putStringSet(KEY_NOTIFIED_TXIDS, notifiedSet)
