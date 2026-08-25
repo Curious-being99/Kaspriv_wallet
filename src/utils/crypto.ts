@@ -8,16 +8,23 @@ import wasmUrl from '@kasdk/web/kaspa_bg.wasm?url';
  */
 let wasmInitPromise: Promise<void> | null = null;
 
-// Resolve the WASM URL to an absolute URL to prevent relative resolution errors
+// Resolve the WASM URL more robustly
 let resolvedWasmUrl = wasmUrl;
-if (typeof self !== 'undefined' && self.location && self.location.origin && self.location.origin !== 'null') {
-  try {
-    // Standard URL resolution: if wasmUrl is absolute, it stays absolute.
-    // If it's relative (e.g. /assets/...), it resolves against the current origin.
-    resolvedWasmUrl = new URL(wasmUrl, self.location.origin).href;
-  } catch (e) {
-    console.warn('WASM URL resolution error:', e);
+try {
+  // If wasmUrl is relative, it needs to be resolved.
+  // In many environments (Capacitor, AI Studio), the asset is relative to the root.
+  const origin = (typeof self !== 'undefined' && self.location && self.location.origin !== 'null') 
+    ? self.location.origin 
+    : (typeof window !== 'undefined' ? window.location.origin : '');
+    
+  if (origin && wasmUrl.startsWith('/')) {
+    resolvedWasmUrl = new URL(wasmUrl, origin).href;
+  } else if (origin) {
+    // If it's relative like "assets/...", resolve against origin
+    resolvedWasmUrl = new URL(wasmUrl, origin).href;
   }
+} catch (e) {
+  console.warn('WASM URL resolution error:', e);
 }
 
 /**
@@ -27,34 +34,60 @@ export async function ensureKaspaWasm(): Promise<void> {
   if (!wasmInitPromise) {
     wasmInitPromise = (async () => {
       console.log('Initializing Kaspa WASM from:', resolvedWasmUrl);
-      try {
-        await initKaspaWasm({ module_or_path: resolvedWasmUrl });
-        console.log('Kaspa WASM initialized successfully via URL');
-      } catch (err: any) {
-        if (err.message?.includes('already initialized')) {
-          console.log('Kaspa WASM already initialized (caught from init error)');
-          return;
-        }
-        console.warn('Kaspa WASM initialization via URL failed, attempting fetch fallback:', err.message || err);
-        // Transport fallback for Android/Capacitor environments where fetch via WASM internally fails
+      
+      const tryInit = async (url: any): Promise<boolean> => {
         try {
-          const response = await fetch(resolvedWasmUrl);
-          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-          const buffer = await response.arrayBuffer();
-          await initKaspaWasm({ module_or_path: buffer });
-          console.log('Kaspa WASM initialized successfully via buffer fallback');
-        } catch (retryErr: any) {
-           if (!retryErr.message?.includes('already initialized')) {
-              console.error('Kaspa WASM initialization failed completely:', retryErr.message || retryErr);
-              wasmInitPromise = null; // Allow retry on next call
-              throw new Error(`Failed to initialize official Kaspa WASM SDK: ${retryErr.message || retryErr}`);
-           }
-           console.log('Kaspa WASM already initialized (caught from retry error)');
+          await initKaspaWasm(url);
+          console.log('Kaspa WASM initialized successfully');
+          return true;
+        } catch (err: any) {
+          if (err.message?.includes('already initialized')) {
+            console.log('Kaspa WASM already initialized');
+            return true;
+          }
+          console.warn(`WASM init failed:`, err.message || err);
+          return false;
         }
+      };
+
+      // Attempt 1: Direct module_or_path object (preferred by the SDK)
+      if (await tryInit({ module_or_path: resolvedWasmUrl })) return;
+
+      // Attempt 2: Direct string URL
+      if (await tryInit(resolvedWasmUrl)) return;
+
+      // Attempt 3: Fetch and buffer (handles some proxy/mobile issues)
+      try {
+        console.log('Attempting fetch fallback for:', resolvedWasmUrl);
+        const response = await fetch(resolvedWasmUrl);
+        if (response.ok) {
+          const buffer = await response.arrayBuffer();
+          if (await tryInit({ module_or_path: buffer })) return;
+        }
+      } catch (fetchErr) {
+        console.warn('Fetch fallback failed:', fetchErr);
       }
+
+      // Attempt 4: Last ditch - try a hardcoded relative path if vite didn't resolve correctly
+      const relativeFallback = '/assets/kaspa_bg.wasm'; 
+      try {
+        const origin = (typeof self !== 'undefined' && self.location && self.location.origin !== 'null') ? self.location.origin : '';
+        if (origin) {
+          const fallbackUrl = new URL(relativeFallback, origin).href;
+          const response = await fetch(fallbackUrl);
+          if (response.ok) {
+            const buffer = await response.arrayBuffer();
+            if (await tryInit({ module_or_path: buffer })) return;
+          }
+        }
+      } catch (e) {}
+
+      // If all failed
+      wasmInitPromise = null; // Allow retry on next call
+      throw new Error(`Failed to initialize official Kaspa WASM SDK. URL attempted: ${resolvedWasmUrl}. Please verify the WASM asset exists.`);
     })();
   }
-  await wasmInitPromise;
+  return wasmInitPromise;
 }
 
 /**

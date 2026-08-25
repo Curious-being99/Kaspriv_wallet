@@ -68,7 +68,7 @@ export async function scanKaspaWalletChain(
     const primaryChild = root.derivePath("m/44'/111111'/0'/0/0");
     const primaryXPub = primaryChild.toXPub();
     const primaryPK = primaryXPub.toPublicKey();
-    const primaryAddress = getAddressFromPublicKey(hexToBytes(primaryPK.toString()), addressType, prefix);
+    const primaryAddress = await getAddressFromPublicKey(hexToBytes(primaryPK.toString()), addressType, prefix);
     primaryPK.free();
     primaryXPub.free();
     primaryChild.free();
@@ -76,7 +76,7 @@ export async function scanKaspaWalletChain(
     const primaryChangeChild = root.derivePath("m/44'/111111'/0'/1/0");
     const primaryChangeXPub = primaryChangeChild.toXPub();
     const primaryChangePK = primaryChangeXPub.toPublicKey();
-    const primaryChangeAddress = getAddressFromPublicKey(hexToBytes(primaryChangePK.toString()), addressType, prefix);
+    const primaryChangeAddress = await getAddressFromPublicKey(hexToBytes(primaryChangePK.toString()), addressType, prefix);
     primaryChangePK.free();
     primaryChangeXPub.free();
     primaryChangeChild.free();
@@ -179,13 +179,13 @@ export async function scanKaspaWalletChain(
         for (let i = 0; i < gapLimit; i += batchSize) {
           const batchIndices = Array.from({ length: Math.min(batchSize, gapLimit - i) }, (_, idx) => i + idx);
           
-          const batchItems = batchIndices.map((idx) => {
+          const batchItems = (await Promise.all(batchIndices.map(async (idx) => {
             const path = `m/44'/${coinType}'/0'/${changeVal}/${idx}`;
             try {
               const child = root.derivePath(path);
               const xpub = child.toXPub();
               const pk = xpub.toPublicKey();
-              const addr = getAddressFromPublicKey(hexToBytes(pk.toString()), addressType, prefix);
+              const addr = await getAddressFromPublicKey(hexToBytes(pk.toString()), addressType, prefix);
               pk.free();
               xpub.free();
               child.free();
@@ -193,7 +193,7 @@ export async function scanKaspaWalletChain(
             } catch {
               return null;
             }
-          }).filter(Boolean) as { idx: number; path: string; addr: string }[];
+          }))).filter(Boolean) as { idx: number; path: string; addr: string }[];
 
           if (batchItems.length === 0) break;
 

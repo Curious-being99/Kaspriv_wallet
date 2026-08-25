@@ -55,7 +55,7 @@ export const ScanModal: React.FC = () => {
     }
   }, []);
 
-  const handleScannedText = React.useCallback((text: string) => {
+  const handleScannedText = React.useCallback(async (text: string) => {
     // Process text
     let cleanAddress = text.trim();
     
@@ -66,16 +66,21 @@ export const ScanModal: React.FC = () => {
     }
 
     // Validate Kaspa Address
-    const validationResult = validateKaspaAddress(cleanAddress, network);
-    if (validationResult.isValid) {
-      // Prefill and open Send modal
-      localStorage.setItem('kaspriv_prefill_address', cleanAddress);
+    try {
+      const validationResult = await validateKaspaAddress(cleanAddress, network);
+      if (validationResult.isValid) {
+        // Prefill and open Send modal
+        localStorage.setItem('kaspriv_prefill_address', cleanAddress);
+        setIsScanOpen(false);
+        setIsSendOpen(true);
+        showToast('Address scanned successfully!', 'success');
+      } else {
+        setIsScanOpen(false);
+        showToast(`Invalid Kaspa Address scanned: ${validationResult.error || 'Check network type'}`, 'error');
+      }
+    } catch (err) {
       setIsScanOpen(false);
-      setIsSendOpen(true);
-      showToast('Address scanned successfully!', 'success');
-    } else {
-      setIsScanOpen(false);
-      showToast(`Invalid Kaspa Address scanned: ${validationResult.error || 'Check network type'}`, 'error');
+      showToast('Validation service still starting. Please try again in a moment.', 'warning');
     }
   }, [network, setIsScanOpen, setIsSendOpen, showToast]);
 

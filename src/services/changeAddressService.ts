@@ -74,7 +74,7 @@ export async function deriveChangeAddress(
 
     const pk = child.toPrivateKey();
     const pubKey = pk.toPublicKey();
-    const address = getAddressFromPublicKey(hexToBytes(pubKey.toString()), addressType, prefix);
+    const address = await getAddressFromPublicKey(hexToBytes(pubKey.toString()), addressType, prefix);
 
     pk.free();
     pubKey.free();
@@ -96,15 +96,15 @@ export async function deriveChangeAddress(
 /**
  * Derives a Change Address strictly from a Public Key (without touching private keys/seeds).
  */
-export function deriveChangeAddressFromPublicKey(
+export async function deriveChangeAddressFromPublicKey(
   publicKey: Uint8Array,
   index: number,
   prefix: string = 'kaspa',
   addressType: 'P2SH' = 'P2SH',
   coinType: number = KASPA_COIN_TYPE,
   account: number = KASPA_ACCOUNT
-): ChangeAddressInfo {
-  const address = getAddressFromPublicKey(publicKey, addressType, prefix);
+): Promise<ChangeAddressInfo> {
+  const address = await getAddressFromPublicKey(publicKey, addressType, prefix);
   const derivationPath = `m/44'/${coinType}'/${account}'/${CHANGE_CHAIN}/${index}`;
 
   return {

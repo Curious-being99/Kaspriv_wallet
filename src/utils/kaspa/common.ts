@@ -1,3 +1,4 @@
+import { ensureKaspaWasm } from '../crypto';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { concatBytes } from '@noble/hashes/utils.js';
@@ -38,8 +39,6 @@ export let kaspaWasmModule: any = null;
 
 export const SOMPI_PER_KAS = 100_000_000n;
 
-let isKaspaInit = false;
-
 export async function ensureKaspaRuntime() {
-  isKaspaInit = true;
+  await ensureKaspaWasm();
 }

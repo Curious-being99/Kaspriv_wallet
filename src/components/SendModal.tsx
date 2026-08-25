@@ -95,14 +95,18 @@ export const SendModal: React.FC = () => {
 
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
-  const handleAddressChange = React.useCallback((val: string) => {
+  const handleAddressChange = React.useCallback(async (val: string) => {
     setToAddress(val);
     if (val.trim()) {
-      const res = validateKaspaAddress(val, network);
-      if (!res.isValid) {
-        setAddressError(res.error || 'Invalid address');
-      } else {
-        setAddressError(null);
+      try {
+        const res = await validateKaspaAddress(val, network);
+        if (!res.isValid) {
+          setAddressError(res.error || 'Invalid address');
+        } else {
+          setAddressError(null);
+        }
+      } catch (err) {
+        setAddressError('Validation service starting...');
       }
     } else {
       setAddressError(null);

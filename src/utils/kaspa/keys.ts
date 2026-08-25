@@ -70,11 +70,12 @@ export async function generate24WordMnemonic(): Promise<string[]> {
  * Derive a Kaspa address from a 33-byte compressed public key or 32-byte Schnorr pubkey.
  * Utilizes exclusively the official Rusty Kaspa SDK (payToScriptHashScript + addressFromScriptPublicKey).
  */
-export function getAddressFromPublicKey(
+export async function getAddressFromPublicKey(
   publicKey: Uint8Array | string, 
   addressType: 'P2SH' = 'P2SH',
   prefix: string = 'kaspa'
-): string {
+): Promise<string> {
+  await ensureKaspaWasm();
   let pubKey: Uint8Array;
   if (typeof publicKey === 'string') {
     const clean = publicKey.startsWith('0x') ? publicKey.slice(2) : publicKey;
@@ -182,7 +183,7 @@ export async function generateDeterministicAddress(
     const pubKey = pk.toPublicKey();
     const pubKeyBytes = hexToBytes(pubKey.toString());
 
-    const addr = getAddressFromPublicKey(pubKeyBytes, addressType, prefix);
+    const addr = await getAddressFromPublicKey(pubKeyBytes, addressType, prefix);
     
     pk.free();
     pubKey.free();

@@ -177,7 +177,7 @@ export const WalletSetupModal: React.FC = () => {
           setPreviewAddress('');
         }
       } else if (mode === 'import-kpub' && kpubInput.trim()) {
-        const addr = getAddressFromPublicKey(kpubInput.trim(), type, 'kaspa');
+        const addr = await getAddressFromPublicKey(kpubInput.trim(), type, 'kaspa');
         setPreviewAddress(addr);
       } else if (mode === 'import-address' && addressInput.trim()) {
         setPreviewAddress(addressInput.trim());

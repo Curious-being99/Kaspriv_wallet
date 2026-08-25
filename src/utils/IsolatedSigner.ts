@@ -190,8 +190,8 @@ export function verifyTransactionIntent(
  * Verifies that the built transaction object actually matches the user intent.
  * This prevents the construction layer from silently deviating from what was verified.
  */
-function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): void {
-  const expectedScriptPubKey = addressToScriptPublicKey(intent.toAddress, intent.network);
+async function verifyBuiltTransaction(transaction: any, intent: UnsignedTxIntent): Promise<void> {
+  const expectedScriptPubKey = await addressToScriptPublicKey(intent.toAddress, intent.network);
 
   if (transaction.type === 'wasm') {
     // For WASM transactions, we trust the builder if the input parameters match exactly
@@ -281,7 +281,7 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
   }
 
   // 2. Verify outputs match the approved intent exactly
-  const expectedRecipientScriptPubKey = addressToScriptPublicKey(intent.toAddress, intent.network);
+  const expectedRecipientScriptPubKey = await addressToScriptPublicKey(intent.toAddress, intent.network);
   const expectedChangeAmount = totalActualInputSompi - intent.amountSompi - intent.feeSompi;
   const isSelfSend = intent.toAddress === intent.changeAddress;
 
@@ -308,7 +308,7 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
     }
   } else {
     const expectedChangeScriptPubKey = expectedChangeAmount > 0n 
-      ? addressToScriptPublicKey(intent.changeAddress, intent.network)
+      ? await addressToScriptPublicKey(intent.changeAddress, intent.network)
       : null;
 
     // Verify all outputs strictly belong to either recipient or change
@@ -576,7 +576,7 @@ export class IsolatedSigner {
       const signedTx = wasmResult.transaction;
 
       // 3. Verify the built transaction and final signed transaction against intent
-      verifyBuiltTransaction(signedTx, intent);
+      await verifyBuiltTransaction(signedTx, intent);
       await verifyFinalSignedTransaction(signedTx, intent, effectiveAddressType);
 
       return {

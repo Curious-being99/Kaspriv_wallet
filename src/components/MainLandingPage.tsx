@@ -204,17 +204,21 @@ export const MainLandingPage: React.FC = () => {
     setActiveTab('setup-password');
   };
 
-  const handleFinishImportAddress = () => {
+  const handleFinishImportAddress = async () => {
     const addr = addressInput.trim();
-    const res = validateKaspaAddress(addr, addr.startsWith('kaspatest:') ? 'testnet-10' : addr.startsWith('kaspadev:') ? 'devnet' : 'mainnet');
-    
-    if (!res.isValid) {
-      showToast(res.error || 'Invalid Kaspa address format', 'error');
-      return;
-    }
+    try {
+      const res = await validateKaspaAddress(addr, addr.startsWith('kaspatest:') ? 'testnet-10' : addr.startsWith('kaspadev:') ? 'devnet' : 'mainnet');
+      
+      if (!res.isValid) {
+        showToast(res.error || 'Invalid Kaspa address format', 'error');
+        return;
+      }
 
-    setPendingFlow('import-address');
-    setActiveTab('setup-password');
+      setPendingFlow('import-address');
+      setActiveTab('setup-password');
+    } catch (err) {
+      showToast('Validation service initializing. Please try again in a moment.', 'warning');
+    }
   };
 
   const updatePreview = React.useCallback(async (type: 'P2SH') => {

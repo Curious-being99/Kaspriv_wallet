@@ -160,7 +160,7 @@ export async function runSecurityRegressionTests(): Promise<{ passed: number; fa
   try {
     let acceptedRaw = false;
     try {
-      addressToScriptPublicKeyBytes('200000000000000000000000000000000000000000000000000000000000000000ac');
+      await addressToScriptPublicKeyBytes('200000000000000000000000000000000000000000000000000000000000000000ac');
       acceptedRaw = true;
     } catch {
       acceptedRaw = false;
@@ -190,7 +190,7 @@ export async function runSecurityRegressionTests(): Promise<{ passed: number; fa
     ];
     let allInvalid = true;
     for (const badAddr of maliciousAddresses) {
-      const res = validateKaspaAddress(badAddr, 'mainnet');
+      const res = await validateKaspaAddress(badAddr, 'mainnet');
       if (res.isValid) {
         allInvalid = false;
         errors.push(`Test 3.2 Failed: validateKaspaAddress accepted malicious address: ${badAddr}`);

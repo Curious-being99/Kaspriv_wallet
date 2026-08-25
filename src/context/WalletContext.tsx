@@ -1413,7 +1413,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         });
 
-        const allMergedTxs = parseRawKaspaTransactions(rawTxsList, addressesToFetch, wallet.receiveAddress);
+        const allMergedTxs = await parseRawKaspaTransactions(rawTxsList, addressesToFetch, wallet.receiveAddress);
 
         // Merge newly fetched live transactions with existing transactions so history discovered during import or scan is never lost
         const existingTxs = transactionsRef.current || [];
@@ -2273,7 +2273,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       } catch (e) {}
 
       // Parse Transactions & populate known historical transactions
-      const parsedTxs = parseRawKaspaTransactions(scanRes.allTransactions || [], discoveredAddressesList, scanRes.primaryAddress);
+      const parsedTxs = await parseRawKaspaTransactions(scanRes.allTransactions || [], discoveredAddressesList, scanRes.primaryAddress);
       setTransactions(parsedTxs);
       knownTxidsRef.current[newW.id] = new Set(parsedTxs.map((tx) => tx.txid).filter(Boolean));
       walletFirstFetchDone.current[newW.id] = true;
@@ -2316,7 +2316,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const parseRawKaspaTransactions = (rawTxsData: any[], addressesToMatch: string[], defaultAddress = ''): KaspaTransaction[] => {
+  const parseRawKaspaTransactions = async (rawTxsData: any[], addressesToMatch: string[], defaultAddress = ''): Promise<KaspaTransaction[]> => {
     if (!rawTxsData || !Array.isArray(rawTxsData)) return [];
     const seenTxids = new Set<string>();
     const allMergedTxs: KaspaTransaction[] = [];
@@ -2331,8 +2331,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     for (const a of addressesToMatch) {
       try {
         const network = a.toLowerCase().startsWith('kaspatest') ? 'testnet-10' : (a.toLowerCase().startsWith('kaspadev') ? 'devnet' : 'mainnet');
-        const spk = addressToScriptPublicKey(a.trim(), network as any).toLowerCase();
-        if (spk) normalizedSpks.add(spk);
+        const spk = await addressToScriptPublicKey(a.trim(), network as any);
+        if (spk) normalizedSpks.add(spk.toLowerCase());
       } catch (e) {
       }
     }
@@ -2567,7 +2567,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       } catch (e) {}
 
       // Parse and set Transactions
-      const parsedTxs = parseRawKaspaTransactions(scanRes.allTransactions || [], updatedDiscoveredAddrs, scanRes.primaryAddress);
+      const parsedTxs = await parseRawKaspaTransactions(scanRes.allTransactions || [], updatedDiscoveredAddrs, scanRes.primaryAddress);
       setTransactions(parsedTxs);
       knownTxidsRef.current[activeWallet.id] = new Set(parsedTxs.map((tx) => tx.txid).filter(Boolean));
       walletFirstFetchDone.current[activeWallet.id] = true;
@@ -2722,7 +2722,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       } catch (e) {}
 
       // Parse Transactions & mark historical transactions as known
-      const parsedTxs = parseRawKaspaTransactions(scanRes.allTransactions || [], discoveredAddressesList, scanRes.primaryAddress);
+      const parsedTxs = await parseRawKaspaTransactions(scanRes.allTransactions || [], discoveredAddressesList, scanRes.primaryAddress);
       setTransactions(parsedTxs);
       knownTxidsRef.current[newW.id] = new Set(parsedTxs.map((tx) => tx.txid).filter(Boolean));
       walletFirstFetchDone.current[newW.id] = true;
@@ -2781,16 +2781,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let targetAddress: string;
     if (isDirectAddress && kpubOrAddress.includes(':')) {
       const trimmedAddr = kpubOrAddress.trim();
-      const validation = validateKaspaAddress(trimmedAddr, network);
-      if (!validation.isValid) {
-        showToast('Invalid public key/address — import cancelled.', 'error');
-        throw new Error('Invalid public key/address — import cancelled.');
+      try {
+        const validation = await validateKaspaAddress(trimmedAddr, network);
+        if (!validation.isValid) {
+          showToast('Invalid public key/address — import cancelled.', 'error');
+          throw new Error('Invalid public key/address — import cancelled.');
+        }
+      } catch (err) {
+        showToast('Validation service initializing. Please try again.', 'warning');
+        throw err;
       }
       targetAddress = trimmedAddr;
     } else {
       try {
         // Try to derive from kpub/pubkey hex
-        targetAddress = getAddressFromPublicKey(kpubOrAddress.trim(), addressType, prefix);
+        targetAddress = await getAddressFromPublicKey(kpubOrAddress.trim(), addressType, prefix);
       } catch (e) {
         showToast('Invalid public key/address — import cancelled.', 'error');
         throw new Error('Invalid public key/address — import cancelled.');

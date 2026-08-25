@@ -3,6 +3,8 @@ import { payToScriptHashScript } from '@kasdk/web';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { NetworkType } from '../../types';
 
+import { ensureKaspaWasm } from '../crypto';
+
 function parseHexBytes(hex: string): Uint8Array {
   const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
   if (!/^[0-9a-fA-F]*$/.test(clean)) {
@@ -26,7 +28,8 @@ function parseHexBytes(hex: string): Uint8Array {
  * Create a P2SH Redeem Script from a public key or custom script bytes.
  * Relies exclusively on the official Rusty Kaspa SDK (payToScriptHashScript).
  */
-export function createP2SHRedeemScript(publicKeyHex: string): { redeemScriptHex: string; scriptHashHex: string } {
+export async function createP2SHRedeemScript(publicKeyHex: string): Promise<{ redeemScriptHex: string; scriptHashHex: string }> {
+  await ensureKaspaWasm();
   const pubKey = parseHexBytes(publicKeyHex);
   const xOnly = pubKey.length === 33 ? pubKey.slice(1) : pubKey;
   const xOnlyHex = Array.from(xOnly).map(b => b.toString(16).padStart(2, '0')).join('');

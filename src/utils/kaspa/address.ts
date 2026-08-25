@@ -1,5 +1,6 @@
 import { NetworkType } from '../../types';
 import { Address, payToAddressScript, ScriptPublicKey, addressFromScriptPublicKey } from '@kasdk/web';
+import { ensureKaspaWasm } from '../crypto';
 
 // Kaspa address version constants
 export const VERSION_P2SH = 0x08;
@@ -123,7 +124,7 @@ export function shortenAddress(address: string, leadChars: number = 10, tailChar
 /**
  * Validate Kaspa Address based on network prefix using the official Rusty Kaspa SDK
  */
-export function validateKaspaAddress(address: string, network: NetworkType = 'mainnet'): { isValid: boolean; error?: string } {
+export async function validateKaspaAddress(address: string, network: NetworkType = 'mainnet'): Promise<{ isValid: boolean; error?: string }> {
   if (!address || typeof address !== 'string') {
     return { isValid: false, error: 'Address is required' };
   }
@@ -131,6 +132,11 @@ export function validateKaspaAddress(address: string, network: NetworkType = 'ma
   const trimmed = address.trim();
 
   try {
+    // Ensure the Rust-based WASM SDK is initialized before attempting to use its classes
+    // Import dynamically to avoid top-level issues if necessary, but here we just wait for the promise
+    const { ensureKaspaWasm } = await import('../crypto');
+    await ensureKaspaWasm();
+
     // Use the official Rust-based Address class for validation
     const addr = new Address(trimmed);
     
@@ -144,6 +150,10 @@ export function validateKaspaAddress(address: string, network: NetworkType = 'ma
 
     return { isValid: true };
   } catch (err: any) {
+    // Handle the specific WASM "not initialized" error gracefully
+    if (err.message?.includes('__wbindgen') || err.message?.includes('initialized')) {
+       return { isValid: false, error: 'Initializing security module... please wait.' };
+    }
     // Detailed error reporting from the Rust core
     return { isValid: false, error: err.message || 'Invalid Kaspa address format' };
   }
@@ -194,11 +204,14 @@ export function parseKaspaUri(uriString: string): { address: string; amountKas?:
  * Helper to convert a Kaspa address into a scriptPublicKey bytes.
  * Relies exclusively on the official Rusty Kaspa SDK (payToAddressScript).
  */
-export function addressToScriptPublicKeyBytes(address: string, network: NetworkType = 'mainnet'): Uint8Array {
+export async function addressToScriptPublicKeyBytes(address: string, network: NetworkType = 'mainnet'): Promise<Uint8Array> {
   if (!address || typeof address !== 'string') {
     throw new Error('Address is required');
   }
   const trimmed = address.trim();
+
+  // Ensure WASM is ready before using SDK classes
+  await ensureKaspaWasm();
 
   // Rely on official Rusty Kaspa SDK (payToAddressScript)
   try {
@@ -223,9 +236,9 @@ export function addressToScriptPublicKeyBytes_DEPRECATED_FALLBACK(address: strin
   throw new Error("Pure JS fallback is disabled.");
 }
 
-function addressToScriptPublicKeyBytes_INTERNAL(address: string, network: NetworkType = 'mainnet'): Uint8Array {
+async function addressToScriptPublicKeyBytes_INTERNAL(address: string, network: NetworkType = 'mainnet'): Promise<Uint8Array> {
   const trimmed = address.trim();
-  const validation = validateKaspaAddress(trimmed, network);
+  const validation = await validateKaspaAddress(trimmed, network);
   if (!validation.isValid) {
     throw new Error(`Invalid address or network mismatch: ${validation.error || 'validation failed'}`);
   }
@@ -279,8 +292,9 @@ function addressToScriptPublicKeyBytes_INTERNAL(address: string, network: Networ
 /**
  * Helper to convert a Kaspa address into a scriptPublicKey hex string
  */
-export function addressToScriptPublicKey(address: string, network: NetworkType = 'mainnet'): string {
-  return Buffer.from(addressToScriptPublicKeyBytes(address, network)).toString('hex');
+export async function addressToScriptPublicKey(address: string, network: NetworkType = 'mainnet'): Promise<string> {
+  const bytes = await addressToScriptPublicKeyBytes(address, network);
+  return Buffer.from(bytes).toString('hex');
 }
 
 /**
