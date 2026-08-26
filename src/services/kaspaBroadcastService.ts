@@ -174,11 +174,23 @@ export function validateTransactionClientSide(txPayload: any): { valid: boolean;
  * Maps 'testnet-10' cleanly to 'https://api-tn10.kaspa.org'
  */
 export function getBroadcastEndpoints(network: string): string[] {
-  const isTestnet = network.toLowerCase().includes('testnet') || network.toLowerCase() === 'tn10';
+  const normNet = (network || 'mainnet').toLowerCase();
+  const isTestnet = normNet.includes('testnet') || normNet === 'tn10';
+
   if (isTestnet) {
-    return ['https://api-tn10.kaspa.org', 'https://api-testnet-10.kaspa.org'];
+    return [
+      'https://api-tn10.kaspa.org',
+      'https://api-testnet-10.kaspa.org',
+      'https://testnet-10.kaspad.net'
+    ];
   }
-  return getCandidateApiUrls('mainnet');
+
+  // Strict Mainnet endpoints: Filter out any URL containing testnet or tn10 keywords
+  const candidateUrls = getCandidateApiUrls('mainnet');
+  return candidateUrls.filter(url => {
+    const l = url.toLowerCase();
+    return !l.includes('testnet') && !l.includes('tn10');
+  });
 }
 
 /**
@@ -204,8 +216,8 @@ export async function broadcastKaspaTransactionService(
   const endpoints = getBroadcastEndpoints(network);
   const rawTx = txPayload?.transaction || txPayload;
 
-  // Compute local authoritative transaction ID via WASM
-  let localComputedTxId = knownTxId || rawTx.id || rawTx.transactionId;
+  // Extract or compute local candidate transaction ID
+  let localComputedTxId = knownTxId || txPayload?.id || rawTx?.id || rawTx?.transactionId;
   try {
     if (!localComputedTxId) {
       localComputedTxId = await computeTxIdWasm(rawTx);
@@ -282,10 +294,11 @@ export async function broadcastKaspaTransactionService(
       const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;
 
       if (res.ok) {
-        // Authoritative validation: ensure node response matches our locally computed TXID if available
-        const finalTxId = localComputedTxId || String(returnedTxId || '');
+        // Authoritative validation: Node-returned TXID is the canonical network ID.
+        // Always prioritize returnedTxId from the node API response if available.
+        const finalTxId = returnedTxId ? String(returnedTxId).toLowerCase() : (localComputedTxId || knownTxId || '');
         if (localComputedTxId && returnedTxId && String(returnedTxId).toLowerCase() !== String(localComputedTxId).toLowerCase()) {
-          console.warn(`[Broadcast Warning] Node returned TXID ${returnedTxId} which differs from locally computed TXID ${localComputedTxId}. Using local authoritative TXID.`);
+          console.log(`[Broadcast Info] Node assigned canonical TXID ${returnedTxId} (local candidate was ${localComputedTxId}). Using node canonical TXID.`);
         }
         return {
           status: 'submitted',

@@ -16,30 +16,41 @@ const DEFAULT_MAINNET_NODES = [
 ];
 
 const DEFAULT_TESTNET_NODES = [
+  'https://api-tn10.kaspa.org',
   'https://api-testnet-10.kaspa.org',
   'https://testnet-10.kaspad.net',
-  'https://api.kaspa.org',
 ];
 
 export function getCandidateApiUrls(network: string = 'mainnet', preferredUrl?: string, allowFailover = false): string[] {
+  const normNet = (network || 'mainnet').toLowerCase();
+  const isTestnet = normNet.includes('testnet') || normNet === 'tn10';
+
   const current = (preferredUrl || getKaspaApiUrl()).trim().replace(/\/+$/, '');
-  const isPrivateOrCustom = 
-    current.includes('.onion') ||
-    current.includes('localhost') ||
-    current.includes('127.0.0.1') ||
-    current.includes('10.') ||
-    current.includes('192.168.') ||
-    (!DEFAULT_MAINNET_NODES.includes(current) && !DEFAULT_TESTNET_NODES.includes(current));
-
   const candidateSet = new Set<string>();
-  if (current) candidateSet.add(current);
 
-  // If it's a private/custom node and failover is NOT explicitly allowed, do not add public defaults
-  if (isPrivateOrCustom && !allowFailover) {
+  if (current) {
+    const lCurrent = current.toLowerCase();
+    const isCurrentTestnet = lCurrent.includes('testnet') || lCurrent.includes('tn10');
+    // Strictly isolate preferred URL by network type
+    if (isTestnet === isCurrentTestnet) {
+      candidateSet.add(current);
+    }
+  }
+
+  const isPrivateOrCustom = 
+    current && (
+      current.includes('.onion') ||
+      current.includes('localhost') ||
+      current.includes('127.0.0.1') ||
+      current.includes('10.') ||
+      current.includes('192.168.') ||
+      (!DEFAULT_MAINNET_NODES.includes(current) && !DEFAULT_TESTNET_NODES.includes(current))
+    );
+
+  if (isPrivateOrCustom && !allowFailover && candidateSet.size > 0) {
     return Array.from(candidateSet);
   }
 
-  const isTestnet = network.includes('testnet');
   const defaults = isTestnet ? DEFAULT_TESTNET_NODES : DEFAULT_MAINNET_NODES;
 
   for (const fallback of defaults) {
