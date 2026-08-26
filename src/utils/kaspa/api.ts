@@ -1,4 +1,5 @@
 import { blake2b } from '@noble/hashes/blake2.js';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 
 let GLOBAL_API_URL = (((typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env.VITE_KASPA_API_URL : undefined) || 'https://api.kaspa.org') as string;
 let GLOBAL_EXPLORER_URL = (((typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env.VITE_KASPA_EXPLORER_URL : undefined) || 'https://explorer.kaspa.org') as string;
@@ -8,11 +9,16 @@ const DEFAULT_MAINNET_NODES = [
   'https://api.kaspa.net',
   'https://api-mainnet.kaspa.org',
   'https://api.kaspad.net',
+  'https://mainnet.kaspad.net',
   'https://kaspa.aspectron.org',
+  'https://kaspa-mainnet.bitcointry.com',
+  'https://api-v2.kaspa.org',
 ];
 
 const DEFAULT_TESTNET_NODES = [
   'https://api-testnet-10.kaspa.org',
+  'https://testnet-10.kaspad.net',
+  'https://api.kaspa.org',
 ];
 
 export function getCandidateApiUrls(network: string = 'mainnet', preferredUrl?: string, allowFailover = false): string[] {
@@ -68,6 +74,55 @@ let lastPriceFetchTime = 0;
 const PRICE_CACHE_TTL = 60000;
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 12000, retries = 1): Promise<Response> {
+  // If running inside Capacitor native Android container, use CapacitorHttp for native network transport
+  if (Capacitor.isNativePlatform()) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        let bodyData: any = undefined;
+        if (options.body) {
+          try {
+            bodyData = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+          } catch {
+            bodyData = options.body;
+          }
+        }
+
+        const method = (options.method || 'GET').toUpperCase();
+        const capRes = await CapacitorHttp.request({
+          url,
+          method,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            ...(options.headers as Record<string, string> || {}),
+          },
+          data: bodyData,
+          connectTimeout: timeoutMs,
+          readTimeout: timeoutMs,
+        });
+
+        const status = capRes.status || 200;
+        const responseBodyStr = typeof capRes.data === 'string' ? capRes.data : JSON.stringify(capRes.data || {});
+
+        return new Response(responseBodyStr, {
+          status,
+          statusText: status >= 200 && status < 300 ? 'OK' : `Error ${status}`,
+          headers: new Headers({
+            'Content-Type': 'application/json',
+            ...(capRes.headers || {}),
+          }),
+        });
+      } catch (err: any) {
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 200));
+        } else {
+          // Fall back to standard fetch if native plugin failed
+          break;
+        }
+      }
+    }
+  }
+
   let lastError: any = null;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -685,23 +740,23 @@ export async function broadcastKaspaTransaction(txPayload: any, network: string 
       sigOpCount: Number(inTx?.sigOpCount !== undefined ? inTx.sigOpCount : 1)
     })) : [],
     outputs: Array.isArray(rawTx?.outputs) ? rawTx.outputs.map((outTx: any) => {
-      const rawAmt = outTx?.amount;
-      let safeAmount: bigint;
+      const rawAmt = outTx?.amount !== undefined ? outTx.amount : (outTx?.value !== undefined ? outTx.value : 0);
+      let safeAmountNum: number;
       if (typeof rawAmt === 'bigint') {
-        safeAmount = rawAmt;
+        safeAmountNum = Number(rawAmt);
       } else if (typeof rawAmt === 'number') {
-        safeAmount = BigInt(Math.floor(rawAmt));
+        safeAmountNum = Math.floor(rawAmt);
       } else if (typeof rawAmt === 'string') {
-        safeAmount = BigInt(rawAmt);
+        safeAmountNum = parseInt(rawAmt, 10) || 0;
       } else {
-        safeAmount = 0n;
+        safeAmountNum = 0;
       }
 
       return {
-        amount: safeAmount,
+        amount: safeAmountNum,
         scriptPublicKey: {
           version: Number(outTx?.scriptPublicKey?.version || 0),
-          scriptPublicKey: String(outTx?.scriptPublicKey?.scriptPublicKey || outTx?.scriptPublicKey || '').toLowerCase()
+          scriptPublicKey: String(outTx?.scriptPublicKey?.scriptPublicKey || outTx?.scriptPublicKey?.script || outTx?.scriptPublicKey || '').toLowerCase()
         }
       };
     }) : [],
@@ -712,49 +767,99 @@ export async function broadcastKaspaTransaction(txPayload: any, network: string 
   const bodyPayload = { transaction: formattedTx };
   const jsonBody = JSON.stringify(bodyPayload, (_, v) => typeof v === 'bigint' ? v.toString() : v);
 
-  let lastError = 'Failed to broadcast transaction to Kaspa network';
+  // Helper to attempt a single endpoint broadcast with tight timeout
+  const attemptEndpoint = async (endpoint: string): Promise<{ success: boolean; txId?: string; error?: string }> => {
+    const pathsToTry = ['/transactions', '/submit_transaction'];
 
-  // Try candidate endpoints with 5s timeout and automatic failover
-  for (const endpoint of candidateUrls) {
-    try {
-      const res = await fetchWithTimeout(`${endpoint}/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: jsonBody,
-      }, 5000, 0);
+    for (const apiPath of pathsToTry) {
+      try {
+        const res = await fetchWithTimeout(`${endpoint}${apiPath}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: jsonBody,
+        }, 4500, 0);
 
-      const data = await res.json().catch(() => null);
-      const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;
+        const data = await res.json().catch(() => null);
+        const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result || (typeof data === 'string' && /^[0-9a-fA-F]{64}$/.test(data.trim()) ? data.trim() : undefined);
 
-      if (res.ok && returnedTxId) {
-        console.log(`[Kaspa Node Broadcast] Successfully broadcasted transaction via ${endpoint}: ${returnedTxId}`);
-        return { success: true, txId: String(returnedTxId) };
-      }
-
-      if (data) {
-        const rawErr = extractKaspaError(data);
-        if (rawErr) {
-          if (rawErr.toLowerCase().includes('already in mempool') || rawErr.toLowerCase().includes('already accepted')) {
-            console.log(`[Kaspa Node Broadcast] Transaction already accepted in mempool via ${endpoint}`);
-            return { success: true, txId: 'mempool_accepted' };
-          } else if (rawErr.toLowerCase().includes('orphan')) {
-            return { success: false, error: 'Orphan transaction: UTXO pending or not yet confirmed on-chain.' };
-          } else if (rawErr.toLowerCase().includes('fee')) {
-            return { success: false, error: `Fee error: ${rawErr}` };
-          } else if (rawErr.toLowerCase().includes('signature')) {
-            return { success: false, error: 'Signature verification failed: Check key derivation or script parameters.' };
-          }
-          lastError = rawErr;
+        if (res.ok && returnedTxId) {
+          console.log(`[Kaspa Node Broadcast] Successfully broadcasted transaction via ${endpoint}${apiPath}: ${returnedTxId}`);
+          return { success: true, txId: String(returnedTxId) };
         }
-      } else if (!res.ok) {
-        lastError = `Kaspa node returned HTTP ${res.status}`;
-      }
-    } catch (err: any) {
-      console.warn(`[Kaspa Node Broadcast] Connection attempt on ${endpoint} failed:`, err?.message || err);
-      lastError = err?.message || 'Connection error';
-    }
-  }
 
-  console.error(`[Kaspa Node Broadcast] All candidate endpoints failed. Last error: ${lastError}`);
-  return { success: false, error: lastError };
+        if (data) {
+          const rawErr = extractKaspaError(data);
+          if (rawErr) {
+            const lowerErr = rawErr.toLowerCase();
+            if (lowerErr.includes('already in mempool') || lowerErr.includes('already accepted')) {
+              console.log(`[Kaspa Node Broadcast] Transaction already accepted in mempool via ${endpoint}`);
+              return { success: true, txId: 'mempool_accepted' };
+            } else if (lowerErr.includes('orphan')) {
+              return { success: false, error: 'Orphan transaction: UTXO pending or not yet confirmed on-chain.' };
+            } else if (lowerErr.includes('fee')) {
+              return { success: false, error: `Fee error: ${rawErr}` };
+            } else if (lowerErr.includes('signature')) {
+              return { success: false, error: 'Signature verification failed: Check key derivation or script parameters.' };
+            }
+            // If not a 404, this endpoint responded with an actual Kaspa validation error
+            if (res.status !== 404) {
+              return { success: false, error: rawErr };
+            }
+          }
+        }
+
+        if (res.status !== 404) {
+          return { success: false, error: `HTTP ${res.status}` };
+        }
+      } catch (err: any) {
+        if (apiPath === pathsToTry[pathsToTry.length - 1]) {
+          return { success: false, error: err?.message || 'Connection timeout' };
+        }
+      }
+    }
+
+    return { success: false, error: `HTTP 404 on ${endpoint}` };
+  };
+
+  // Concurrent Multi-Endpoint Racing Broadcast:
+  // Fire requests simultaneously across all available endpoints with a race to resolve on the very first successful submission
+  const broadcastPromises = candidateUrls.map((endpoint) => attemptEndpoint(endpoint));
+
+  try {
+    // Return immediately as soon as ANY node confirms the transaction
+    const winner = await new Promise<{ success: boolean; txId?: string; error?: string }>((resolve) => {
+      let pendingCount = broadcastPromises.length;
+      let lastFailure = 'Failed to broadcast transaction to Kaspa network';
+
+      broadcastPromises.forEach(p => {
+        p.then(res => {
+          if (res.success) {
+            resolve(res);
+          } else {
+            if (res.error && !res.error.includes('Failed to fetch') && !res.error.includes('timeout')) {
+              lastFailure = res.error;
+            }
+            pendingCount--;
+            if (pendingCount === 0) {
+              resolve({ success: false, error: lastFailure });
+            }
+          }
+        }).catch(err => {
+          pendingCount--;
+          if (pendingCount === 0) {
+            resolve({ success: false, error: err?.message || lastFailure });
+          }
+        });
+      });
+    });
+
+    if (winner.success) {
+      return winner;
+    }
+    console.error(`[Kaspa Node Broadcast] All candidate endpoints failed. Last error: ${winner.error}`);
+    return winner;
+  } catch (err: any) {
+    console.error(`[Kaspa Node Broadcast] Exception during concurrent broadcast:`, err);
+    return { success: false, error: err?.message || 'Broadcast failed' };
+  }
 }

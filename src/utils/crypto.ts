@@ -204,11 +204,12 @@ export async function encryptWithPassword(
   context: string = AAD_CONTEXT
 ): Promise<{ ciphertext: string; salt: string; iv: string }> {
   const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
-  if (isMainThread) {
-    if (!mainThreadDelegate) {
-      throw new Error('CRITICAL: CryptoWorker delegate is not registered on main thread.');
+  if (isMainThread && mainThreadDelegate) {
+    try {
+      return await mainThreadDelegate('encryptWithPassword', { plaintext, password, context });
+    } catch (err) {
+      console.warn('Worker encryption delegate failed, executing in-thread fallback:', err);
     }
-    return await mainThreadDelegate('encryptWithPassword', { plaintext, password, context });
   }
 
   try {
@@ -226,7 +227,8 @@ export async function encryptWithPassword(
 
 /**
  * Decrypts a ciphertext string using Rusty Kaspa WASM XChaCha20Poly1305.
- * Seamlessly routes to CryptoWorker off-thread on main thread to prevent UI blocking.
+ * Seamlessly routes to CryptoWorker off-thread on main thread to prevent UI blocking,
+ * with instantaneous in-thread fallback if worker times out or is unsupported.
  */
 export async function decryptWithPassword(
   ciphertextHex: string, 
@@ -236,14 +238,15 @@ export async function decryptWithPassword(
   context: string = AAD_CONTEXT
 ): Promise<string> {
   const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
-  if (isMainThread) {
-    if (!mainThreadDelegate) {
-      throw new Error('CRITICAL: CryptoWorker delegate is not registered on main thread.');
+  if (isMainThread && mainThreadDelegate) {
+    try {
+      return await mainThreadDelegate('decryptWithPassword', { ciphertextHex, saltHex, ivHex, password, context });
+    } catch (err) {
+      console.warn('Worker decryption delegate failed, executing in-thread fallback:', err);
     }
-    return await mainThreadDelegate('decryptWithPassword', { ciphertextHex, saltHex, ivHex, password, context });
   }
 
-  // Enforce ultra-fast, secure Rusty Kaspa WASM ChaCha20-Poly1305 decryption inside the worker
+  // Enforce ultra-fast, secure Rusty Kaspa WASM ChaCha20-Poly1305 decryption
   await ensureKaspaWasm();
   return decryptXChaCha20Poly1305(ciphertextHex, password);
 }
