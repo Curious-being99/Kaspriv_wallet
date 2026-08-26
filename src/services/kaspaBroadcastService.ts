@@ -205,9 +205,11 @@ export async function broadcastKaspaTransactionService(
   const rawTx = txPayload?.transaction || txPayload;
 
   // Compute local authoritative transaction ID via WASM
-  let localComputedTxId = knownTxId;
+  let localComputedTxId = knownTxId || rawTx.id || rawTx.transactionId;
   try {
-    localComputedTxId = await computeTxIdWasm(rawTx);
+    if (!localComputedTxId) {
+      localComputedTxId = await computeTxIdWasm(rawTx);
+    }
   } catch (e) {
     console.warn('Failed to compute local TXID via WASM, falling back to payload ID:', e);
   }

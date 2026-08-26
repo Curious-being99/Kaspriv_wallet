@@ -49,7 +49,7 @@ export async function computeTxIdWasm(rawTx: any): Promise<string> {
     const spkHex = extractSpkHex(outTx.scriptPublicKey);
     return {
       value: safeAmount,
-      scriptPublicKey: spkHex,
+      scriptPublicKey: new ScriptPublicKey(Number(outTx.scriptPublicKey?.version || 0), spkHex),
     };
   });
 

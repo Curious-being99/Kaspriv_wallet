@@ -35,9 +35,10 @@ export async function ensureKaspaWasm(): Promise<void> {
     wasmInitPromise = (async () => {
       console.log('Initializing Kaspa WASM from:', resolvedWasmUrl);
       
-      const tryInit = async (url: any): Promise<boolean> => {
+      const tryInit = async (urlOrBuffer: any): Promise<boolean> => {
         try {
-          await initKaspaWasm(url);
+          // Always pass as a single object to avoid "deprecated parameters" warning
+          await initKaspaWasm({ module_or_path: urlOrBuffer });
           console.log('Kaspa WASM initialized successfully');
           return true;
         } catch (err: any) {
@@ -45,30 +46,25 @@ export async function ensureKaspaWasm(): Promise<void> {
             console.log('Kaspa WASM already initialized');
             return true;
           }
-          console.warn(`WASM init failed:`, err.message || err);
-          return false;
+          return false; // Silently fail to next attempt without polluting console
         }
       };
 
-      // Attempt 1: Direct module_or_path object (preferred by the SDK)
-      if (await tryInit({ module_or_path: resolvedWasmUrl })) return;
-
-      // Attempt 2: Direct string URL
-      if (await tryInit(resolvedWasmUrl)) return;
-
-      // Attempt 3: Fetch and buffer (handles some proxy/mobile issues)
+      // Attempt 1: Fetch and compile ArrayBuffer (Most robust, avoids streaming aborts/MIME issues)
       try {
-        console.log('Attempting fetch fallback for:', resolvedWasmUrl);
         const response = await fetch(resolvedWasmUrl);
         if (response.ok) {
           const buffer = await response.arrayBuffer();
-          if (await tryInit({ module_or_path: buffer })) return;
+          if (await tryInit(buffer)) return;
         }
       } catch (fetchErr) {
-        console.warn('Fetch fallback failed:', fetchErr);
+        // Fallback silently
       }
 
-      // Attempt 4: Last ditch - try a hardcoded relative path if vite didn't resolve correctly
+      // Attempt 2: Direct URL (may trigger instantiateStreaming network warnings in dev, but serves as fallback)
+      if (await tryInit(resolvedWasmUrl)) return;
+
+      // Attempt 3: Last ditch - try a hardcoded relative path
       const relativeFallback = '/assets/kaspa_bg.wasm'; 
       try {
         const origin = (typeof self !== 'undefined' && self.location && self.location.origin !== 'null') ? self.location.origin : '';
@@ -77,7 +73,7 @@ export async function ensureKaspaWasm(): Promise<void> {
           const response = await fetch(fallbackUrl);
           if (response.ok) {
             const buffer = await response.arrayBuffer();
-            if (await tryInit({ module_or_path: buffer })) return;
+            if (await tryInit(buffer)) return;
           }
         }
       } catch (e) {}
