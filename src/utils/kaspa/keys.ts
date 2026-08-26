@@ -210,7 +210,7 @@ export async function getPrivateKeysMapFromSeed(
       pk.free();
       child.free();
     } catch (e) {
-      console.warn(`Failed to derive key at path ${path}:`, e);
+      console.warn("Failed to derive key at path:", String(path || ''), e);
     }
   }
   xprv.free();

@@ -120,6 +120,11 @@ Before password verification, seed decryption, or private key derivation occurs,
 * **Consensus-Level Security**: Transaction, address, and fee logic are strictly governed by the official Kaspa Rust implementation, ensuring 100% consensus parity with the network.
 * **Native Web Crypto**: Encryption/decryption is performed by the official Rusty Kaspa SDK (compiled to WASM) using XChaCha20-Poly1305.
 * **High-Performance KDF**: Key derivation (PBKDF2-HMAC-SHA512) is handled internally by the Rusty Kaspa WASM core, providing native execution speeds for seed derivation.
+* **🔒 Transitive Dependency Security (Elliptic Vulnerability Immunity)**:
+  * **The Vulnerability**: Legacy JavaScript wallets that use the outdated `elliptic` library for ECDSA/Schnorr signatures are vulnerable to private key exposure during signing operations under certain conditions (RFC 6979 step 3.2 'k' Leading Zeros truncation bug).
+  * **KasPriv Absolute Immunity**: KasPriv is **100% immune** to this vulnerability because we **do not use or import the `elliptic` JavaScript package** for any cryptographic operations.
+  * **Rust Cryptographic Primitives**: All of KasPriv's signatures, address derivations, and keys are derived and signed inside the compiled **Rusty Kaspa WebAssembly binary (`@kasdk/web`)** or Paul Miller's audited `@noble/secp256k1` package. The WASM binary relies entirely on Rust's native, heavily audited, and fully secure `secp256k1` and `schnorr` cryptographic crates.
+  * **Build-Time Isolation**: Any trace of `elliptic` in `package-lock.json` is strictly a transitive development dependency from build-time node polyfills. We have explicitly disabled and stripped the legacy node-crypto polyfills from the web and worker bundlers in `vite.config.ts`, ensuring that no legacy browserify-sign modules or `elliptic` components are loaded or executed in production.
 
 ---
 

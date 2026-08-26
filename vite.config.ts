@@ -17,7 +17,7 @@ export default defineConfig({
     react(),
     wasm(),
     nodePolyfills({
-      include: ['buffer', 'stream', 'util', 'crypto', 'process', 'path', 'fs'],
+      include: ['buffer', 'stream', 'util', 'process', 'path', 'fs'],
       globals: {
         Buffer: true,
         global: true,
@@ -35,7 +35,7 @@ export default defineConfig({
     plugins: () => [
       wasm(),
       nodePolyfills({
-        include: ['buffer', 'stream', 'util', 'crypto', 'process', 'path', 'fs'],
+        include: ['buffer', 'stream', 'util', 'process', 'path', 'fs'],
         globals: {
           Buffer: true,
           global: true,
