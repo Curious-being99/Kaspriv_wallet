@@ -1,28 +1,9 @@
 // Parallel Kaspa Transaction Builder using the Official Rusty Kaspa WASM SDK
-import initKaspaWasm, { Transaction, PrivateKey, ScriptPublicKey, signTransaction, Address, payToAddressScript, payToScriptHashSignatureScript, createInputSignature, payToScriptHashScript } from '@kasdk/web';
-import wasmUrl from '@kasdk/web/kaspa_bg.wasm?url';
+import { Transaction, PrivateKey, ScriptPublicKey, signTransaction, Address, payToAddressScript, payToScriptHashSignatureScript, createInputSignature, payToScriptHashScript } from '@kasdk/web';
+import { ensureKaspaWasm } from '../crypto';
 
-let wasmInitialized = false;
 async function ensureWasm() {
-  if (!wasmInitialized) {
-    try {
-      await initKaspaWasm({ module_or_path: wasmUrl }); // Initialize the WASM module
-    } catch (e: any) {
-      if (!e.message?.includes('already initialized')) {
-        // Fallback for Android/Capacitor environments where fetch via WASM fails
-        try {
-          const response = await fetch(wasmUrl);
-          const buffer = await response.arrayBuffer();
-          await initKaspaWasm({ module_or_path: buffer });
-        } catch (fallbackErr: any) {
-          if (!fallbackErr.message?.includes('already initialized')) {
-            throw new Error(`Critical: Failed to initialize official Kaspa WASM SDK: ${fallbackErr.message || fallbackErr}`);
-          }
-        }
-      }
-    }
-    wasmInitialized = true;
-  }
+  await ensureKaspaWasm();
 }
 
 function extractSpkHex(val: any): string {

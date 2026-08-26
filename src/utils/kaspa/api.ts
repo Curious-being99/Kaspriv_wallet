@@ -67,38 +67,33 @@ let cachedPriceData: { price: number; usd24hChange?: number } | null = null;
 let lastPriceFetchTime = 0;
 const PRICE_CACHE_TTL = 60000;
 
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 8000, retries = 1): Promise<Response> {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 12000, retries = 1): Promise<Response> {
   let lastError: any = null;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs}ms`)), timeoutMs)
+    );
 
     try {
-      const response = await fetch(url, {
+      const fetchPromise = fetch(url, {
         ...options,
         mode: 'cors',
-        signal: controller.signal,
         headers: {
           'Accept': 'application/json',
           ...(options.headers || {}),
         },
       });
-      clearTimeout(id);
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
       return response;
     } catch (err: any) {
-      clearTimeout(id);
       lastError = err;
       if (attempt < retries) {
-        // Small jitter backoff before retrying
         await new Promise(r => setTimeout(r, 250));
       }
     }
   }
 
-  if (lastError?.name === 'AbortError') {
-    throw new Error(`Request timeout after ${timeoutMs}ms`);
-  }
   throw lastError || new Error('Network request failed');
 }
 
@@ -715,62 +710,51 @@ export async function broadcastKaspaTransaction(txPayload: any, network: string 
   };
 
   const bodyPayload = { transaction: formattedTx };
-  
-  // Local TXID computation removed to avoid using fake TXID if node rejects
+  const jsonBody = JSON.stringify(bodyPayload, (_, v) => typeof v === 'bigint' ? v.toString() : v);
 
-  let lastErrorMsg = 'Network connection failed while broadcasting transaction across all candidate endpoints';
+  let lastError = 'Failed to broadcast transaction to Kaspa network';
 
-  for (const baseUrl of candidateUrls) {
+  // Try candidate endpoints with 5s timeout and automatic failover
+  for (const endpoint of candidateUrls) {
     try {
-      const res = await fetchWithTimeout(`${baseUrl}/transactions`, {
+      const res = await fetchWithTimeout(`${endpoint}/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload, (_, v) => typeof v === 'bigint' ? v.toString() : v),
-      }, 2000, 0);
+        body: jsonBody,
+      }, 5000, 0);
 
       const data = await res.json().catch(() => null);
       const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;
 
       if (res.ok && returnedTxId) {
-        console.log(`[Kaspa Node Broadcast] Successfully broadcasted transaction via ${baseUrl}: ${returnedTxId}`);
+        console.log(`[Kaspa Node Broadcast] Successfully broadcasted transaction via ${endpoint}: ${returnedTxId}`);
         return { success: true, txId: String(returnedTxId) };
       }
 
-      let errorMsg = `Kaspa node broadcast rejected (HTTP ${res.status})`;
       if (data) {
         const rawErr = extractKaspaError(data);
         if (rawErr) {
           if (rawErr.toLowerCase().includes('already in mempool') || rawErr.toLowerCase().includes('already accepted')) {
-            console.log(`[Kaspa Node Broadcast] Transaction already accepted in mempool via ${baseUrl}`);
-            return { success: true, txId: 'unknown' };
+            console.log(`[Kaspa Node Broadcast] Transaction already accepted in mempool via ${endpoint}`);
+            return { success: true, txId: 'mempool_accepted' };
           } else if (rawErr.toLowerCase().includes('orphan')) {
-            errorMsg = 'Orphan transaction: UTXO pending or not yet confirmed on-chain.';
+            return { success: false, error: 'Orphan transaction: UTXO pending or not yet confirmed on-chain.' };
           } else if (rawErr.toLowerCase().includes('fee')) {
-            errorMsg = `Fee error: ${rawErr}`;
+            return { success: false, error: `Fee error: ${rawErr}` };
           } else if (rawErr.toLowerCase().includes('signature')) {
-            errorMsg = 'Signature verification failed: Check key derivation or script parameters.';
-          } else {
-            errorMsg = rawErr;
+            return { success: false, error: 'Signature verification failed: Check key derivation or script parameters.' };
           }
+          lastError = rawErr;
         }
+      } else if (!res.ok) {
+        lastError = `Kaspa node returned HTTP ${res.status}`;
       }
-
-      console.warn(`[Kaspa Node Broadcast] Endpoint ${baseUrl} returned: ${errorMsg}`);
-      lastErrorMsg = errorMsg;
-
-      // Failover to next candidate on server errors or rate limiting
-      if (res.status >= 500 || res.status === 429) {
-        continue;
-      }
-
-      return { success: false, error: errorMsg };
     } catch (err: any) {
-      const errMsg = err.message || 'Connection error';
-      console.warn(`[Kaspa Node Broadcast] Connection error on ${baseUrl}: ${errMsg}. Failing over to next node...`);
-      lastErrorMsg = `Connection error on ${baseUrl}: ${errMsg}`;
+      console.warn(`[Kaspa Node Broadcast] Connection attempt on ${endpoint} failed:`, err?.message || err);
+      lastError = err?.message || 'Connection error';
     }
   }
 
-  console.error(`[Kaspa Node Broadcast] Broadcast failed across all candidate endpoints: ${lastErrorMsg}`);
-  return { success: false, error: lastErrorMsg };
+  console.error(`[Kaspa Node Broadcast] All candidate endpoints failed. Last error: ${lastError}`);
+  return { success: false, error: lastError };
 }

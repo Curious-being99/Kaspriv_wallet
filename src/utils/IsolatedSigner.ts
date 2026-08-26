@@ -1,14 +1,13 @@
 import { 
   getPrivateKeyBytesFromMnemonic, 
   getPrivateKeyBytesFromSeed,
+  getPrivateKeysMapFromSeed,
   signKaspaMessage, 
   addressToScriptPublicKey,
   wipe,
   estimateTransactionMass,
   calculateMinFeeForInputs,
-  getCachedSeed,
-  generateDeterministicAddress,
-  getAddressPrefix
+  getCachedSeed
 } from './kaspa';
 import { createSignedTransactionIsolatedWasm } from './kaspa/wasmTx';
 import { NetworkType } from '../types';
@@ -434,21 +433,24 @@ export class IsolatedSigner {
 
     const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
     if (isMainThread && !skipWorker) {
-      const { cryptoWorkerManager, serializeWithBigInt, deserializeWithBigInt } = await import('./cryptoWorkerManager');
-      if (!cryptoWorkerManager.isSupported()) {
-        throw new Error('CRITICAL: CryptoWorker is not supported or initialized on main thread.');
+      try {
+        const { cryptoWorkerManager, serializeWithBigInt, deserializeWithBigInt } = await import('./cryptoWorkerManager');
+        if (cryptoWorkerManager.isSupported()) {
+          const serializedIntent = serializeWithBigInt(intentInput);
+          const res = await cryptoWorkerManager.runTask<any>('signTransactionIsolated', {
+            serializedIntent,
+            mnemonic,
+            passphrase,
+            addressType: effectiveAddressType,
+            redeemScriptHex,
+            useSession: true, // Instruction to keep the mnemonic in Rust memory
+            sessionId
+          }, 2500);
+          return deserializeWithBigInt(res);
+        }
+      } catch (workerErr) {
+        console.warn('CryptoWorker signing failed or timed out, performing fast in-thread signing fallback:', workerErr);
       }
-      const serializedIntent = serializeWithBigInt(intentInput);
-      const res = await cryptoWorkerManager.runTask<any>('signTransactionIsolated', {
-        serializedIntent,
-        mnemonic,
-        passphrase,
-        addressType: effectiveAddressType,
-        redeemScriptHex,
-        useSession: true, // Instruction to keep the mnemonic in Rust memory
-        sessionId
-      });
-      return deserializeWithBigInt(res);
     }
 
     // Zero-Trust Deep Clone & Freeze: Completely isolate intent to prevent post-verification memory mutation by malware
@@ -465,83 +467,22 @@ export class IsolatedSigner {
     }
 
     // 2. Build and sign the transaction using authoritative Kaspa WASM engine.
-    const prefix = getAddressPrefix(intent.network);
     const resolvedUtxos = [...intent.utxos];
 
-    // Auto-verify and resolve accurate derivation paths for all UTXOs against mnemonic
+    // Fast O(1) derivation path resolution using direct intent mappings
     for (let i = 0; i < resolvedUtxos.length; i++) {
       const u = resolvedUtxos[i];
       const addr = u.address;
-      if (!addr) continue;
-
-      let currentPath = u.derivationPath || u.path || (intent as any).addressPaths?.[addr];
-      let isValid = false;
-
-      if (currentPath) {
-        try {
-          const match = currentPath.match(/m\/44'\/(\d+)'\/(\d+)'\/(\d+)\/(\d+)/);
-          if (match) {
-            const coinType = parseInt(match[1], 10);
-            const isChange = parseInt(match[3], 10) === 1;
-            const index = parseInt(match[4], 10);
-            const testAddr = await generateDeterministicAddress(
-              mnemonic,
-              passphrase,
-              prefix,
-              effectiveAddressType,
-              index,
-              isChange,
-              coinType
-            );
-            if (testAddr.toLowerCase() === addr.toLowerCase()) {
-              isValid = true;
-            }
-          }
-        } catch {
-          isValid = false;
-        }
-      }
-
-      if (!isValid) {
-        // Search receive chain (0) and change chain (1) up to index 50 to find matching derivation path
-        let foundPath: string | null = null;
-        for (const isChange of [false, true]) {
-          for (let index = 0; index < 50; index++) {
-            try {
-              const testAddr = await generateDeterministicAddress(
-                mnemonic,
-                passphrase,
-                prefix,
-                effectiveAddressType,
-                index,
-                isChange
-              );
-              if (testAddr.toLowerCase() === addr.toLowerCase()) {
-                foundPath = `m/44'/111111'/0'/${isChange ? 1 : 0}/${index}`;
-                break;
-              }
-            } catch {
-              break;
-            }
-          }
-          if (foundPath) break;
-        }
-
-        if (foundPath) {
-          resolvedUtxos[i] = {
-            ...u,
-            derivationPath: foundPath,
-          };
-        }
-      }
+      const currentPath = u.derivationPath || u.path || (addr && (intent as any).addressPaths?.[addr]) || "m/44'/111111'/0'/0/0";
+      resolvedUtxos[i] = {
+        ...u,
+        derivationPath: currentPath,
+      };
     }
 
     const uniquePaths = Array.from(
       new Set(
-        resolvedUtxos.map(u => {
-          const p = u.derivationPath || u.path || (u.address && (intent as any).addressPaths?.[u.address]) || "m/44'/111111'/0'/0/0";
-          return p;
-        })
+        resolvedUtxos.map(u => u.derivationPath || "m/44'/111111'/0'/0/0")
       )
     );
 
@@ -550,12 +491,10 @@ export class IsolatedSigner {
       uniquePaths.push("m/44'/111111'/0'/0/0");
     }
 
-    const keysMap: { [path: string]: Uint8Array } = {};
+    let keysMap: { [path: string]: Uint8Array } = {};
     const seed = await getCachedSeed(mnemonic, passphrase || '');
     try {
-      for (const path of uniquePaths) {
-        keysMap[path] = await getPrivateKeyBytesFromSeed(seed, path);
-      }
+      keysMap = await getPrivateKeysMapFromSeed(seed, uniquePaths);
     } finally {
       wipe(seed);
     }

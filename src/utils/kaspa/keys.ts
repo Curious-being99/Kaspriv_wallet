@@ -204,6 +204,33 @@ export async function generateP2SHAddress(mnemonic: string, passphrase?: string,
 }
 
 /**
+ * Derive multiple private keys as raw bytes from a pre-computed master seed in a single pass.
+ */
+export async function getPrivateKeysMapFromSeed(
+  seed: Uint8Array,
+  derivationPaths: string[]
+): Promise<{ [path: string]: Uint8Array }> {
+  await ensureKaspaWasm();
+  const seedHex = Array.from(seed).map(b => b.toString(16).padStart(2, '0')).join('');
+  const xprv = new XPrv(seedHex);
+  const keysMap: { [path: string]: Uint8Array } = {};
+
+  for (const path of derivationPaths) {
+    try {
+      const child = xprv.derivePath(path);
+      const pk = child.toPrivateKey();
+      keysMap[path] = hexToBytes(pk.toString());
+      pk.free();
+      child.free();
+    } catch (e) {
+      console.warn(`Failed to derive key at path ${path}:`, e);
+    }
+  }
+  xprv.free();
+  return keysMap;
+}
+
+/**
  * Derive the private key as raw bytes from a pre-computed master seed.
  * 
  * The caller owns the returned buffer and MUST wipe it

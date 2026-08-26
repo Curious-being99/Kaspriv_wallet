@@ -41,6 +41,11 @@ class CryptoWorkerManager {
 
       this.worker.addEventListener('error', (err) => {
         console.warn('CryptoWorkerManager: Worker thread runtime error:', err);
+        // Reject all pending tasks so main thread does not hang
+        for (const [id, task] of this.tasks.entries()) {
+          task.reject(new Error(`Worker error: ${err.message || 'Unknown runtime error'}`));
+        }
+        this.tasks.clear();
       });
 
       this.supportState = 'supported';
@@ -58,14 +63,31 @@ class CryptoWorkerManager {
     return this.supportState === 'supported' && this.worker !== null;
   }
 
-  public runTask<T>(action: string, payload: any): Promise<T> {
+  public runTask<T>(action: string, payload: any, timeoutMs = 4000): Promise<T> {
     if (!this.isSupported() || !this.worker) {
       return Promise.reject(new Error('Worker is not supported or initialized.'));
     }
 
     return new Promise<T>((resolve, reject) => {
       const id = `${Date.now()}-${this.nextTaskId++}`;
-      this.tasks.set(id, { resolve, reject });
+      
+      const timer = setTimeout(() => {
+        if (this.tasks.has(id)) {
+          this.tasks.delete(id);
+          reject(new Error(`Worker task '${action}' timed out after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+
+      this.tasks.set(id, {
+        resolve: (val) => {
+          clearTimeout(timer);
+          resolve(val);
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        }
+      });
       
       const isAndroidAPK = isAndroid();
       const enrichedPayload = { ...payload, isAndroidAPK };
