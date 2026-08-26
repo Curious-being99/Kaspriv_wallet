@@ -213,8 +213,13 @@ async function withSQLite<T>(operation: (db: SQLiteDatabase) => Promise<T>): Pro
 export async function saveWalletToDB(wallet: Wallet): Promise<void> {
   return withSQLite(async (db) => {
     const sanitizedWallet = { ...wallet };
-    delete sanitizedWallet.mnemonic;
-    delete sanitizedWallet.passphrase;
+    // Only strip plaintext secrets if we actually have encrypted ciphertexts to rely on
+    if (sanitizedWallet.encryptedMnemonic) {
+      delete sanitizedWallet.mnemonic;
+    }
+    if (sanitizedWallet.encryptedPassphrase) {
+      delete sanitizedWallet.passphrase;
+    }
     
     const valuePayload = JSON.stringify({
       ...sanitizedWallet,

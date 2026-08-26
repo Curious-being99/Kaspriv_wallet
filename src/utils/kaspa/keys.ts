@@ -123,18 +123,9 @@ export async function getAddressFromPublicKey(
   }
 }
 
-// Volatile, in-memory cache for seed derivation (BIP39 Seed Cache)
-let lastMnemonic = '';
-let lastPassphrase = '';
-let lastSeedHex = '';
-
 export async function getCachedSeed(mnemonic: string, passphrase = ''): Promise<Uint8Array> {
   const cleanMnemonicStr = mnemonic.trim();
   const cleanPassphraseStr = passphrase;
-
-  if (lastSeedHex && lastMnemonic === cleanMnemonicStr && lastPassphrase === cleanPassphraseStr) {
-    return hexToBytes(lastSeedHex);
-  }
 
   await ensureKaspaWasm();
 
@@ -142,10 +133,6 @@ export async function getCachedSeed(mnemonic: string, passphrase = ''): Promise<
   const m = new Mnemonic(cleanMnemonicStr);
   const newSeedHex = m.toSeed(cleanPassphraseStr);
   m.free();
-
-  lastMnemonic = cleanMnemonicStr;
-  lastPassphrase = cleanPassphraseStr;
-  lastSeedHex = newSeedHex;
 
   return hexToBytes(newSeedHex);
 }

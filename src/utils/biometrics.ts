@@ -89,26 +89,9 @@ export async function registerBiometricUnlock(
         createdAt: Date.now(),
         alias,
       };
+    } else {
+      throw new Error('Biometric authentication is only supported on native mobile apps.');
     }
-
-    // --- Path B: Secure Web / PWA Development Fallback (ONLY when running in browser) ---
-    const secretKey = 'kaspriv_vault_v1';
-
-    const encrypted = await encryptWithPassword(
-      walletPassword,
-      secretKey,
-      BIOMETRIC_AAD_CONTEXT
-    );
-
-    return {
-      credentialId: `biometric-auth:${Date.now()}`,
-      mode: 'biometric-auth',
-      ciphertext: encrypted.ciphertext,
-      salt: encrypted.salt,
-      iv: encrypted.iv,
-      createdAt: Date.now(),
-      alias: secretKey
-    };
   } finally {
     setTimeout(() => {
       (window as any).isBiometricPromptActive = false;
@@ -166,32 +149,8 @@ export async function authenticateWithBiometrics(
         mode: 'keystore',
         error: 'HardwareVault native credentials missing or incompatible with native KeyStore.',
       };
-    }
-
-    // --- Path B: Secure Web / PWA Fallback (ONLY when running in web browser) ---
-    if (record.ciphertext && record.salt && record.iv && record.salt !== 'native-keystore') {
-      const secretKey = record.alias || 'kaspriv_vault_v1';
-      try {
-        const decryptedPassword = await decryptWithPassword(
-          record.ciphertext,
-          record.salt,
-          record.iv,
-          secretKey,
-          BIOMETRIC_AAD_CONTEXT
-        );
-
-        return {
-          success: true,
-          mode: record.mode || 'biometric-auth',
-          decryptedPassword,
-        };
-      } catch (decryptErr) {
-        return {
-          success: false,
-          mode: record.mode || 'biometric-auth',
-          error: 'Decryption failed: Biometric credentials mismatch',
-        };
-      }
+    } else {
+      throw new Error('Biometric authentication is only supported on native mobile apps.');
     }
 
     throw new Error('Biometric credential record is incomplete or corrupted. Please re-enable biometrics in Settings.');

@@ -473,7 +473,13 @@ export class IsolatedSigner {
     for (let i = 0; i < resolvedUtxos.length; i++) {
       const u = resolvedUtxos[i];
       const addr = u.address;
-      const currentPath = u.derivationPath || u.path || (addr && (intent as any).addressPaths?.[addr]) || "m/44'/111111'/0'/0/0";
+      const currentPath = u.derivationPath || u.path || (addr && (intent as any).addressPaths?.[addr]);
+      if (!currentPath) {
+        return {
+          success: false,
+          error: `Missing derivation path for UTXO at address ${addr}`
+        };
+      }
       resolvedUtxos[i] = {
         ...u,
         derivationPath: currentPath,
@@ -482,14 +488,9 @@ export class IsolatedSigner {
 
     const uniquePaths = Array.from(
       new Set(
-        resolvedUtxos.map(u => u.derivationPath || "m/44'/111111'/0'/0/0")
+        resolvedUtxos.map(u => u.derivationPath!)
       )
     );
-
-    // Guarantee default derivation path is present in keysMap
-    if (!uniquePaths.includes("m/44'/111111'/0'/0/0")) {
-      uniquePaths.push("m/44'/111111'/0'/0/0");
-    }
 
     let keysMap: { [path: string]: Uint8Array } = {};
     const seed = await getCachedSeed(mnemonic, passphrase || '');

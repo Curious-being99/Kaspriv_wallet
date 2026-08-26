@@ -188,8 +188,7 @@ class HardwareVaultPlugin : Plugin() {
         try {
             return generateAesKey(alias, useStrongBox = false, authRequired = canAuthStrong)
         } catch (e: Exception) {
-            // 3. Fallback without strict biometric auth flag if enrollment or hardware flags mismatch
-            return generateAesKey(alias, useStrongBox = false, authRequired = false)
+            throw Exception("Failed to generate hardware-backed biometric key: ${e.message}", e)
         }
     }
 

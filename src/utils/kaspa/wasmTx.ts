@@ -369,7 +369,9 @@ export async function createSignedTransactionIsolatedWasm(
         match = pksInfo.find(info => info.spkHex.toLowerCase() === inputSpkHex.toLowerCase());
       }
       
-      if (!match) match = pksInfo[0]; 
+      if (!match) {
+        throw new Error(`Critical Security Failure: Missing signing key for UTXO at index ${i}`);
+      }
       
       const rsHexToUse = redeemScriptHex || match.redeemScriptHex;
       const pkToUse = match.pk;

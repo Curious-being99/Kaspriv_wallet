@@ -169,7 +169,47 @@ The security audit identified crucial cryptographic, platform, and software desi
 * **Resolution:**
   - **Purged Legacy JS Derivation:** Completely removed `@scure/bip39`, `@scure/bip32`, and `@scure/base`.
   - **Authoritative WASM Mnemonic Core:** Migrated all mnemonic generation, seed derivation, and HD path derivation (XPrv/XPub) to the official `@kasdk/web` Rusty Kaspa WASM core.
-  - **Single-Derivation Cache:** Implemented a thread-safe `lastSeedHex` cache to ensure the 2,048-round PBKDF2 derivation only occurs once per session/mnemonic, providing near-instant address derivation for subsequent calls.
+
+---
+
+### 14. Ephemeral Seed Lifecycle & Cache Purge
+* **Severity:** **Medium-High**
+* **Finding:** The cryptographic seed (`lastSeedHex`) and mnemonic were previously cached in global module scope (`keys.ts`) to optimize derivation performance, presenting a risk of persistent memory residency for private material.
+* **Resolution:**
+  - **Zero-Cache Derivation:** Removed module-level caching. The seed is now derived cleanly for every signing operation and securely wiped from memory (`wipe()`) immediately post-signature via the `IsolatedSigner` session lifecycle.
+
+---
+
+### 15. Signer Fail-Closed Hardening (P2SH & Derivation Paths)
+* **Severity:** **High**
+* **Finding:** The `IsolatedSigner.ts` transaction intent verifier could fall back to a default derivation path (`m/44'/111111'/0'/0/0`) if a UTXO was missing a path. Additionally, the WASM P2SH signer (`wasmTx.ts`) would default to the first available key if no signing key was found for a required input script hash.
+* **Resolution:**
+  - **Explicit Path Enforcement:** `IsolatedSigner.ts` now throws a validation error if any input UTXO is missing a mapped derivation path.
+  - **Strict P2SH Key Matching:** `wasmTx.ts` now throws a `Critical Security Failure` exception if no explicit private key matches a required input script hash, entirely preventing unmapped default fallbacks.
+
+---
+
+### 16. Persistent State Integrity without Password
+* **Severity:** **High**
+* **Finding:** The `saveWalletToDB()` local persistence routine could inadvertently strip the plaintext `mnemonic` and `passphrase` from the payload even when password protection was disabled, resulting in lost signing material.
+* **Resolution:**
+  - **Conditional Ciphertext Stripping:** The plaintext `mnemonic` and `passphrase` are now only stripped from the database payload *if* their corresponding encrypted ciphertexts (`encryptedMnemonic`, `encryptedPassphrase`) are successfully present in the object, guaranteeing signing materials are safely persisted when password protection is disabled.
+
+---
+
+### 17. Stale State Overwrite Protection (Change Addresses)
+* **Severity:** **Medium**
+* **Finding:** Race conditions in `sendKaspa` and `compoundUtxos` allowed concurrent operations to overwrite the wallet state, potentially losing freshly reserved change address indexes due to stale closures.
+* **Resolution:**
+  - **Functional State Coupling:** The database save routine now hooks directly into the React functional update loop (`setWallets((prev) => ...)`), ensuring the exact current transactional state and newly reserved change address is atomically saved to the local database.
+
+---
+
+### 18. Enforced Hardened Broadcaster
+* **Severity:** **High**
+* **Finding:** Specific legacy transmission routines (`sendKaspa`, `compoundUtxos`) bypassed the hardened multi-node broadcast service in favor of direct local broadcasts, potentially swallowing mempool faults or duplicate UTXO scenarios.
+* **Resolution:**
+  - **Unified Broadcast Enforcement:** All main wallet transaction execution paths have been explicitly wired to use `broadcastKaspaTransactionService`. This guarantees pre-broadcast local validation, UTXO locking, duplicate checking, and multi-node fallback.
 
 ---
 
@@ -189,6 +229,11 @@ The security audit identified crucial cryptographic, platform, and software desi
 | `src/context/WalletContext.tsx` | Sequential Change Derivation & Path Binding | **RESOLVED** | Fresh sequential change derivation; dynamic derivation paths bound to pending UTXOs. |
 | `src/utils/kaspa/api.ts` | UTXO REST Payload Sanitization | **RESOLVED** | Strict schema validation before passing into selection routines. |
 | `src/utils/securityTest.ts` | Automated Security Regression Suite | **RESOLVED** | Automated tests for intent verification, precision limits, raw-script rejection, and WASM TXID. |
+| `src/utils/biometrics.ts` | Web Biometric Fallback Purge | **RESOLVED** | Path B removed; native environments strictly enforce fail-closed keys. |
+| `src/utils/kaspa/keys.ts` | Ephemeral Seed Lifecycle | **RESOLVED** | Cached derivation seeds purged; dynamic generation with memory wiping. |
+| `src/utils/storage.ts` | Persistent State Integrity | **RESOLVED** | Plaintext materials preserved when password protection is disabled. |
+| `src/context/WalletContext.tsx` | Enforced Broadcaster & State Safety | **RESOLVED** | Hardened broadcaster wiring; change addresses atomically reserved in React state loop. |
+| `src/utils/kaspa/wasmTx.ts` | P2SH Signer Matching | **RESOLVED** | Throws critical failure on missing input scripts rather than defaulting. |
 
 ---
 

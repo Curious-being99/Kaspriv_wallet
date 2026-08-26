@@ -1,3 +1,4 @@
+import { broadcastKaspaTransactionService } from "../services/kaspaBroadcastService";
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import {
   Wallet,
@@ -3240,9 +3241,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
 
         // 3. Broadcast
-        const broadcastResult = await broadcastKaspaTransaction(signerResult.transaction, network);
+        const bResult = await broadcastKaspaTransactionService(signerResult.transaction, network);
+        const broadcastResult = {
+           success: bResult.status === 'accepted' || bResult.status === 'submitted',
+           txId: bResult.txId,
+           error: bResult.error
+        };
 
-        if (broadcastResult.success) {
+        if (broadcastResult.success && broadcastResult.txId) {
           showToast(`Transaction sent! TXID: ${shortenAddress(broadcastResult.txId!)}`, 'success');
           
           // 1. Record broadcasted transaction in local state
@@ -3325,15 +3331,24 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             updatedAddressBalances[effectiveChangeAddress] = (curChangeBal + changeSompi).toString();
           }
 
-          const updatedActiveWallet: Wallet = {
-            ...activeWallet,
-            balanceSompi: newWalletBalance,
-            addressBalances: updatedAddressBalances,
-            changeAddress: effectiveChangeAddress || activeWallet.changeAddress,
-          };
-
-          setWallets((prev) => prev.map((w) => (w.id === activeWallet.id ? updatedActiveWallet : w)));
-          saveWalletToDB(updatedActiveWallet).catch(() => {});
+          let updatedActiveWalletToSave: Wallet | undefined;
+          setWallets((prev) => prev.map((w) => {
+            if (w.id === activeWallet.id) {
+              const updatedW = {
+                ...w,
+                balanceSompi: newWalletBalance,
+                addressBalances: updatedAddressBalances,
+                changeAddress: effectiveChangeAddress || w.changeAddress,
+              };
+              updatedActiveWalletToSave = updatedW;
+              return updatedW;
+            }
+            return w;
+          }));
+          
+          if (updatedActiveWalletToSave) {
+            saveWalletToDB(updatedActiveWalletToSave).catch(() => {});
+          }
 
           // Schedule jittered post-transaction refreshes to avoid rate-limit bursts while indexing on-chain
           scheduleJitteredPostTxRefreshes(refreshBalance);
@@ -3552,9 +3567,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           return { success: false };
         }
 
-        const broadcastResult = await broadcastKaspaTransaction(signerResult.transaction, network);
+        const bResult = await broadcastKaspaTransactionService(signerResult.transaction, network);
+        const broadcastResult = {
+           success: bResult.status === 'accepted' || bResult.status === 'submitted',
+           txId: bResult.txId,
+           error: bResult.error
+        };
         
-        if (broadcastResult.success) {
+        if (broadcastResult.success && broadcastResult.txId) {
           showToast(`Compounding initiated for ${utxosToCompound.length} UTXOs!`, 'success');
           
           // 1. Record broadcasted transaction in local state
@@ -3623,13 +3643,22 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           const curRecvBal = BigInt(updatedAddressBalances[activeWallet.receiveAddress] || '0');
           updatedAddressBalances[activeWallet.receiveAddress] = (curRecvBal + amountToSelf).toString();
 
-          const updatedActiveWallet: Wallet = {
-            ...activeWallet,
-            balanceSompi: newWalletBalance,
-            addressBalances: updatedAddressBalances,
-          };
-          setWallets((prev) => prev.map((w) => (w.id === activeWallet.id ? updatedActiveWallet : w)));
-          saveWalletToDB(updatedActiveWallet).catch(() => {});
+          let updatedActiveWalletToSave: Wallet | undefined;
+          setWallets((prev) => prev.map((w) => {
+            if (w.id === activeWallet.id) {
+              const updatedW = {
+                ...w,
+                balanceSompi: newWalletBalance,
+                addressBalances: updatedAddressBalances,
+              };
+              updatedActiveWalletToSave = updatedW;
+              return updatedW;
+            }
+            return w;
+          }));
+          if (updatedActiveWalletToSave) {
+            saveWalletToDB(updatedActiveWalletToSave).catch(() => {});
+          }
 
           // Schedule jittered post-transaction refreshes to avoid rate-limit bursts while indexing on-chain
           scheduleJitteredPostTxRefreshes(refreshBalance);

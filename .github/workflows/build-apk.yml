@@ -66,9 +66,6 @@ jobs:
             npx cap add android
           fi
           npx cap sync android
-          if [ ! -f "android/app/debug.keystore" ]; then
-            keytool -genkeypair -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -storetype PKCS12
-          fi
 
       - name: Generate Official Gradle Wrapper
         run: |
@@ -85,11 +82,6 @@ jobs:
         run: |
           cd android
           
-          # Ensure a fallback debug.keystore exists in app/
-          if [ ! -f "app/debug.keystore" ]; then
-            keytool -genkeypair -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" -storetype PKCS12 -noprompt
-          fi
-
           # Handle Production Signing if Secrets are present
           if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
             echo "Release signing keystore secret detected. Decoding to app/release.keystore..."
@@ -133,7 +125,8 @@ jobs:
             
             echo "Release keystore configured successfully."
           else
-            echo "No custom release signing secret found in GitHub Secrets. Using debug signing profile for build."
+            echo "Error: No custom release signing secret found in GitHub Secrets. Refusing to build production release with debug or missing keys."
+            exit 1
           fi
 
           echo "Current working directory: $(pwd)"
