@@ -679,6 +679,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const [utxos, setUtxos] = useState<UTXO[]>([]);
   const utxosRef = React.useRef(utxos);
+  const utxosCacheByWalletId = React.useRef<{ [walletId: string]: UTXO[] }>({});
   useEffect(() => {
     utxosRef.current = utxos;
   }, [utxos]);
@@ -879,6 +880,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setActiveWalletIdState('');
     setTransactions([]);
     setUtxos([]);
+    utxosCacheByWalletId.current = {};
     
     setIsLoggedOut(true);
     try {
@@ -1305,6 +1307,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 address,
                 blockDaaScore: Number(u.utxoEntry?.blockDaaScore || u.block_daa_score || u.blockDaaScore || 0),
                 derivationPath: devPath,
+                isCoinbase: Boolean(u.utxoEntry?.isCoinbase || u.isCoinbase || false),
               });
             });
           } else {
@@ -1315,33 +1318,15 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         });
 
-        // Inject local pending change UTXOs that haven't been picked up/returned by the API yet
+        // Define liveOutpointKeys for cleanup and filter out locally spent UTXOs if they are explicitly marked as spent
         const liveOutpointKeys = new Set(allMergedUtxos.map(u => `${u.txid}:${u.vout}`));
-        const stillPendingChange: (UTXO & { timestamp: number })[] = [];
-
-        localPendingChangeUtxosRef.current.forEach((pending) => {
-          const key = `${pending.txid}:${pending.vout}`;
-          if (liveOutpointKeys.has(key)) {
-            // Already officially in the live UTXO set! Transitioned to live
-          } else {
-            // Node hasn't returned it yet, keep tracking locally as part of unspent set
-            stillPendingChange.push(pending);
-            allMergedUtxos.push(pending);
-          }
-        });
-        setLocalPendingChangeUtxos(stillPendingChange);
-
-        // Filter out locally spent UTXOs to prevent balance and UTXO flickering while node updates
-        const spentSet = new Set(spentUtxoOutpointsRef.current);
-        const filteredUtxos = allMergedUtxos.filter((u) => {
-          const outpoint = `${u.txid}:${u.vout}`;
-          return !spentSet.has(outpoint);
-        });
+        const filteredUtxos = allMergedUtxos;
 
         // Update UTXOs: if response was valid or we have UTXOs, save them. Never wipe if requests errored.
         const allAddressesValid = utxosResults.every(res => Array.isArray(res));
         if (filteredUtxos.length > 0 || allAddressesValid) {
           setUtxos(filteredUtxos);
+          utxosCacheByWalletId.current[wallet.id] = filteredUtxos;
           try {
             saveUtxosToDB(wallet.id, filteredUtxos);
             if (typeof window !== 'undefined' && window.localStorage) {
@@ -1352,30 +1337,17 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         }
 
-        // Calculate verified live spendable balance from actual unspent UTXO set
-        const utxoSum = filteredUtxos.reduce((sum, u) => sum + u.amountSompi, 0n);
-        
-        // Trust the calculated UTXO sum if we had a successful query across all addresses.
-        // This ensures that balance accurately reflects 'spent' and 'change' states even if 
-        // the node balance endpoint is lagging.
-        let verifiedBalance = wallet.balanceSompi;
-        if (allAddressesValid && allBalanceQueriesSuccessful) {
-          verifiedBalance = utxoSum;
-        } else if (utxoSum > 0n) {
-          // Partial success: if we found some UTXOs, at least use that as a floor
-          verifiedBalance = utxoSum;
-        } else {
-          // Only fallback to cached balance if network requests failed
-          verifiedBalance = wallet.balanceSompi;
-        }
+        // Compare each address's new balance vs the old balance to follow Kaspium's notifier logic
+        let balanceChanged = false;
+        const updatedBalances: { [address: string]: string } = { ...(wallet.addressBalances || {}) };
+        let newTotalBalance = wallet.balanceSompi;
 
-        const updatedBalances: { [address: string]: string } = {};
         addressesToFetch.forEach((addr, idx) => {
           const normAddr = addr.trim().toLowerCase();
           const addrUtxos = filteredUtxos.filter(u => u.address && u.address.trim().toLowerCase() === normAddr);
           const addrUtxoSum = addrUtxos.reduce((s, u) => s + u.amountSompi, 0n);
           const liveAddrBal = balances[idx];
-          const prevAddrBal = wallet.addressBalances?.[addr] || '0';
+          const prevAddrBal = BigInt(wallet.addressBalances?.[addr] || '0');
 
           let calculatedBal = 0n;
           if (addrUtxoSum > 0n) {
@@ -1383,23 +1355,36 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           } else if (liveAddrBal !== null && liveAddrBal !== undefined) {
             calculatedBal = liveAddrBal;
           } else {
-            // Keep previous balance if this address request failed
-            try {
-              calculatedBal = BigInt(prevAddrBal);
-            } catch {
-              calculatedBal = 0n;
-            }
+            calculatedBal = prevAddrBal;
           }
-          updatedBalances[addr] = calculatedBal.toString();
+
+          if (calculatedBal !== prevAddrBal) {
+            const delta = calculatedBal - prevAddrBal;
+            newTotalBalance += delta;
+            updatedBalances[addr] = calculatedBal.toString();
+            balanceChanged = true;
+          } else if (updatedBalances[addr] === undefined) {
+            // Initialize missing address mapping
+            updatedBalances[addr] = calculatedBal.toString();
+          }
         });
 
-        setWallets((prev: Wallet[]) =>
-          prev.map((w): Wallet => (w.id === wallet.id ? { 
-            ...w, 
-            balanceSompi: verifiedBalance,
-            addressBalances: updatedBalances
-          } : w))
-        );
+        // Ensure the total balance is precisely the sum of address balances as mandated by Kaspium
+        const sumOfAllAddressBalances = Object.values(updatedBalances).reduce((acc, val) => acc + BigInt(val), 0n);
+        if (sumOfAllAddressBalances !== newTotalBalance) {
+          newTotalBalance = sumOfAllAddressBalances;
+          balanceChanged = true;
+        }
+
+        if (balanceChanged || wallet.balanceSompi !== newTotalBalance) {
+          setWallets((prev: Wallet[]) =>
+            prev.map((w): Wallet => (w.id === wallet.id ? { 
+              ...w, 
+              balanceSompi: newTotalBalance,
+              addressBalances: updatedBalances
+            } : w))
+          );
+        }
 
         // Clean up spentUtxoOutpoints: keep an outpoint locked ONLY IF the API node still mistakenly returns it
         // Once the node indexer stops returning the outpoint in live unspent set, the spend is confirmed by the network
@@ -1784,6 +1769,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setLocalPendingTxs([]);
     setSpentUtxoOutpoints([]);
 
+    // Load UTXOs instantly from fast memory cache if present to prevent display disappearing/flashing
+    const fastCached = utxosCacheByWalletId.current[activeWalletId];
+    if (fastCached) {
+      setUtxos(fastCached);
+    } else {
+      setUtxos([]);
+    }
+
     let isMounted = true;
 
     (async () => {
@@ -1839,12 +1832,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           }
         }
         if (isMounted) {
-          if (cachedUtxos && cachedUtxos.length > 0) {
-            setUtxos(cachedUtxos);
-          } else {
-            // Keep existing in-memory UTXOs if set during scan/import, preventing wipeout
-            setUtxos((prevUtxos) => (prevUtxos && prevUtxos.length > 0 ? prevUtxos : []));
-          }
+          const finalUtxos = cachedUtxos && cachedUtxos.length > 0 ? cachedUtxos : [];
+          utxosCacheByWalletId.current[activeWalletId] = finalUtxos;
+          setUtxos(finalUtxos);
         }
       } catch (e) {
         console.warn('Failed to load cached UTXOs from IndexedDB:', e);
@@ -2166,7 +2156,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let scanRes;
     try {
       scanRes = await scanKaspaWalletChain(
-        mStr, passphrase, prefix, addressType, isRestoration ? 100 : 1,
+        mStr, passphrase, prefix, addressType, isRestoration ? 30 : 1,
         (scannedCount, foundCount, balanceSompi) => {
           setIndexingState({ isIndexing: true, scannedAddresses: scannedCount, foundAddresses: foundCount, balanceSompi });
         }
@@ -2268,6 +2258,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         derivationPath: u.derivationPath || u.path,
       }));
       setUtxos(parsedUtxos);
+      utxosCacheByWalletId.current[newW.id] = parsedUtxos;
       try {
         await saveUtxosToDB(newW.id, parsedUtxos);
       } catch (e) {}
@@ -2494,7 +2485,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         passToUse,
         prefix,
         activeWallet.addressType || 'P2SH',
-        100,
+        30,
         (scannedCount, foundCount, balanceSompi) => {
           setIndexingState({ isIndexing: true, scannedAddresses: scannedCount, foundAddresses: foundCount, balanceSompi });
         }
@@ -2559,6 +2550,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         derivationPath: u.derivationPath || u.path,
       }));
       setUtxos(parsedUtxos);
+      utxosCacheByWalletId.current[activeWallet.id] = parsedUtxos;
       try {
         await saveUtxosToDB(activeWallet.id, parsedUtxos);
         if (typeof window !== 'undefined' && window.localStorage) {
@@ -2613,7 +2605,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let scanRes;
     try {
       scanRes = await scanKaspaWalletChain(
-        mStr, passphrase, prefix, addressType, 50,
+        mStr, passphrase, prefix, addressType, 30,
         (scannedCount, foundCount, balanceSompi) => {
           setIndexingState({ isIndexing: true, scannedAddresses: scannedCount, foundAddresses: foundCount, balanceSompi });
         }
@@ -2714,6 +2706,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         derivationPath: u.derivationPath || u.path,
       }));
       setUtxos(parsedUtxos);
+      utxosCacheByWalletId.current[newW.id] = parsedUtxos;
       try {
         await saveUtxosToDB(newW.id, parsedUtxos);
         if (typeof window !== 'undefined' && window.localStorage) {
@@ -2844,6 +2837,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
 
     setUtxos(initialUtxos);
+    utxosCacheByWalletId.current[newW.id] = initialUtxos;
     setWallets((prev) => [...prev, newW]);
     setActiveWalletIdState(newW.id);
     setIsLoggedOut(false);
@@ -3245,61 +3239,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             const vout = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index ?? u.vout ?? 0);
             return `${txid}:${vout}`;
           });
-          const nowSpent = Date.now();
-          spentOutpoints.forEach(op => {
-            spentUtxoTimestampsRef.current[op] = nowSpent;
-          });
-          setSpentUtxoOutpoints((prev) => [...prev, ...spentOutpoints]);
-
-          // Compute and inject the pending change UTXO locally
-          const totalInputSompi = selectedUtxos.reduce((acc, u) => acc + BigInt(u.utxoEntry?.amount || u.amount || 0), 0n);
-          const changeSompi = totalInputSompi - finalAmountSompi - finalFeeSompi;
-
-          if (changeSompi > 0n) {
-            const pendingChange: UTXO & { timestamp: number } = {
-              id: `utxo-pending-${broadcastResult.txId!}-change`,
-              txid: broadcastResult.txId!,
-              vout: 1, // Change output is at output index 1 in buildKaspaTransaction
-              amountSompi: changeSompi,
-              address: effectiveChangeAddress || activeWallet.receiveAddress,
-              blockDaaScore: 0,
-              derivationPath: effectiveChangePath || activeWallet.addressPaths?.[effectiveChangeAddress || activeWallet.receiveAddress] || (effectiveChangeAddress === activeWallet.receiveAddress ? "m/44'/111111'/0'/0/0" : "m/44'/111111'/0'/1/0"),
-              timestamp: nowSpent,
-            };
-            setLocalPendingChangeUtxos((prev) => [...prev, pendingChange]);
-          }
-
-          // 3. Instantly deduct spent balance and filter UTXOs for reactive UI
-          const totalDeductionSompi = finalAmountSompi + finalFeeSompi;
-          setWallets((prev) =>
-            prev.map((w) => {
-              if (w.id === activeWallet.id) {
-                const newBal = w.balanceSompi > totalDeductionSompi ? w.balanceSompi - totalDeductionSompi : 0n;
-                return { ...w, balanceSompi: newBal };
-              }
-              return w;
-            })
-          );
-          setUtxos((prev) => {
-            const unspent = prev.filter((u) => !spentOutpoints.includes(`${u.txid}:${u.vout}`));
-            if (changeSompi > 0n) {
-              const pendingChange: UTXO = {
-                id: `utxo-pending-${broadcastResult.txId!}-change`,
-                txid: broadcastResult.txId!,
-                vout: 1,
-                amountSompi: changeSompi,
-                address: effectiveChangeAddress || activeWallet.receiveAddress,
-                blockDaaScore: 0,
-                derivationPath: effectiveChangePath || activeWallet.addressPaths?.[effectiveChangeAddress || activeWallet.receiveAddress] || (effectiveChangeAddress === activeWallet.receiveAddress ? "m/44'/111111'/0'/0/0" : "m/44'/111111'/0'/1/0"),
-              };
-              const updated = [...unspent, pendingChange];
-              saveUtxosToDB(activeWallet.id, updated).catch(() => {});
-              return updated;
-            }
-            saveUtxosToDB(activeWallet.id, unspent).catch(() => {});
-            return unspent;
-          });
-
           // Schedule jittered post-transaction refreshes to avoid rate-limit bursts while indexing on-chain
           scheduleJitteredPostTxRefreshes(refreshBalance);
 
@@ -3537,63 +3476,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           };
           setLocalPendingTxs((prev) => [newPendingTx, ...prev]);
           setTransactions((prev) => [newPendingTx, ...prev.filter(t => t.txid !== newPendingTx.txid)]);
-
-          // 2. Add outpoints of spent UTXOs to local spent list
-          const spentOutpoints = utxosToCompound.map((u: any) => {
-            const txid = u.outpoint?.transactionId || u.transaction_id || u.txid || '';
-            const vout = u.outpoint?.index !== undefined ? u.outpoint.index : (u.index ?? u.vout ?? 0);
-            return `${txid}:${vout}`;
-          });
-          const nowSpent = Date.now();
-          spentOutpoints.forEach(op => {
-            spentUtxoTimestampsRef.current[op] = nowSpent;
-          });
-          setSpentUtxoOutpoints((prev) => [...prev, ...spentOutpoints]);
-
-          // Compute and inject the pending compounding output UTXO locally
-          if (amountToSelf > 0n) {
-            const pendingChange: UTXO & { timestamp: number } = {
-              id: `utxo-pending-${broadcastResult.txId!}-change`,
-              txid: broadcastResult.txId!,
-              vout: 0, // Compound transaction destination output is index 0
-              amountSompi: amountToSelf,
-              address: activeWallet.receiveAddress,
-              blockDaaScore: 0,
-              derivationPath: activeWallet.addressPaths?.[activeWallet.receiveAddress] || "m/44'/111111'/0'/0/0",
-              timestamp: nowSpent,
-            };
-            setLocalPendingChangeUtxos((prev) => [...prev, pendingChange]);
-          }
-
-          // 3. Instantly deduct compound fee from wallets and filter UTXOs
-          setWallets((prev) =>
-            prev.map((w) => {
-              if (w.id === activeWallet.id) {
-                const newBal = w.balanceSompi > feeSompi ? w.balanceSompi - feeSompi : 0n;
-                return { ...w, balanceSompi: newBal };
-              }
-              return w;
-            })
-          );
-          setUtxos((prev) => {
-            const unspent = prev.filter((u) => !spentOutpoints.includes(`${u.txid}:${u.vout}`));
-            if (amountToSelf > 0n) {
-              const pendingChange: UTXO = {
-                id: `utxo-pending-${broadcastResult.txId!}-change`,
-                txid: broadcastResult.txId!,
-                vout: 0,
-                amountSompi: amountToSelf,
-                address: activeWallet.receiveAddress,
-                blockDaaScore: 0,
-                derivationPath: activeWallet.addressPaths?.[activeWallet.receiveAddress] || "m/44'/111111'/0'/0/0",
-              };
-              const updated = [...unspent, pendingChange];
-              saveUtxosToDB(activeWallet.id, updated).catch(() => {});
-              return updated;
-            }
-            saveUtxosToDB(activeWallet.id, unspent).catch(() => {});
-            return unspent;
-          });
 
           // Schedule jittered post-transaction refreshes to avoid rate-limit bursts while indexing on-chain
           scheduleJitteredPostTxRefreshes(refreshBalance);

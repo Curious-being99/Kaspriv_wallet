@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
   ArrowUpDown,
+  AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -27,6 +28,11 @@ export const UtxoList: React.FC = () => {
     setIsCompoundOpen,
     showToast,
     explorerUrl,
+    contacts,
+    marketData,
+    currency,
+    fiatRate,
+    currentDaaScore,
   } = useWallet();
 
   const { openKeyboard } = useVirtualKeyboard();
@@ -53,20 +59,81 @@ export const UtxoList: React.FC = () => {
     }
   };
 
-  const handleCopy = (text: string, label: string) => {
+  const handleCopy = (e: React.MouseEvent, text: string, label: string) => {
+    e.stopPropagation();
     navigator.clipboard.writeText(text);
     setCopiedText(text);
     showToast(`${label} copied!`, 'success');
     setTimeout(() => setCopiedText(null), 2000);
   };
 
+  // Helper to determine address name/alias according to Kaspium specification
+  const getAddressLabel = (address: string, path?: string) => {
+    const contact = contacts?.find((c) => c.address.toLowerCase() === address.toLowerCase());
+    if (contact) return contact.name;
+
+    if (path) {
+      const parts = path.split('/');
+      const index = parts[parts.length - 1];
+      const isChange = parts[parts.length - 2] === '1';
+      if (!isNaN(Number(index))) {
+        return isChange ? `Change Address #${index}` : `Receive Address #${index}`;
+      }
+    }
+
+    if (address.toLowerCase() === activeWallet.receiveAddress.toLowerCase()) {
+      return 'Primary Receive Address';
+    }
+    return 'Wallet Address';
+  };
+
+  // Helper to determine UTXO status including Coinbase Maturity
+  const getUtxoStatus = (u: any) => {
+    const outpoint = `${u.txid}:${u.vout}`;
+    const isLocked = activeWallet.lockedUtxoOutpoints?.includes(outpoint) || false;
+    
+    if (isLocked) {
+      return {
+        label: 'Frozen',
+        color: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
+        isSpendable: false,
+      };
+    }
+
+    if (u.isCoinbase) {
+      const scoreDiff = currentDaaScore - (u.blockDaaScore || 0);
+      const isMatured = scoreDiff >= 1000;
+      if (isMatured) {
+        return {
+          label: 'Coinbase (Matured)',
+          color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+          isSpendable: true,
+        };
+      } else {
+        const progress = Math.max(0, scoreDiff);
+        return {
+          label: `Immature Coinbase (${progress}/1000 DAA)`,
+          color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+          isSpendable: false,
+        };
+      }
+    }
+
+    return {
+      label: 'Spendable',
+      color: 'text-[#70C7BA] bg-[#70C7BA]/10 border-[#70C7BA]/20',
+      isSpendable: true,
+    };
+  };
+
   // Filter & Search logic
   const filteredUtxos = utxos.filter((u) => {
     const outpoint = `${u.txid}:${u.vout}`;
     const isLocked = activeWallet.lockedUtxoOutpoints?.includes(outpoint) || false;
+    const status = getUtxoStatus(u);
 
     // Filter type
-    if (filter === 'spendable' && isLocked) return false;
+    if (filter === 'spendable' && !status.isSpendable) return false;
     if (filter === 'frozen' && !isLocked) return false;
 
     // Search query
@@ -74,17 +141,19 @@ export const UtxoList: React.FC = () => {
       const q = searchQuery.toLowerCase();
       const kasStr = sompiToKasString(u.amountSompi);
       const formattedKasStr = formatKas(u.amountSompi, 8);
+      const label = getAddressLabel(u.address, u.derivationPath).toLowerCase();
       return (
         u.txid.toLowerCase().includes(q) ||
         u.address.toLowerCase().includes(q) ||
         kasStr.includes(q) ||
-        formattedKasStr.includes(q)
+        formattedKasStr.includes(q) ||
+        label.includes(q)
       );
     }
     return true;
   });
 
-  // Sort logic
+  // Sort logic (largest amount first by default, matching Kaspium coin selection preferences)
   const sortedUtxos = [...filteredUtxos].sort((a, b) => {
     if (sortBy === 'amount-desc') {
       return b.amountSompi > a.amountSompi ? 1 : b.amountSompi < a.amountSompi ? -1 : 0;
@@ -98,18 +167,33 @@ export const UtxoList: React.FC = () => {
     return 0;
   });
 
-  // Calculate metrics
+  // Metrics calculation
   const totalUtxosCount = utxos.length;
   const frozenUtxosCount = utxos.filter((u) =>
     activeWallet.lockedUtxoOutpoints?.includes(`${u.txid}:${u.vout}`)
   ).length;
-  const spendableUtxosCount = totalUtxosCount - frozenUtxosCount;
+
+  const spendableUtxos = utxos.filter((u) => getUtxoStatus(u).isSpendable);
+  const spendableUtxosCount = spendableUtxos.length;
 
   const totalSumSompi = utxos.reduce((sum, u) => sum + BigInt(u.amountSompi || 0), 0n);
   const frozenSumSompi = utxos
     .filter((u) => activeWallet.lockedUtxoOutpoints?.includes(`${u.txid}:${u.vout}`))
     .reduce((sum, u) => sum + BigInt(u.amountSompi || 0), 0n);
-  const spendableSumSompi = totalSumSompi - frozenSumSompi;
+  const spendableSumSompi = spendableUtxos.reduce((sum, u) => sum + BigInt(u.amountSompi || 0), 0n);
+
+  // Helper to format fiat value
+  const getFiatValueString = (sompi: bigint) => {
+    if (!marketData || !marketData.priceUsd) return '';
+    const kasAmount = Number(sompi) / 100000000;
+    const fiatAmount = kasAmount * marketData.priceUsd * (fiatRate || 1.0);
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency || 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    }).format(fiatAmount);
+  };
 
   return (
     <div className="w-full mt-4 space-y-4">
@@ -195,7 +279,29 @@ export const UtxoList: React.FC = () => {
         </button>
       </div>
 
-      {/* 3. Search & Sort Controls */}
+      {/* 3. Kaspium-Style Compound Warning Banner */}
+      {spendableUtxosCount > 80 && (
+        <div className="mx-1 p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <h4 className="text-xs font-black text-amber-300 uppercase tracking-wider">
+              High UTXO Count Detected ({spendableUtxosCount})
+            </h4>
+            <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+              You have exceeded the maximum inputs recommended for a single transaction (80). Any future sends might fail due to oversized transaction payload. Please merge them to avoid failures.
+            </p>
+            <button
+              onClick={() => setIsCompoundOpen(true)}
+              className="mt-2.5 text-[11px] font-extrabold text-amber-300 hover:text-amber-200 flex items-center gap-1 underline transition-all cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 fill-current" />
+              <span>Compound Now</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Search & Sort Controls */}
       <div className="space-y-2 px-1">
         <div className="flex items-center gap-2">
           {/* Search Input */}
@@ -208,7 +314,7 @@ export const UtxoList: React.FC = () => {
               onClick={() => openKeyboard({ value: searchQuery, onChange: setSearchQuery })}
               inputMode="none"
               onChange={() => {}}
-              placeholder="Search TXID, address, or KAS amount..."
+              placeholder="Search address name, address, or amount..."
               className="w-full bg-[#0E131B] border border-[#1B232E] rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-[#70C7BA]/50 transition-colors cursor-pointer"
             />
           </div>
@@ -232,14 +338,14 @@ export const UtxoList: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. UTXO List Content */}
+      {/* 5. UTXO List Content */}
       <div className="divide-y divide-[#1B232E]/60 border-t border-b border-[#1B232E]/50">
         {sortedUtxos.length === 0 ? (
-          <div className="text-center py-10 px-4 text-slate-400">
-            <Layers className="w-9 h-9 text-slate-600 mx-auto mb-2" />
+          <div className="text-center py-12 px-4 text-slate-400 bg-[#0E131B]/30 rounded-2xl border border-dashed border-[#1B232E]">
+            <Layers className="w-10 h-10 text-slate-600 mx-auto mb-3.5" />
             <div className="text-xs font-bold text-slate-300">No outputs found</div>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              {searchQuery ? 'Try matching another search query' : 'Unspent transaction outputs will show here'}
+            <p className="text-[11px] text-slate-500 mt-1">
+              {searchQuery ? 'Try matching another search query' : 'Your active unspent transaction outputs will show here'}
             </p>
           </div>
         ) : (
@@ -247,52 +353,66 @@ export const UtxoList: React.FC = () => {
             const outpoint = `${u.txid}:${u.vout}`;
             const isLocked = activeWallet.lockedUtxoOutpoints?.includes(outpoint) || false;
             const isExpanded = expandedUtxoId === outpoint;
+            const status = getUtxoStatus(u);
+            const labelName = getAddressLabel(u.address, u.derivationPath);
 
             return (
-              <div key={outpoint} className="py-3 transition-colors hover:bg-[#131924]/20">
-                {/* Header Row */}
+              <div 
+                key={outpoint} 
+                className="py-3.5 transition-colors hover:bg-[#131924]/20 cursor-pointer"
+                onClick={() => setExpandedUtxoId(isExpanded ? null : outpoint)}
+              >
+                {/* Header / Content Row */}
                 <div className="flex items-center justify-between gap-3 px-1">
-                  <div
-                    onClick={() => setExpandedUtxoId(isExpanded ? null : outpoint)}
-                    className="flex-1 min-w-0 flex items-center gap-2.5 cursor-pointer"
-                  >
-                    <div className={`p-1.5 rounded-lg shrink-0 ${isLocked ? 'bg-rose-500/10 text-rose-400' : 'bg-[#70C7BA]/10 text-[#70C7BA]'}`}>
+                  <div className="flex-1 min-w-0 flex items-center gap-3">
+                    <div className={`p-2 rounded-xl shrink-0 border ${status.color}`}>
                       {isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-xs font-black text-slate-200 truncate">
-                          {shortenAddress(u.txid, 6, 4)}
+                    
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-slate-200 truncate">
+                          {labelName}
                         </span>
                         <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-[#1B232E] text-slate-400 rounded">
                           #{u.vout}
                         </span>
-                        {u.blockDaaScore === 0 && (
-                          <span className="text-[9px] font-extrabold px-1.5 py-0.2 bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded uppercase tracking-wider animate-pulse">
-                            Unconfirmed
-                          </span>
-                        )}
                       </div>
-                      <div className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
-                        {shortenAddress(u.address, 12, 10)}
+                      
+                      <div className="text-[10px] font-mono text-slate-400 truncate mt-1">
+                        {u.address}
+                      </div>
+
+                      {/* Maturity / DAA status badge */}
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${status.color}`}>
+                          {status.label}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <div className="text-right">
                       <div className="font-mono text-xs font-black text-slate-100">
-                        {formatKas(u.amountSompi, 4)}
+                        {formatKas(u.amountSompi, 4)} KAS
                       </div>
-                      <div className="text-[10px] font-bold text-[#70C7BA] mt-0.5">KAS</div>
+                      {marketData?.priceUsd > 0 && (
+                        <div className="text-[10px] font-bold text-[#70C7BA] mt-0.5">
+                          {getFiatValueString(u.amountSompi)}
+                        </div>
+                      )}
                     </div>
 
                     <button
-                      onClick={() => toggleLockUtxo(outpoint)}
-                      className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleLockUtxo(outpoint);
+                      }}
+                      className={`p-1.5 rounded-lg transition-all cursor-pointer border ${
                         isLocked
-                          ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30'
-                          : 'bg-[#1C2F42]/80 text-slate-400 hover:text-slate-200'
+                          ? 'bg-rose-500/20 border-rose-500/20 text-rose-300 hover:bg-rose-500/30'
+                          : 'bg-[#1C2F42]/80 border-transparent text-slate-400 hover:text-slate-200'
                       }`}
                       title={isLocked ? 'Unlock / Unfreeze output' : 'Freeze output'}
                     >
@@ -300,7 +420,10 @@ export const UtxoList: React.FC = () => {
                     </button>
 
                     <button
-                      onClick={() => setExpandedUtxoId(isExpanded ? null : outpoint)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedUtxoId(isExpanded ? null : outpoint);
+                      }}
                       className="p-1 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
                     >
                       {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -308,7 +431,7 @@ export const UtxoList: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Expanded details list */}
+                {/* Expanded details card */}
                 <AnimatePresence initial={false}>
                   {isExpanded && (
                     <motion.div
@@ -317,7 +440,10 @@ export const UtxoList: React.FC = () => {
                       exit={{ height: 0, opacity: 0 }}
                       className="overflow-hidden"
                     >
-                      <div className="mt-3.5 mx-1 p-3 bg-[#0E131B] rounded-2xl border border-[#1B232E]/60 space-y-2.5 text-xs">
+                      <div 
+                        className="mt-3.5 mx-1 p-3.5 bg-[#0E131B] rounded-2xl border border-[#1B232E]/60 space-y-3 text-xs"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div>
                           <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Outpoint Transaction ID</div>
                           <div className="flex items-center justify-between gap-2 mt-1">
@@ -325,7 +451,7 @@ export const UtxoList: React.FC = () => {
                               {u.txid}
                             </span>
                             <button
-                              onClick={() => handleCopy(u.txid, 'Transaction ID')}
+                              onClick={(e) => handleCopy(e, u.txid, 'Transaction ID')}
                               className="p-1 text-slate-400 hover:text-white shrink-0"
                             >
                               <Copy className="w-3.5 h-3.5" />
@@ -333,34 +459,34 @@ export const UtxoList: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 pt-1.5 border-t border-[#1B232E]/50">
+                        <div className="grid grid-cols-2 gap-4 pt-2.5 border-t border-[#1B232E]/50">
                           <div>
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Output Index</div>
-                            <div className="font-mono text-slate-300 mt-0.5">#{u.vout}</div>
+                            <div className="font-mono text-slate-300 mt-1">#{u.vout}</div>
                           </div>
                           <div>
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Block DAA Score</div>
-                            <div className="font-mono text-slate-300 mt-0.5">
+                            <div className="font-mono text-slate-300 mt-1">
                               {u.blockDaaScore > 0 ? u.blockDaaScore.toLocaleString() : 'Pending'}
                             </div>
                           </div>
                         </div>
 
                         {u.derivationPath && (
-                          <div className="pt-1.5 border-t border-[#1B232E]/50">
+                          <div className="pt-2.5 border-t border-[#1B232E]/50">
                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">HD Derivation Path</div>
-                            <div className="font-mono text-[#70C7BA] mt-0.5">{u.derivationPath}</div>
+                            <div className="font-mono text-[#70C7BA] mt-1">{u.derivationPath}</div>
                           </div>
                         )}
 
-                        <div className="pt-1.5 border-t border-[#1B232E]/50">
-                          <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Address</div>
+                        <div className="pt-2.5 border-t border-[#1B232E]/50">
+                          <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Full Address</div>
                           <div className="flex items-center justify-between gap-2 mt-1">
                             <span className="font-mono text-slate-300 truncate">
                               {u.address}
                             </span>
                             <button
-                              onClick={() => handleCopy(u.address, 'Address')}
+                              onClick={(e) => handleCopy(e, u.address, 'Address')}
                               className="p-1 text-slate-400 hover:text-white shrink-0"
                             >
                               <Copy className="w-3.5 h-3.5" />
@@ -368,7 +494,7 @@ export const UtxoList: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="pt-2 flex justify-end">
+                        <div className="pt-3 flex justify-end">
                           <a
                             href={`${explorerUrl}/txs/${u.txid}`}
                             target="_blank"
@@ -389,7 +515,7 @@ export const UtxoList: React.FC = () => {
         )}
       </div>
 
-      {/* 5. Helpful tip on compounding */}
+      {/* 6. Helpful tip on compounding */}
       <div className="flex items-start gap-2 px-1 text-[10px] text-slate-400 leading-normal">
         <Info className="w-3.5 h-3.5 shrink-0 text-[#70C7BA] mt-0.5" />
         <p>
@@ -399,3 +525,4 @@ export const UtxoList: React.FC = () => {
     </div>
   );
 };
+

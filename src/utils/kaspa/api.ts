@@ -725,8 +725,8 @@ export async function broadcastKaspaTransaction(txPayload: any, network: string 
       const res = await fetchWithTimeout(`${baseUrl}/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload, (_, v) => typeof v === 'bigint' ? v.toString() + 'n' : v).replace(/"(-?\d+)n"/g, '$1'),
-      }, 5000, 0);
+        body: JSON.stringify(bodyPayload, (_, v) => typeof v === 'bigint' ? v.toString() : v),
+      }, 2000, 0);
 
       const data = await res.json().catch(() => null);
       const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;

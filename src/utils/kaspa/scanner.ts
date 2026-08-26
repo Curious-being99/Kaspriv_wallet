@@ -43,7 +43,7 @@ export async function scanKaspaWalletChain(
   passphrase?: string,
   prefix: string = 'kaspa',
   addressType: 'P2SH' = 'P2SH',
-  gapLimit: number = 100,
+  gapLimit: number = 30,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<ScannedWalletChainResult> {
   const seedArray = await getCachedSeed(mnemonic, passphrase || '');
@@ -139,7 +139,7 @@ export async function scanKaspaWalletChain(
     }
 
     // Full scanning with parallel batching for seed restoration / index scan
-    const coinTypes = [111111, 972];
+    const coinTypes = [111111];
     let totalScanned = 0;
 
     // Always include primary receive and change addresses in discovered list initially
@@ -173,12 +173,22 @@ export async function scanKaspaWalletChain(
       for (const isChange of [false, true]) {
         const changeVal = isChange ? 1 : 0;
         const batchSize = 5;
-        let consecutiveEmptyBatches = 0;
-        let foundActiveInChain = false;
+        let gapAnchor = -1;
+        let idxVal = 0;
+        const kMaxScan = 1000;
+        const kGapLimit = 30;
 
-        for (let i = 0; i < gapLimit; i += batchSize) {
-          const batchIndices = Array.from({ length: Math.min(batchSize, gapLimit - i) }, (_, idx) => i + idx);
+        while (idxVal < kMaxScan) {
+          const batchIndices: number[] = [];
+          for (let k = 0; k < batchSize; k++) {
+            const checkIdx = idxVal + k;
+            if (checkIdx < kMaxScan) {
+              batchIndices.push(checkIdx);
+            }
+          }
           
+          if (batchIndices.length === 0) break;
+
           const batchItems = (await Promise.all(batchIndices.map(async (idx) => {
             const path = `m/44'/${coinType}'/0'/${changeVal}/${idx}`;
             try {
@@ -195,12 +205,14 @@ export async function scanKaspaWalletChain(
             }
           }))).filter(Boolean) as { idx: number; path: string; addr: string }[];
 
-          if (batchItems.length === 0) break;
+          if (batchItems.length === 0) {
+            idxVal += batchIndices.length;
+            continue;
+          }
 
           const batchAddrs = batchItems.map(item => item.addr);
-          let batchHasActivity = false;
 
-          // 1. Fetch bulk balances, bulk UTXOs, and transaction history concurrently for this batch
+          // Fetch bulk balances, bulk UTXOs, and transaction history concurrently for this batch
           const [bulkBalancesRes, bulkUtxosRes, batchTxsList] = await Promise.all([
             fetchKaspaAddressesBalances(batchAddrs).catch(() => null),
             fetchKaspaAddressesUtxos(batchAddrs).catch(() => null),
@@ -260,9 +272,11 @@ export async function scanKaspaWalletChain(
             const currentBal = utxosSum > addrBal ? utxosSum : addrBal;
             const hasTxs = Array.isArray(addrTxs) && addrTxs.length > 0;
 
-            if (currentBal > 0n || addrUtxos.length > 0 || hasTxs) {
-              batchHasActivity = true;
-              foundActiveInChain = true;
+            const isUsed = currentBal > 0n || addrUtxos.length > 0 || hasTxs;
+
+            if (isUsed) {
+              // Move gapAnchor forward if a used address was found
+              gapAnchor = Math.max(gapAnchor, item.idx);
 
               // Check if address is already in discoveredAddresses
               const existingIdx = discoveredAddresses.findIndex(d => d.address.toLowerCase() === lowAddr);
@@ -309,21 +323,16 @@ export async function scanKaspaWalletChain(
             onProgress(totalScanned, activeCount, totalBalanceSompi);
           }
 
-          // Spacing between batches
+          // Spacing between batches to respect rate limits
           await new Promise((r) => setTimeout(r, 60));
 
-          if (batchHasActivity) {
-            consecutiveEmptyBatches = 0;
-          } else {
-            consecutiveEmptyBatches++;
-            // Stop after 4 consecutive empty batches (20 empty addresses) if an active address was found in this chain,
-            // or after 10 consecutive empty batches (50 addresses) if no active address found yet.
-            if (foundActiveInChain && consecutiveEmptyBatches >= 4) {
-              break;
-            } else if (!foundActiveInChain && consecutiveEmptyBatches >= 10) {
-              break;
-            }
+          // Check gap limit stop condition
+          const scannedIndex = batchIndices[batchIndices.length - 1];
+          if ((scannedIndex - gapAnchor) >= kGapLimit) {
+            break;
           }
+
+          idxVal += batchIndices.length;
         }
       }
     }
@@ -351,7 +360,7 @@ export async function scanKaspaWalletChain(
 export async function scanKaspaWalletChainPublic(
   deriver: PublicAddressDeriver,
   addressType: 'P2SH' = 'P2SH',
-  gapLimit: number = 100,
+  gapLimit: number = 30,
   onProgress?: (scannedCount: number, foundCount: number, balanceSompi: bigint) => void
 ): Promise<{
   totalBalanceSompi: bigint;
@@ -377,11 +386,20 @@ export async function scanKaspaWalletChainPublic(
   for (const isChange of [false, true]) {
     const chainType = isChange ? 'change' : 'receive';
     const batchSize = 5;
-    let consecutiveEmptyBatches = 0;
-    let foundActiveInChain = false;
+    let gapAnchor = -1;
+    let idxVal = 0;
+    const kMaxScan = 1000;
+    const kGapLimit = 30;
 
-    for (let i = 0; i < gapLimit; i += batchSize) {
-      const batchIndices = Array.from({ length: Math.min(batchSize, gapLimit - i) }, (_, idx) => i + idx);
+    while (idxVal < kMaxScan) {
+      const batchIndices: number[] = [];
+      for (let k = 0; k < batchSize; k++) {
+        const checkIdx = idxVal + k;
+        if (checkIdx < kMaxScan) {
+          batchIndices.push(checkIdx);
+        }
+      }
+      if (batchIndices.length === 0) break;
 
       const batchItems = await Promise.all(
         batchIndices.map(async (idx) => {
@@ -395,10 +413,12 @@ export async function scanKaspaWalletChainPublic(
       );
 
       const activeBatchItems = batchItems.filter(Boolean) as { idx: number; path: string; addr: string }[];
-      if (activeBatchItems.length === 0) break;
+      if (activeBatchItems.length === 0) {
+        idxVal += batchIndices.length;
+        continue;
+      }
 
       const batchAddrs = activeBatchItems.map(item => item.addr);
-      let batchHasActivity = false;
 
       const [bulkBalancesRes, bulkUtxosRes, batchTxsList] = await Promise.all([
         fetchKaspaAddressesBalances(batchAddrs).catch(() => null),
@@ -455,9 +475,10 @@ export async function scanKaspaWalletChainPublic(
         const currentBal = utxosSum > addrBal ? utxosSum : addrBal;
         const hasTxs = Array.isArray(addrTxs) && addrTxs.length > 0;
 
-        if (currentBal > 0n || addrUtxos.length > 0 || hasTxs) {
-          batchHasActivity = true;
-          foundActiveInChain = true;
+        const isUsed = currentBal > 0n || addrUtxos.length > 0 || hasTxs;
+
+        if (isUsed) {
+          gapAnchor = Math.max(gapAnchor, item.idx);
 
           const existingIdx = discoveredAddresses.findIndex(d => d.address.toLowerCase() === lowAddr);
           if (existingIdx >= 0) {
@@ -505,16 +526,13 @@ export async function scanKaspaWalletChainPublic(
 
       await new Promise((r) => setTimeout(r, 60));
 
-      if (batchHasActivity) {
-        consecutiveEmptyBatches = 0;
-      } else {
-        consecutiveEmptyBatches++;
-        if (foundActiveInChain && consecutiveEmptyBatches >= 4) {
-          break;
-        } else if (!foundActiveInChain && consecutiveEmptyBatches >= 10) {
-          break;
-        }
+      // Check gap limit stop condition
+      const scannedIndex = batchIndices[batchIndices.length - 1];
+      if ((scannedIndex - gapAnchor) >= kGapLimit) {
+        break;
       }
+
+      idxVal += batchIndices.length;
     }
   }
 

@@ -48,6 +48,7 @@ export interface UTXO {
   blockDaaScore: number;
   isLocked?: boolean;
   derivationPath?: string;
+  isCoinbase?: boolean;
 }
 
 export type KaspaUtxo = UTXO;

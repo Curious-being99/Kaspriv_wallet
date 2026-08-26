@@ -160,7 +160,7 @@ export function hexToBytes(hex: string): Uint8Array {
 
 /**
  * Generate a real deterministic Kaspa Address based on mnemonic words
- * Supports P2SH, with custom index, change chain, and coinType (111111 or 972)
+ * Supports P2SH, with custom index, change chain, and coinType (111111)
  */
 export async function generateDeterministicAddress(
   mnemonic: string, 
