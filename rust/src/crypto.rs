@@ -10,7 +10,7 @@ use std::error::Error;
 
 /// Derives a 256-bit AES key from a user-supplied password using PBKDF2-HMAC-SHA256.
 pub fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32], Box<dyn Error>> {
-    let mut derived_key = [0u8; 32];
+    let mut derived_key: [u8; 32] = core::array::from_fn(|_| 0);
     pbkdf2::<SimpleHmac<Sha256>>(
         password.as_bytes(),
         salt,
@@ -24,10 +24,16 @@ pub fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32], Box<dyn Error
 /// Encrypts raw data using AES-256-GCM with a derived password key.
 pub fn encrypt_data(data: &[u8], password: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     // 1. Generate secure 16-byte random salt and 12-byte random nonce
-    let mut salt = [0u8; 16];
-    let mut nonce_bytes = [0u8; 12];
-    OsRng.fill_bytes(&mut salt);
-    OsRng.fill_bytes(&mut nonce_bytes);
+    let salt: [u8; 16] = {
+        let mut s = [0u8; 16];
+        OsRng.fill_bytes(&mut s);
+        s
+    };
+    let nonce_bytes: [u8; 12] = {
+        let mut n = [0u8; 12];
+        OsRng.fill_bytes(&mut n);
+        n
+    };
 
     // 2. Derive encryption key
     let key = derive_key(password, &salt)?;
