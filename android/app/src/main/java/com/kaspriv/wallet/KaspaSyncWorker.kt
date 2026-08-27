@@ -107,14 +107,14 @@ class KaspaSyncWorker(
 
                 for (addr in ownedAddresses) {
                     // Fetch live address balance for flawless state sync
-                    val addrBal = fetchBalanceForAddress(addr)
+                    val addrBal = fetchBalanceForAddress(db, addr)
                     if (addrBal != null) {
                         totalWalletSompi += addrBal
                         addressBalanceMap[addr] = addrBal.toString()
                         hasBalanceUpdate = true
                     }
 
-                    val txs = fetchRecentTransactionsForAddress(addr)
+                    val txs = fetchRecentTransactionsForAddress(db, addr)
                     val now = System.currentTimeMillis()
 
                     for (tx in txs) {
@@ -249,13 +249,34 @@ class KaspaSyncWorker(
         return list.distinct()
     }
 
-    private fun fetchRecentTransactionsForAddress(address: String): List<JSONObject> {
-        val endpoints = listOf(
-            "https://api.kaspa.org/addresses/$address/full-transactions?limit=10&resolve_previous_outpoints=light",
-            "https://api-mainnet.kaspa.org/addresses/$address/full-transactions?limit=10&resolve_previous_outpoints=light"
-        )
+    private suspend fun getApiUrlFromDb(db: AppDatabase): String {
+        return try {
+            val setting = db.settingDao().getByKey("kaspa_api_url")
+            if (setting != null) {
+                val json = JSONObject(setting.value)
+                val url = json.optString("value")
+                if (url.isNotEmpty()) {
+                    return url.trim().removeSuffix("/")
+                }
+            }
+            "https://api.kaspa.org"
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to load kaspa_api_url from DB, falling back to default: ${e.message}")
+            "https://api.kaspa.org"
+        }
+    }
 
-        for (endpoint in endpoints) {
+    private suspend fun fetchRecentTransactionsForAddress(db: AppDatabase, address: String): List<JSONObject> {
+        val primaryApi = getApiUrlFromDb(db)
+        val endpoints = mutableListOf(
+            "$primaryApi/addresses/$address/full-transactions?limit=10&resolve_previous_outpoints=light"
+        )
+        if (primaryApi != "https://api.kaspa.org") {
+            endpoints.add("https://api.kaspa.org/addresses/$address/full-transactions?limit=10&resolve_previous_outpoints=light")
+        }
+        endpoints.add("https://api-mainnet.kaspa.org/addresses/$address/full-transactions?limit=10&resolve_previous_outpoints=light")
+
+        for (endpoint in endpoints.distinct()) {
             var conn: HttpURLConnection? = null
             try {
                 val url = URL(endpoint)
@@ -292,13 +313,17 @@ class KaspaSyncWorker(
         return emptyList()
     }
 
-    private fun fetchBalanceForAddress(address: String): Long? {
-        val endpoints = listOf(
-            "https://api.kaspa.org/addresses/$address/balance",
-            "https://api-mainnet.kaspa.org/addresses/$address/balance"
+    private suspend fun fetchBalanceForAddress(db: AppDatabase, address: String): Long? {
+        val primaryApi = getApiUrlFromDb(db)
+        val endpoints = mutableListOf(
+            "$primaryApi/addresses/$address/balance"
         )
+        if (primaryApi != "https://api.kaspa.org") {
+            endpoints.add("https://api.kaspa.org/addresses/$address/balance")
+        }
+        endpoints.add("https://api-mainnet.kaspa.org/addresses/$address/balance")
 
-        for (endpoint in endpoints) {
+        for (endpoint in endpoints.distinct()) {
             var conn: HttpURLConnection? = null
             try {
                 val url = URL(endpoint)

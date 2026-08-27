@@ -133,6 +133,7 @@ class MainActivity : BridgeActivity() {
         registerPlugin(SQLitePlugin::class.java)
         registerPlugin(DecentralizedNotificationPlugin::class.java)
         registerPlugin(NativeScannerPlugin::class.java)
+        registerPlugin(NativeUIRouterPlugin::class.java)
 
         super.onCreate(savedInstanceState)
 

@@ -1,10 +1,8 @@
 {
-  "name": "Kaspriv Wallet",
-  "description": "Kaspriv Wallet is a high-security mobile-first Kaspa wallet application featuring a Rust-based memory enclave, JavaScript secret isolation via Opaque Sessions, and a zero-trust hardware-bound persistence model.",
+  "name": "Kaspriv Native Wallet",
+  "description": "Kaspriv Wallet is a high-security mobile Kaspa wallet built 100% with Native Kotlin and Rust, featuring a secure cryptographic enclave and local SQLite persistence.",
   "requestFramePermissions": [
     "camera"
   ],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": []
 }

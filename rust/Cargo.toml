@@ -1,0 +1,23 @@
+[package]
+name = "kaspriv_rust"
+version = "1.2.0"
+edition = "2021"
+authors = ["Kaspriv Core Devs <dev@kaspriv.com>"]
+description = "High-Performance Native Cryptography & Kaspa Offline Transaction Signer"
+
+[lib]
+name = "kaspriv_rust"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jni = { version = "0.21.1", default-features = false }
+secp256k1 = { version = "0.28.0", features = ["global-context", "rand", "serde"] }
+sha2 = "0.10.8"
+aes-gcm = "0.10.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+pbkdf2 = "0.12.2"
+hmac = "0.12.1"
+rand = { version = "0.8.5", features = ["getrandom"] }
+hex = "0.4.3"
+getrandom = { version = "0.2", features = ["js"] }
