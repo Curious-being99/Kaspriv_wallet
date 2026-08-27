@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 import { unifiedAuthService } from '../services/unifiedAuthService';
-import { Lock, Unlock, ShieldAlert, Eye, EyeOff, Fingerprint } from 'lucide-react';
+import { Lock, Unlock, ShieldAlert, Eye, EyeOff, Fingerprint, ArrowUpRight, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hapticSuccess, hapticError, hapticMedium } from '../utils/haptics';
 
@@ -155,9 +155,15 @@ export const LockScreen: React.FC = () => {
               isKeyboardOpen ? 'w-12 h-12' : 'w-16 h-16'
             }`}
           >
-            <Lock className={`text-[#70C7BA] transition-all duration-300 ${
-              isKeyboardOpen ? 'w-5 h-5' : 'w-7 h-7'
-            }`} />
+            {isPendingTx ? (
+              <ArrowUpRight className={`text-[#70C7BA] transition-all duration-300 ${
+                isKeyboardOpen ? 'w-5 h-5' : 'w-7 h-7'
+              }`} />
+            ) : (
+              <Lock className={`text-[#70C7BA] transition-all duration-300 ${
+                isKeyboardOpen ? 'w-5 h-5' : 'w-7 h-7'
+              }`} />
+            )}
           </div>
         </motion.div>
 
@@ -171,10 +177,33 @@ export const LockScreen: React.FC = () => {
             {isPendingLogout
               ? 'Enter your password to authorize log out'
               : isPendingTx
-              ? 'Enter your password or use biometrics to broadcast'
+              ? 'Authenticate with password or biometrics to sign & broadcast'
               : 'Enter your password to continue'}
           </p>
         </div>
+
+        {isPendingTx && pendingTransaction && (
+          <div className="w-full p-3 rounded-xl bg-[#0B151E] border border-[#273E54] space-y-2 text-left">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-400">Amount</span>
+              <span className="font-mono font-bold text-sm text-[#70C7BA]">{pendingTransaction.amount} KAS</span>
+            </div>
+            <div className="flex items-center justify-between border-t border-[#1C2F42] pt-1.5">
+              <span className="text-[10px] text-slate-400">Priority Fee</span>
+              <span className="font-mono text-[10px] text-slate-200">{pendingTransaction.fee} KAS</span>
+            </div>
+            <div className="flex flex-col gap-0.5 border-t border-[#1C2F42] pt-1.5">
+              <span className="text-[10px] text-slate-400">To Recipient</span>
+              <span className="font-mono text-[9.5px] text-slate-200 truncate font-semibold">{pendingTransaction.toAddress}</span>
+            </div>
+            {pendingTransaction.note && (
+              <div className="flex items-center justify-between border-t border-[#1C2F42] pt-1.5">
+                <span className="text-[10px] text-slate-400">Memo</span>
+                <span className="text-[10px] text-slate-300 truncate max-w-[180px]">{pendingTransaction.note}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleUnlock} className={`w-full transition-all duration-300 ${isKeyboardOpen ? 'space-y-3' : 'space-y-4'}`}>
           <div className="space-y-1.5">
@@ -247,9 +276,9 @@ export const LockScreen: React.FC = () => {
                 <div className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
               ) : (
                 <>
-                  <Unlock className="w-4 h-4" />
+                  {isPendingTx ? <ArrowUpRight className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
                   <span>
-                    {isPendingLogout ? 'Unlock & Log Out' : isPendingTx ? 'Broadcast' : 'Unlock'}
+                    {isPendingLogout ? 'Unlock & Log Out' : isPendingTx ? 'Authorize & Sign Transaction' : 'Unlock'}
                   </span>
                 </>
               )}

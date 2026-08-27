@@ -37,7 +37,6 @@ export const UtxoList: React.FC = () => {
 
   const { openKeyboard } = useVirtualKeyboard();
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'spendable' | 'frozen'>('all');
   const [sortBy, setSortBy] = useState<'amount-desc' | 'amount-asc' | 'score-desc'>('amount-desc');
   const [expandedUtxoId, setExpandedUtxoId] = useState<string | null>(null);
   const [, setCopiedText] = useState<string | null>(null);
@@ -87,7 +86,7 @@ export const UtxoList: React.FC = () => {
     return 'Wallet Address';
   };
 
-  // Helper to determine UTXO status including Coinbase Maturity
+  // Helper to determine UTXO status including Coinbase Maturity and Pending confirmations
   const getUtxoStatus = (u: any) => {
     const outpoint = `${u.txid}:${u.vout}`;
     const isLocked = activeWallet.lockedUtxoOutpoints?.includes(outpoint) || false;
@@ -100,9 +99,12 @@ export const UtxoList: React.FC = () => {
       };
     }
 
+    const blockDaa = Number(u.blockDaaScore || 0);
+    const confs = (blockDaa > 0 && currentDaaScore > blockDaa) ? (currentDaaScore - blockDaa) : 0;
+    const isChange = activeWallet.changeAddress && u.address?.trim().toLowerCase() === activeWallet.changeAddress.trim().toLowerCase();
+
     if (u.isCoinbase) {
-      const scoreDiff = currentDaaScore - (u.blockDaaScore || 0);
-      const isMatured = scoreDiff >= 1000;
+      const isMatured = confs >= 100;
       if (isMatured) {
         return {
           label: 'Coinbase (Matured)',
@@ -110,13 +112,21 @@ export const UtxoList: React.FC = () => {
           isSpendable: true,
         };
       } else {
-        const progress = Math.max(0, scoreDiff);
+        const progress = Math.max(0, confs);
         return {
-          label: `Immature Coinbase (${progress}/1000 DAA)`,
+          label: `Immature Coinbase (${progress}/100 DAA)`,
           color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
           isSpendable: false,
         };
       }
+    }
+
+    if (!isChange && (blockDaa === 0 || confs < 1)) {
+      return {
+        label: 'Pending (Mempool)',
+        color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+        isSpendable: false,
+      };
     }
 
     return {
@@ -128,14 +138,6 @@ export const UtxoList: React.FC = () => {
 
   // Filter & Search logic
   const filteredUtxos = utxos.filter((u) => {
-    const outpoint = `${u.txid}:${u.vout}`;
-    const isLocked = activeWallet.lockedUtxoOutpoints?.includes(outpoint) || false;
-    const status = getUtxoStatus(u);
-
-    // Filter type
-    if (filter === 'spendable' && !status.isSpendable) return false;
-    if (filter === 'frozen' && !isLocked) return false;
-
     // Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -169,18 +171,8 @@ export const UtxoList: React.FC = () => {
 
   // Metrics calculation
   const totalUtxosCount = utxos.length;
-  const frozenUtxosCount = utxos.filter((u) =>
-    activeWallet.lockedUtxoOutpoints?.includes(`${u.txid}:${u.vout}`)
-  ).length;
-
   const spendableUtxos = utxos.filter((u) => getUtxoStatus(u).isSpendable);
   const spendableUtxosCount = spendableUtxos.length;
-
-  const totalSumSompi = utxos.reduce((sum, u) => sum + BigInt(u.amountSompi || 0), 0n);
-  const frozenSumSompi = utxos
-    .filter((u) => activeWallet.lockedUtxoOutpoints?.includes(`${u.txid}:${u.vout}`))
-    .reduce((sum, u) => sum + BigInt(u.amountSompi || 0), 0n);
-  const spendableSumSompi = spendableUtxos.reduce((sum, u) => sum + BigInt(u.amountSompi || 0), 0n);
 
   // Helper to format fiat value
   const getFiatValueString = (sompi: bigint) => {
@@ -197,89 +189,7 @@ export const UtxoList: React.FC = () => {
 
   return (
     <div className="w-full mt-4 space-y-4">
-      {/* 1. Header Action Row */}
-      <div className="flex items-center justify-between px-1">
-        <div>
-          <h2 className="text-sm font-extrabold text-slate-100 uppercase tracking-wider flex items-center gap-2">
-            <Layers className="w-4 h-4 text-[#70C7BA]" />
-            <span>UTXO Outputs</span>
-          </h2>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            Manage individual unspent transaction outputs
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {totalUtxosCount > 1 && (
-            <button
-              onClick={() => setIsCompoundOpen(true)}
-              className="flex items-center gap-1 text-[11px] font-bold text-[#70C7BA] bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/20 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer"
-              title="Compound UTXOs to reduce fees"
-            >
-              <Zap className="w-3.5 h-3.5 fill-current" />
-              <span>Compound</span>
-            </button>
-          )}
-
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className={`p-2 rounded-xl bg-[#131924] border border-[#212B38] text-slate-400 hover:text-white transition-all cursor-pointer ${
-              isRefreshing ? 'animate-spin' : ''
-            }`}
-            title="Refresh UTXOs"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* 2. Interactive Stat & Filter Cards */}
-      <div className="grid grid-cols-3 gap-2 px-1">
-        <button
-          onClick={() => setFilter('all')}
-          className={`py-2.5 px-3 rounded-2xl text-left transition-all cursor-pointer border ${
-            filter === 'all'
-              ? 'bg-[#70C7BA]/10 border-[#70C7BA] text-[#70C7BA]'
-              : 'bg-[#0E131B] border-[#1B232E]/60 text-slate-400 hover:border-slate-700'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">All ({totalUtxosCount})</div>
-          <div className={`text-xs font-mono font-black mt-0.5 truncate ${filter === 'all' ? 'text-[#70C7BA]' : 'text-slate-200'}`}>
-            {formatKas(totalSumSompi, 2)} <span className="text-[9px] opacity-70">KAS</span>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setFilter('spendable')}
-          className={`py-2.5 px-3 rounded-2xl text-left transition-all cursor-pointer border ${
-            filter === 'spendable'
-              ? 'bg-[#70C7BA]/10 border-[#70C7BA] text-[#70C7BA]'
-              : 'bg-[#0E131B] border-[#1B232E]/60 text-slate-400 hover:border-slate-700'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">Spendable ({spendableUtxosCount})</div>
-          <div className="text-xs font-mono font-black text-[#70C7BA] mt-0.5 truncate">
-            {formatKas(spendableSumSompi, 2)} <span className="text-[9px] opacity-70">KAS</span>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setFilter('frozen')}
-          className={`py-2.5 px-3 rounded-2xl text-left transition-all cursor-pointer border ${
-            filter === 'frozen'
-              ? 'bg-rose-500/10 border-rose-500 text-rose-400'
-              : 'bg-[#0E131B] border-[#1B232E]/60 text-slate-400 hover:border-slate-700'
-          }`}
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider opacity-80">Frozen ({frozenUtxosCount})</div>
-          <div className="text-xs font-mono font-black text-rose-400 mt-0.5 truncate">
-            {formatKas(frozenSumSompi, 2)} <span className="text-[9px] opacity-70">KAS</span>
-          </div>
-        </button>
-      </div>
-
-      {/* 3. Kaspium-Style Compound Warning Banner */}
+      {/* 1. Kaspium-Style Compound Warning Banner */}
       {spendableUtxosCount > 80 && (
         <div className="mx-1 p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
@@ -301,7 +211,7 @@ export const UtxoList: React.FC = () => {
         </div>
       )}
 
-      {/* 4. Search & Sort Controls */}
+      {/* 2. Action Controls & Search */}
       <div className="space-y-2 px-1">
         <div className="flex items-center gap-2">
           {/* Search Input */}
@@ -335,6 +245,30 @@ export const UtxoList: React.FC = () => {
               </span>
             </button>
           </div>
+
+          {/* Compound Button */}
+          {totalUtxosCount > 1 && (
+            <button
+              onClick={() => setIsCompoundOpen(true)}
+              className="flex items-center gap-1 text-[11px] font-bold text-[#70C7BA] bg-[#70C7BA]/10 hover:bg-[#70C7BA]/20 border border-[#70C7BA]/20 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer"
+              title="Compound UTXOs to reduce fees"
+            >
+              <Zap className="w-3.5 h-3.5 fill-current" />
+              <span>Compound</span>
+            </button>
+          )}
+
+          {/* Refresh Button */}
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className={`p-2 rounded-xl bg-[#131924] border border-[#212B38] text-slate-400 hover:text-white transition-all cursor-pointer ${
+              isRefreshing ? 'animate-spin' : ''
+            }`}
+            title="Refresh UTXOs"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
@@ -513,14 +447,6 @@ export const UtxoList: React.FC = () => {
             );
           })
         )}
-      </div>
-
-      {/* 6. Helpful tip on compounding */}
-      <div className="flex items-start gap-2 px-1 text-[10px] text-slate-400 leading-normal">
-        <Info className="w-3.5 h-3.5 shrink-0 text-[#70C7BA] mt-0.5" />
-        <p>
-          Having too many small UTXO outputs increases network relay fees. Use the <strong className="text-slate-300 font-bold">Compound</strong> function to merge them securely into a single high-value output.
-        </p>
       </div>
     </div>
   );

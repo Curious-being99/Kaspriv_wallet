@@ -9,6 +9,7 @@
 // - Implements the BroadcastStatus machine for rich visual pipeline state.
 // - Performs polling-based GHOSTDAG block acceptance tracking.
 
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { getCandidateApiUrls } from '../utils/kaspa/api';
 import { computeTxIdWasm } from '../utils/kaspa/wasmTx';
 
@@ -264,18 +265,35 @@ export async function broadcastKaspaTransactionService(
     const checkTxId = localComputedTxId || knownTxId;
     if (hasTriedAtLeastOne && checkTxId) {
       try {
-        const checkRes = await fetch(`${baseUrl}/transactions/${checkTxId}?include_payload=false`);
-        if (checkRes.ok) {
-          const checkData = await checkRes.json();
-          const returnedTxId = checkData?.transactionId || checkData?.txId || checkData?.id;
-          if (returnedTxId) {
-            console.log(`[Rebroadcast Safeguard] Found existing transaction ${checkTxId} on fallback node ${baseUrl}. Bypassing broadcast.`);
-            return {
-              status: 'submitted',
-              txId: checkTxId,
-              endpointUsed: baseUrl,
-            };
+        let checkData: any = null;
+        if (Capacitor.isNativePlatform()) {
+          const capCheck = await CapacitorHttp.request({
+            url: `${baseUrl}/transactions/${checkTxId}?include_payload=false`,
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            connectTimeout: 3000,
+            readTimeout: 3000,
+          });
+          if (capCheck.status === 200) {
+            checkData = typeof capCheck.data === 'string' ? JSON.parse(capCheck.data) : capCheck.data;
           }
+        } else {
+          const checkRes = await fetch(`${baseUrl}/transactions/${checkTxId}?include_payload=false`, {
+            signal: AbortSignal.timeout(3000)
+          });
+          if (checkRes.ok) {
+            checkData = await checkRes.json();
+          }
+        }
+
+        const returnedTxId = checkData?.transactionId || checkData?.txId || checkData?.id;
+        if (returnedTxId) {
+          console.log(`[Rebroadcast Safeguard] Found existing transaction ${checkTxId} on node ${baseUrl}. Bypassing redundant broadcast.`);
+          return {
+            status: 'submitted',
+            txId: checkTxId,
+            endpointUsed: baseUrl,
+          };
         }
       } catch {
         // Soft fail on check; proceed with broadcast
@@ -284,19 +302,38 @@ export async function broadcastKaspaTransactionService(
 
     try {
       hasTriedAtLeastOne = true;
-      const res = await fetch(`${baseUrl}/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
-        signal: AbortSignal.timeout(6000),
-      });
+      let status = 0;
+      let data: any = null;
 
-      const data = await res.json().catch(() => null);
+      if (Capacitor.isNativePlatform()) {
+        const capRes = await CapacitorHttp.request({
+          url: `${baseUrl}/transactions`,
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          data: JSON.parse(JSON.stringify(bodyPayload, (_, v) => (typeof v === 'bigint' ? v.toString() : v))),
+          connectTimeout: 5000,
+          readTimeout: 5000,
+        });
+        status = capRes.status || 200;
+        data = typeof capRes.data === 'string' ? JSON.parse(capRes.data || '{}') : capRes.data;
+      } else {
+        const res = await fetch(`${baseUrl}/transactions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
+          signal: AbortSignal.timeout(5000),
+        });
+        status = res.status;
+        data = await res.json().catch(() => null);
+      }
+
       const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;
 
-      if (res.ok) {
+      if (status >= 200 && status < 300) {
         // Authoritative validation: Node-returned TXID is the canonical network ID.
-        // Always prioritize returnedTxId from the node API response if available.
         const finalTxId = returnedTxId ? String(returnedTxId).toLowerCase() : (localComputedTxId || knownTxId || '');
         if (localComputedTxId && returnedTxId && String(returnedTxId).toLowerCase() !== String(localComputedTxId).toLowerCase()) {
           console.log(`[Broadcast Info] Node assigned canonical TXID ${returnedTxId} (local candidate was ${localComputedTxId}). Using node canonical TXID.`);
@@ -308,7 +345,7 @@ export async function broadcastKaspaTransactionService(
         };
       }
 
-      if (res.status === 400 || res.status === 422) {
+      if (status === 400 || status === 422) {
         const nodeError = data?.message || data?.error || 'Node rejected rule validation';
         return {
           status: 'rejected',
@@ -317,7 +354,7 @@ export async function broadcastKaspaTransactionService(
         };
       }
 
-      lastErrorMsg = data?.message || `HTTP ${res.status}`;
+      lastErrorMsg = data?.message || `HTTP ${status}`;
     } catch (err: any) {
       lastErrorMsg = err.message || 'Connection timeout';
     }
@@ -341,16 +378,36 @@ export async function fetchTransactionAcceptanceStatus(
 
   for (const baseUrl of endpoints) {
     try {
-      const res = await fetch(`${baseUrl}/transactions/${txId}?include_payload=false`);
-      if (!res.ok) {
-        if (res.status === 404) {
-          // Transaction not found in node's database yet
-          return { isAccepted: false, confirmations: 0 };
-        }
+      let status = 0;
+      let data: any = null;
+
+      if (Capacitor.isNativePlatform()) {
+        const capRes = await CapacitorHttp.request({
+          url: `${baseUrl}/transactions/${txId}?include_payload=false`,
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          connectTimeout: 4000,
+          readTimeout: 4000,
+        });
+        status = capRes.status || 200;
+        data = typeof capRes.data === 'string' ? JSON.parse(capRes.data || '{}') : capRes.data;
+      } else {
+        const res = await fetch(`${baseUrl}/transactions/${txId}?include_payload=false`, {
+          signal: AbortSignal.timeout(4000)
+        });
+        status = res.status;
+        data = await res.json().catch(() => null);
+      }
+
+      if (status === 404) {
+        // Transaction not found in node's database yet
+        return { isAccepted: false, confirmations: 0 };
+      }
+
+      if (status < 200 || status >= 300 || !data) {
         continue;
       }
 
-      const data = await res.json();
       const isAccepted = Boolean(data.isAccepted || data.acceptingBlockHash || data.accepting_block_hash);
       const acceptingBlockHash = data.acceptingBlockHash || data.accepting_block_hash || undefined;
       const acceptingBlockDaaScore = data.acceptingBlockDaaScore !== undefined ? BigInt(data.acceptingBlockDaaScore) : undefined;

@@ -63,7 +63,7 @@ class CryptoWorkerManager {
     return this.supportState === 'supported' && this.worker !== null;
   }
 
-  public runTask<T>(action: string, payload: any, timeoutMs = 4000): Promise<T> {
+  public runTask<T>(action: string, payload: any, timeoutMs = 15000): Promise<T> {
     if (!this.isSupported() || !this.worker) {
       return Promise.reject(new Error('Worker is not supported or initialized.'));
     }

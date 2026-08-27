@@ -123,9 +123,26 @@ export async function getAddressFromPublicKey(
   }
 }
 
+const SEED_CACHE = new Map<string, { seed: Uint8Array; expiresAt: number }>();
+
+export function clearSeedCache(): void {
+  for (const entry of SEED_CACHE.values()) {
+    wipe(entry.seed);
+  }
+  SEED_CACHE.clear();
+}
+
 export async function getCachedSeed(mnemonic: string, passphrase = ''): Promise<Uint8Array> {
   const cleanMnemonicStr = mnemonic.trim();
   const cleanPassphraseStr = passphrase;
+  const cacheKey = `${cleanMnemonicStr}:::${cleanPassphraseStr}`;
+
+  const now = Date.now();
+  const cached = SEED_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    // Return a clone so callers can wipe their own copy without corrupting cache
+    return new Uint8Array(cached.seed);
+  }
 
   await ensureKaspaWasm();
 
@@ -134,7 +151,15 @@ export async function getCachedSeed(mnemonic: string, passphrase = ''): Promise<
   const newSeedHex = m.toSeed(cleanPassphraseStr);
   m.free();
 
-  return hexToBytes(newSeedHex);
+  const seedBytes = hexToBytes(newSeedHex);
+  
+  // Cache for 15 minutes while active in session
+  SEED_CACHE.set(cacheKey, {
+    seed: new Uint8Array(seedBytes),
+    expiresAt: now + 15 * 60 * 1000,
+  });
+
+  return seedBytes;
 }
 
 export function hexToBytes(hex: string): Uint8Array {

@@ -85,6 +85,7 @@ import {
   sanitizeWalletName,
   scanKaspaWalletChain,
   cleanMnemonic,
+  clearSeedCache,
   setKaspaApiUrl,
   setKaspaExplorerUrl,
   getPrivateKeyBytesFromMnemonic,
@@ -1009,6 +1010,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
       setPasswordState(null);  // clear active password from memory
       setSessionId(null);
+      clearSeedCache();
       setIsLocked(true);
       setWallets((prevWallets) =>
         prevWallets.map((w) => {
@@ -1576,250 +1578,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // Synchronize pending transactions: remove any that are now in allMergedTxs
         const fetchedTxids = new Set(allMergedTxs.map((tx) => tx.txid));
         setLocalPendingTxs((prev) => prev.filter((ptx) => !fetchedTxids.has(ptx.txid)));
-
-      // Perform Automatic Receive Address Rotation if needed
-      // Check if the current receive address has received any funds
-      const currentReceiveAddress = wallet.receiveAddress;
-      const currentBalance = BigInt(updatedBalances[currentReceiveAddress] || '0');
-      const hasPositiveBalance = currentBalance > 0n;
-
-      const currentAddrIdx = addressesToFetch.indexOf(currentReceiveAddress);
-      let hasTxHistory = false;
-      if (currentAddrIdx !== -1) {
-        const currentAddrTxs = txResults[currentAddrIdx];
-        if (currentAddrTxs && Array.isArray(currentAddrTxs) && currentAddrTxs.length > 0) {
-          // Verify that this address actually received funds (was present in transaction outputs)
-          hasTxHistory = currentAddrTxs.some((tx: any) => {
-            return tx.outputs?.some((out: any) => out.script_public_key_address === currentReceiveAddress);
-          });
-        }
-      }
-
-      const isCurrentUsed = hasPositiveBalance || hasTxHistory;
-
-      // Check change address usage for rotation
-      const currentChangeAddress = wallet.changeAddress;
-      const currentChangeBalance = BigInt(updatedBalances[currentChangeAddress] || '0');
-      const hasChangePositiveBalance = currentChangeBalance > 0n;
-      const currentChangeAddrIdx = addressesToFetch.indexOf(currentChangeAddress);
-      let hasChangeTxHistory = false;
-      if (currentChangeAddrIdx !== -1) {
-        const currentChangeAddrTxs = txResults[currentChangeAddrIdx];
-        if (currentChangeAddrTxs && Array.isArray(currentChangeAddrTxs) && currentChangeAddrTxs.length > 0) {
-          hasChangeTxHistory = currentChangeAddrTxs.some((tx: any) => {
-            const outputs = tx.outputs || [];
-            return outputs.some((out: any) => (out.script_public_key_address || out.address) === currentChangeAddress);
-          });
-        }
-      }
-      const isChangeCurrentUsed = hasChangePositiveBalance || hasChangeTxHistory;
-
-      if (isCurrentUsed || isChangeCurrentUsed) {
-        const paths = wallet.addressPaths || {};
-        const allDiscovered = wallet.discoveredAddresses || [];
-
-        // 1. Handle Receive Address Rotation
-        if (isCurrentUsed) {
-          const receiveAddressesList = allDiscovered
-            .filter((addr) => {
-              const p = paths[addr] || '';
-              return !p.includes('/1/');
-            })
-            .map((addr) => {
-              const p = paths[addr] || '';
-              const parts = p.split('/');
-              const idx = parseInt(parts[parts.length - 1] || '0', 10);
-              return { addr, idx };
-            })
-            .sort((a, b) => a.idx - b.idx);
-
-          const firstUnusedRecv = receiveAddressesList.find((item) => {
-            const bal = BigInt(updatedBalances[item.addr] || '0');
-            if (bal > 0n) return false;
-
-            const addrIdx = addressesToFetch.indexOf(item.addr);
-            if (addrIdx !== -1) {
-              const addrTxs = txResults[addrIdx];
-              if (addrTxs && Array.isArray(addrTxs) && addrTxs.length > 0) {
-                const receivedAny = addrTxs.some((tx: any) =>
-                  (tx.outputs || []).some((out: any) => (out.script_public_key_address || out.address) === item.addr)
-                );
-                if (receivedAny) return false;
-              }
-            }
-            return true;
-          });
-
-          if (firstUnusedRecv) {
-            setWallets((prev) =>
-              prev.map((w) =>
-                w.id === wallet.id
-                  ? { ...w, receiveAddress: firstUnusedRecv.addr }
-                  : w
-              )
-            );
-            console.log(`[Auto-Rotation] Rotated receive address to ${firstUnusedRecv.addr}`);
-          } else {
-            // Derive new receive if all pre-derived are used
-            let seedToUse = wallet.mnemonic;
-            let passToUse = wallet.passphrase;
-            const activePassword = password;
-            
-            if (!seedToUse && wallet.encryptedMnemonic && activePassword) {
-              try {
-                seedToUse = await decryptWithPassword(
-                  wallet.encryptedMnemonic.ciphertext,
-                  wallet.encryptedMnemonic.salt,
-                  wallet.encryptedMnemonic.iv,
-                  activePassword,
-                  buildAadContext('MNEMONIC', wallet.id)
-                );
-                if (wallet.encryptedPassphrase) {
-                  passToUse = await decryptWithPassword(
-                    wallet.encryptedPassphrase.ciphertext,
-                    wallet.encryptedPassphrase.salt,
-                    wallet.encryptedPassphrase.iv,
-                    activePassword,
-                    buildAadContext('PASSPHRASE', wallet.id)
-                  );
-                }
-              } catch (err) {}
-            }
-
-            if (seedToUse) {
-              const maxIdx = receiveAddressesList.reduce((max, item) => Math.max(max, item.idx), 0);
-              const nextIdx = maxIdx + 1;
-              const networkType = wallet.addressType || 'P2SH';
-              const prefix = getAddressPrefix(networkRef.current);
-              const nextPath = `m/44'/111111'/0'/0/${nextIdx}`;
-              
-              try {
-                const newAddr = await generateDeterministicAddress(seedToUse, passToUse || undefined, prefix, networkType, nextIdx, false);
-                setWallets((prev) =>
-                  prev.map((w) => {
-                    if (w.id === wallet.id) {
-                      const updatedDiscovered = w.discoveredAddresses ? [...w.discoveredAddresses] : [];
-                      if (!updatedDiscovered.includes(newAddr)) updatedDiscovered.push(newAddr);
-                      return {
-                        ...w,
-                        discoveredAddresses: updatedDiscovered,
-                        addressPaths: { ...w.addressPaths, [newAddr]: nextPath },
-                        addressBalances: { ...w.addressBalances, [newAddr]: '0' },
-                        receiveAddress: newAddr,
-                      };
-                    }
-                    return w;
-                  })
-                );
-              } catch (err) {}
-            }
-          }
-        }
-
-        // 2. Handle Change Address Rotation
-        if (isChangeCurrentUsed) {
-          const changeAddressesList = allDiscovered
-            .filter((addr) => {
-              const p = paths[addr] || '';
-              return p.includes('/1/');
-            })
-            .map((addr) => {
-              const p = paths[addr] || '';
-              const parts = p.split('/');
-              const idx = parseInt(parts[parts.length - 1] || '0', 10);
-              return { addr, idx };
-            })
-            .sort((a, b) => a.idx - b.idx);
-
-          const firstUnusedChange = changeAddressesList.find((item) => {
-            const bal = BigInt(updatedBalances[item.addr] || '0');
-            if (bal > 0n) return false;
-
-            const addrIdx = addressesToFetch.indexOf(item.addr);
-            if (addrIdx !== -1) {
-              const addrTxs = txResults[addrIdx];
-              if (addrTxs && Array.isArray(addrTxs) && addrTxs.length > 0) {
-                const receivedAny = addrTxs.some((tx: any) =>
-                  (tx.outputs || []).some((out: any) => (out.script_public_key_address || out.address) === item.addr)
-                );
-                if (receivedAny) return false;
-              }
-            }
-            return true;
-          });
-
-          if (firstUnusedChange) {
-            setWallets((prev) =>
-              prev.map((w) =>
-                w.id === wallet.id
-                  ? { ...w, changeAddress: firstUnusedChange.addr }
-                  : w
-              )
-            );
-            console.log(`[Auto-Rotation] Rotated change address to ${firstUnusedChange.addr}`);
-          } else {
-            // Derive new change address if needed
-            let seedToUse = wallet.mnemonic;
-            let passToUse = wallet.passphrase;
-            const activePassword = password;
-            
-            if (!seedToUse && wallet.encryptedMnemonic && activePassword) {
-              try {
-                seedToUse = await decryptWithPassword(
-                  wallet.encryptedMnemonic.ciphertext,
-                  wallet.encryptedMnemonic.salt,
-                  wallet.encryptedMnemonic.iv,
-                  activePassword,
-                  buildAadContext('MNEMONIC', wallet.id)
-                );
-                if (wallet.encryptedPassphrase) {
-                  passToUse = await decryptWithPassword(
-                    wallet.encryptedPassphrase.ciphertext,
-                    wallet.encryptedPassphrase.salt,
-                    wallet.encryptedPassphrase.iv,
-                    activePassword,
-                    buildAadContext('PASSPHRASE', wallet.id)
-                  );
-                }
-              } catch (err) {}
-            }
-
-            if (seedToUse) {
-              const maxIdx = changeAddressesList.reduce((max, item) => Math.max(max, item.idx), 0);
-              const nextIdx = maxIdx + 1;
-              const networkType = wallet.addressType || 'P2SH';
-              const prefix = getAddressPrefix(networkRef.current);
-              const nextPath = `m/44'/111111'/0'/1/${nextIdx}`;
-              
-              try {
-                const newAddr = await generateDeterministicAddress(seedToUse, passToUse || undefined, prefix, networkType, nextIdx, true);
-                setWallets((prev) =>
-                  prev.map((w) => {
-                    if (w.id === wallet.id) {
-                      const updatedDiscovered = w.discoveredAddresses ? [...w.discoveredAddresses] : [];
-                      if (!updatedDiscovered.includes(newAddr)) updatedDiscovered.push(newAddr);
-                      return {
-                        ...w,
-                        discoveredAddresses: updatedDiscovered,
-                        addressPaths: { ...w.addressPaths, [newAddr]: nextPath },
-                        addressBalances: { ...w.addressBalances, [newAddr]: '0' },
-                        changeAddress: newAddr,
-                      };
-                    }
-                    return w;
-                  })
-                );
-              } catch (err) {}
-            }
-          }
-        }
-      }
       }
     } finally {
       isRefreshingBalance.current = false;
       setIsSyncing(false);
     }
-  }, [refreshDaaScore, password, triggerNativeNotification]);
+  }, [refreshDaaScore, triggerNativeNotification]);
 
   // Clear pending states and load cached transactions/UTXOs from IndexedDB instantly when switching wallets or unlocking
   useEffect(() => {
@@ -2983,8 +2747,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     }
 
-    // Handle decryption if seed is encrypted at rest and no session is active
-    if (!seedToUse && (activeWallet.encryptedMnemonic) && !sessionId) {
+    // Handle decryption if seed is encrypted at rest
+    if (!seedToUse && activeWallet.encryptedMnemonic) {
       if (activePassword) {
         try {
           if (activeWallet.encryptedMnemonic) {
@@ -3009,7 +2773,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         } catch (err) {
           return { success: false, error: 'Invalid Security Password. Could not decrypt wallet credentials.' };
         }
-      } else {
+      } else if (!sessionId) {
         return { success: false, error: 'Wallet is locked. Please unlock the wallet first.' };
       }
     }
@@ -3277,7 +3041,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       };
 
-      if (!seedToUse) {
+      if (!seedToUse && !sessionId) {
         return { success: false, error: 'No wallet seed phrase available for signing' };
       }
 

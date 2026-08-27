@@ -445,7 +445,7 @@ export class IsolatedSigner {
             redeemScriptHex,
             useSession: true, // Instruction to keep the mnemonic in Rust memory
             sessionId
-          }, 2500);
+          }, 12000);
           return deserializeWithBigInt(res);
         }
       } catch (workerErr) {

@@ -12,6 +12,7 @@ export const MainCard: React.FC = () => {
     currency,
     fiatRate,
     isBalanceVisible,
+    transactions,
     setIsBalanceVisible,
     utxos,
     currentDaaScore,
@@ -19,42 +20,46 @@ export const MainCard: React.FC = () => {
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
-  // Calculate spendable and pending balances dynamically based on 5 confirmations requirement
+  // Calculate spendable and pending balances dynamically based on 10 confirmations requirement (100 for coinbase)
   const { spendableSompi, pendingSompi } = useMemo(() => {
     if (!activeWallet) {
       return { spendableSompi: 0n, pendingSompi: 0n };
-    }
-    if (!utxos) {
-      return { spendableSompi: activeWallet.balanceSompi, pendingSompi: 0n };
     }
 
     let spendable = 0n;
     let pending = 0n;
 
-    for (const u of utxos) {
-      const amount = u.amountSompi;
-      
-      // If it is our own change address UTXO, it is immediately spendable
-      if (activeWallet.changeAddress && u.address?.trim().toLowerCase() === activeWallet.changeAddress.trim().toLowerCase()) {
-        spendable += amount;
-        continue;
-      }
+    if (utxos && utxos.length > 0) {
+      for (const u of utxos) {
+        const amount = u.amountSompi;
 
-      const confs = currentDaaScore - Number(u.blockDaaScore || 0);
-
-      if (u.isCoinbase) {
-        if (confs >= 100) {
+        // If it is our own change address UTXO, it is immediately spendable
+        if (activeWallet.changeAddress && u.address?.trim().toLowerCase() === activeWallet.changeAddress.trim().toLowerCase()) {
           spendable += amount;
-        } else {
-          pending += amount;
+          continue;
         }
-      } else {
-        if (confs >= 1) {
-          spendable += amount;
+
+        const blockDaa = Number(u.blockDaaScore || 0);
+        // On Kaspa, UTXOs in mempool or with blockDaaScore 0 are unconfirmed / pending
+        const confs = (blockDaa > 0 && currentDaaScore > blockDaa) ? (currentDaaScore - blockDaa) : 0;
+
+        if (u.isCoinbase) {
+          if (confs >= 100) {
+            spendable += amount;
+          } else {
+            pending += amount;
+          }
         } else {
-          pending += amount;
+          // Standard Kaspa UTXOs with valid block DAA score and >= 1 confirmation are spendable
+          if (blockDaa > 0 && confs >= 1) {
+            spendable += amount;
+          } else {
+            pending += amount;
+          }
         }
       }
+    } else {
+      spendable = activeWallet.balanceSompi;
     }
 
     return { spendableSompi: spendable, pendingSompi: pending };

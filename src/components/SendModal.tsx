@@ -96,7 +96,7 @@ export const SendModal: React.FC = () => {
 
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
-  // Only UTXOs with at least 1 confirmation (or our own change address outputs) are spendable
+  // UTXOs with at least 1 confirmation (or our own change address outputs) are spendable
   const spendableUtxos = useMemo(() => {
     if (!utxos || !activeWallet) return [];
     return utxos.filter((u: any) => {
@@ -104,12 +104,12 @@ export const SendModal: React.FC = () => {
       if (activeWallet.changeAddress && u.address?.trim().toLowerCase() === activeWallet.changeAddress.trim().toLowerCase()) {
         return true;
       }
+      const blockDaa = Number(u.blockDaaScore || 0);
+      const confs = (blockDaa > 0 && currentDaaScore > blockDaa) ? (currentDaaScore - blockDaa) : 0;
       if (u.isCoinbase) {
-        const confs = currentDaaScore - Number(u.blockDaaScore || 0);
-        return confs >= 100;
+        return blockDaa > 0 && confs >= 100;
       }
-      const confs = currentDaaScore - Number(u.blockDaaScore || 0);
-      return confs >= 1;
+      return blockDaa > 0 && confs >= 1;
     });
   }, [utxos, currentDaaScore, activeWallet]);
 
@@ -123,12 +123,12 @@ export const SendModal: React.FC = () => {
       if (activeWallet.changeAddress && u.address?.trim().toLowerCase() === activeWallet.changeAddress.trim().toLowerCase()) {
         return sum;
       }
+      const blockDaa = Number(u.blockDaaScore || 0);
+      const confs = (blockDaa > 0 && currentDaaScore > blockDaa) ? (currentDaaScore - blockDaa) : 0;
       if (u.isCoinbase) {
-        const confs = currentDaaScore - Number(u.blockDaaScore || 0);
-        return confs < 100 ? sum + u.amountSompi : sum;
+        return (blockDaa === 0 || confs < 100) ? sum + u.amountSompi : sum;
       }
-      const confs = currentDaaScore - Number(u.blockDaaScore || 0);
-      return confs < 1 ? sum + u.amountSompi : sum;
+      return (blockDaa === 0 || confs < 1) ? sum + u.amountSompi : sum;
     }, 0n);
   }, [utxos, currentDaaScore, activeWallet]);
 
@@ -176,13 +176,14 @@ export const SendModal: React.FC = () => {
       return activeWallet.mnemonic;
     }
 
-    if (isPasswordEnabled && activeWallet?.encryptedMnemonic && passwordInput) {
+    const effectivePassword = passwordInput || password;
+    if (isPasswordEnabled && activeWallet?.encryptedMnemonic && effectivePassword) {
       try {
         const decrypted = await decryptWithPassword(
           activeWallet.encryptedMnemonic.ciphertext,
           activeWallet.encryptedMnemonic.salt,
           activeWallet.encryptedMnemonic.iv,
-          passwordInput,
+          effectivePassword,
           buildAadContext('MNEMONIC', activeWallet.id)
         );
         return decrypted;
@@ -199,13 +200,14 @@ export const SendModal: React.FC = () => {
       return passphraseInput;
     }
 
-    if (isPasswordEnabled && activeWallet?.encryptedPassphrase && passwordInput) {
+    const effectivePassword = passwordInput || password;
+    if (isPasswordEnabled && activeWallet?.encryptedPassphrase && effectivePassword) {
       try {
         const decrypted = await decryptWithPassword(
           activeWallet.encryptedPassphrase.ciphertext,
           activeWallet.encryptedPassphrase.salt,
           activeWallet.encryptedPassphrase.iv,
-          passwordInput,
+          effectivePassword,
           buildAadContext('PASSPHRASE', activeWallet.id)
         );
         return decrypted || undefined;
@@ -383,8 +385,8 @@ export const SendModal: React.FC = () => {
     closeKeyboard();
     setPasswordError(null);
 
-    // If password security is enabled, delegate authorization to the Lock Wallet Screen by design
-    if (isPasswordEnabled && !password) {
+    // If password security is enabled, delegate authorization to the Lock Wallet Screen to activate and authorize signing
+    if (isPasswordEnabled) {
       setIsSending(true);
       setPendingTransaction({
         toAddress,
