@@ -346,77 +346,63 @@ export const SendModal: React.FC = () => {
     closeKeyboard();
     setPasswordError(null);
 
-    // If password security is not active, we can sign instantly
-    if (!isPasswordEnabled) {
+    // If password security is enabled, delegate authorization to the Lock Wallet Screen by design
+    if (isPasswordEnabled && !password) {
       setIsSending(true);
-      setTimeout(async () => {
-        let mnemonicToUse: string | null = null;
-        let passphraseToUse: string | undefined = undefined;
-
-        try {
-          mnemonicToUse = await getMnemonicForSigning();
-          passphraseToUse = await getPassphraseForSigning();
-
-          if (!mnemonicToUse) {
-            showToast('Wallet key not found. Please unlock or re-import the wallet.', 'error');
-            setIsSending(false);
-            return;
-          }
-
-          const res = await sendKaspa(
-            toAddress,
-            amountInput || numericAmount,
-            selectedFee.toString(),
-            note,
-            mnemonicToUse,
-            passphraseToUse,
-            selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined
-          );
-
-          if (res.success) {
-            setSuccessTx({
-              txid: res.txid || 'kaspa-txid',
-              amountKas: numericAmount,
-              feeKas: selectedFee,
-              toAddress: toAddress.trim(),
-              fiatValue: fiatEquivalent,
-              note: note.trim() || undefined,
-              timestamp: Date.now(),
-            });
-            setIsConfirmingStep(false);
-            setToAddress('');
-            setAmountInput('');
-            setNote('');
-            setPasswordError(null);
-            showToast('Transaction successfully broadcast!', 'success');
-          } else {
-            showToast(res.error || 'Failed to send Kaspa', 'error');
-          }
-        } catch (err: any) {
-          showToast(err?.message || 'Failed to execute transaction', 'error');
-        } finally {
+      setPendingTransaction({
+        toAddress,
+        amount: amountInput || numericAmount,
+        fee: selectedFee.toString(),
+        note,
+        passphrase: passphraseInput || undefined,
+        selectedUtxoOutpoints: selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined,
+        onSuccess: (txid) => {
+          setSuccessTx({
+            txid,
+            amountKas: numericAmount,
+            feeKas: selectedFee,
+            toAddress: toAddress.trim(),
+            fiatValue: fiatEquivalent,
+            note: note.trim() || undefined,
+            timestamp: Date.now(),
+          });
+          setIsConfirmingStep(false);
+          setToAddress('');
+          setAmountInput('');
+          setNote('');
+          setPasswordError(null);
           setIsSending(false);
-          mnemonicToUse = null;
-          passphraseToUse = undefined;
+          showToast('Transaction successfully broadcast!', 'success');
+        },
+        onFailure: (err) => {
+          setPasswordError(err);
+          setIsSending(false);
+          showToast(err || 'Failed to broadcast transaction', 'error');
         }
-      }, 0);
+      });
+      setIsLocked(true);
       return;
     }
 
-    // Otherwise, password is enabled. We delegate authentication to the Lock Wallet Screen!
-    setIsSending(true); // show loader inside button so it looks responsive
-    
-    // Set the pending transaction callback on our wallet context
-    setPendingTransaction({
-      toAddress,
-      amount: amountInput || numericAmount,
-      fee: selectedFee.toString(),
-      note,
-      passphrase: passphraseInput || undefined,
-      selectedUtxoOutpoints: selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined,
-      onSuccess: (txid) => {
+    // Otherwise (no password security or password available in session), sign and broadcast immediately
+    setIsSending(true);
+    try {
+      let mnemonicToUse = await getMnemonicForSigning();
+      let passphraseToUse = await getPassphraseForSigning();
+
+      const res = await sendKaspa(
+        toAddress,
+        amountInput || numericAmount,
+        selectedFee.toString(),
+        note,
+        mnemonicToUse || undefined,
+        passphraseToUse || undefined,
+        selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined
+      );
+
+      if (res.success) {
         setSuccessTx({
-          txid,
+          txid: res.txid || 'kaspa-txid',
           amountKas: numericAmount,
           feeKas: selectedFee,
           toAddress: toAddress.trim(),
@@ -429,18 +415,15 @@ export const SendModal: React.FC = () => {
         setAmountInput('');
         setNote('');
         setPasswordError(null);
-        setIsSending(false);
         showToast('Transaction successfully broadcast!', 'success');
-      },
-      onFailure: (err) => {
-        setPasswordError(err);
-        setIsSending(false);
-        showToast(err || 'Failed to broadcast transaction', 'error');
+      } else {
+        showToast(res.error || 'Failed to send Kaspa', 'error');
       }
-    });
-
-    // Lock the screen to prompt for password/biometrics
-    setIsLocked(true);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to execute transaction', 'error');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   if (!isSendOpen) return null;

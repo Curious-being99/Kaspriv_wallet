@@ -288,6 +288,7 @@ export async function broadcastKaspaTransactionService(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyPayload, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
+        signal: AbortSignal.timeout(6000),
       });
 
       const data = await res.json().catch(() => null);

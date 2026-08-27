@@ -1,4 +1,5 @@
 import { broadcastKaspaTransactionService } from "../services/kaspaBroadcastService";
+import { kaspaWebSocketManager } from "../services/kaspaWebSocketService";
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import {
   Wallet,
@@ -1182,21 +1183,57 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             });
 
             const normMap = new Map<string, string>();
-            addressesToFetch.forEach(addr => normMap.set(addr.trim().toLowerCase(), addr));
+            const spkMap = new Map<string, string>();
+
+            await Promise.all(
+              addressesToFetch.map(async (addr) => {
+                const norm = addr.trim().toLowerCase();
+                normMap.set(norm, addr);
+                try {
+                  const network = norm.startsWith('kaspatest') ? 'testnet-10' : (norm.startsWith('kaspadev') ? 'devnet' : 'mainnet');
+                  const spk = await addressToScriptPublicKey(addr, network as any);
+                  if (spk) {
+                    spkMap.set(spk.toLowerCase(), addr);
+                  }
+                } catch {}
+              })
+            );
 
             const utxosByAddress: { [address: string]: KaspaUtxo[] } = {};
             addressesToFetch.forEach(addr => { utxosByAddress[addr] = []; });
 
             bulkUtxos.forEach(u => {
               const uNorm = u.address ? u.address.trim().toLowerCase() : '';
-              const origAddr = normMap.get(uNorm);
+              let spkHex = '';
+              if (typeof u.scriptPublicKey === 'string') {
+                spkHex = u.scriptPublicKey;
+              } else if (u.scriptPublicKey && typeof u.scriptPublicKey === 'object' && (u.scriptPublicKey as any).scriptPublicKey) {
+                spkHex = (u.scriptPublicKey as any).scriptPublicKey;
+              } else if (u.utxoEntry?.scriptPublicKey?.scriptPublicKey) {
+                spkHex = u.utxoEntry.scriptPublicKey.scriptPublicKey;
+              }
+
+              let origAddr = normMap.get(uNorm);
+              if (!origAddr && spkHex) {
+                origAddr = spkMap.get(spkHex.toLowerCase());
+              }
+
               if (origAddr && utxosByAddress[origAddr]) {
                 utxosByAddress[origAddr].push({ ...u, address: origAddr });
               } else if (addressesToFetch.length === 1) {
                 utxosByAddress[addressesToFetch[0]].push({ ...u, address: addressesToFetch[0] });
               }
             });
-            utxosResults = addressesToFetch.map(addr => utxosByAddress[addr]);
+
+            utxosResults = addressesToFetch.map((addr, idx) => {
+              const res = utxosByAddress[addr];
+              const addrBal = balances[idx];
+              // Safety guard: if node balance is > 0n but UTXO result is 0 items, return null so cached UTXOs for this address are preserved!
+              if ((res === undefined || res.length === 0) && addrBal !== null && addrBal > 0n) {
+                return null;
+              }
+              return res;
+            });
 
             // Fetch transaction records for primary, active, or discovered addresses in sequential/batched chunks
             txResults = [];
@@ -1896,6 +1933,31 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   }, []);
 
+  // Real-Time Kaspa WebSocket Manager for Instant Received/Sent Notifications & Balance Updates
+  useEffect(() => {
+    if (isLocked || !activeWallet) return;
+
+    const addressesToFetch = Array.from(new Set([
+      activeWallet.receiveAddress,
+      activeWallet.changeAddress,
+      ...(activeWallet.discoveredAddresses || []),
+      ...Object.keys(activeWallet.addressPaths || {})
+    ])).filter((a): a is string => Boolean(a && a.trim()));
+
+    if (addressesToFetch.length === 0) return;
+
+    const unsubscribe = kaspaWebSocketManager.subscribe(addressesToFetch, () => {
+      console.log('[Real-Time WSS] Received UTXO/Block update event - refreshing balance');
+      if (refreshBalanceRef.current) {
+        refreshBalanceRef.current();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeWallet, isLocked]);
+
   // Unified Jittered Polling Manager with exponential backoff on node errors
   useEffect(() => {
     let timerId: ReturnType<typeof setTimeout> | null = null;
@@ -1904,9 +1966,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const scheduleNextPoll = () => {
       if (!isMounted) return;
 
-      // Base polling interval: 30 seconds when active foreground, 60 seconds when backgrounded
+      // Base polling interval: 6 seconds when active foreground, 60 seconds when backgrounded
       const isForeground = isAppActiveRef.current && (typeof document === 'undefined' || !document.hidden);
-      const baseIntervalMs = isForeground ? 30000 : 60000;
+      const baseIntervalMs = isForeground ? 6000 : 60000;
 
       // Exponential backoff if consecutive node errors occur (up to 4x multiplier)
       const failures = consecutiveFailuresRef.current;
@@ -1915,7 +1977,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       // ±25% randomized jitter to reduce server request synchronization and rate-limit bursts
       const targetInterval = baseIntervalMs * backoffMultiplier;
       const jitterAmount = (Math.random() * 2 - 1) * (targetInterval * 0.25);
-      const delayMs = Math.max(5000, Math.round(targetInterval + jitterAmount));
+      const delayMs = Math.max(4000, Math.round(targetInterval + jitterAmount));
 
       timerId = setTimeout(async () => {
         if (isMounted && !isLocked && activeWalletId) {
@@ -3005,40 +3067,31 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         });
       }
 
-      // Fast network refresh: fetch in parallel without sequential delay
+      // Fast network refresh: fetch bulk UTXOs in a single request or with fast fallback
       try {
-        const liveResults = await Promise.all(
-          addressesToFetch.map(addr => fetchKaspaAddressUtxos(addr))
-        );
+        const liveUtxos = await fetchKaspaAddressesUtxos(addressesToFetch);
+        if (liveUtxos && Array.isArray(liveUtxos) && liveUtxos.length > 0) {
+          const liveUtxosList = liveUtxos.map((u: any) => {
+            const address = u.address || activeWallet.receiveAddress;
+            let devPath = activeWallet.addressPaths?.[address] || u.derivationPath;
+            if (!devPath) {
+              if (address === activeWallet.receiveAddress) devPath = "m/44'/111111'/0'/0/0";
+              else if (address === activeWallet.changeAddress) devPath = "m/44'/111111'/0'/1/0";
+            }
+            return {
+              ...u,
+              address,
+              ...(devPath ? { derivationPath: devPath } : {}),
+            };
+          });
 
-        let hasLiveUtxos = false;
-        const liveUtxosList: any[] = [];
-        liveResults.forEach((liveData, addrIdx) => {
-          const address = addressesToFetch[addrIdx];
-          if (liveData && Array.isArray(liveData)) {
-            hasLiveUtxos = true;
-            liveData.forEach((u: any) => {
-              let devPath = activeWallet.addressPaths?.[address] || u.derivationPath;
-              if (!devPath) {
-                if (address === activeWallet.receiveAddress) devPath = "m/44'/111111'/0'/0/0";
-                else if (address === activeWallet.changeAddress) devPath = "m/44'/111111'/0'/1/0";
-              }
-              liveUtxosList.push({
-                ...u,
-                address,
-                ...(devPath ? { derivationPath: devPath } : {}),
-              });
-            });
+          if (liveUtxosList.length > 0) {
+            utxosResponse.length = 0;
+            utxosResponse.push(...liveUtxosList);
           }
-        });
-
-        // If live fetch returned data, use it as primary accurate source
-        if (hasLiveUtxos && liveUtxosList.length > 0) {
-          utxosResponse.length = 0;
-          utxosResponse.push(...liveUtxosList);
         }
       } catch (err) {
-        console.warn('Live UTXO parallel refresh failed, relying on memory cached UTXOs:', err);
+        console.warn('Live bulk UTXO refresh failed, relying on memory cached UTXOs:', err);
       }
 
       // Filter out spent UTXOs and optionally locked UTXOs
