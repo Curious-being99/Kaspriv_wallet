@@ -93,7 +93,8 @@ class NativeWalletActivity : AppCompatActivity() {
             val options = ScanOptions()
             options.setPrompt("Scan Recipient Kaspa QR Code")
             options.setBeepEnabled(true)
-            options.setOrientationLocked(false)
+            options.setOrientationLocked(true)
+            options.setCaptureActivity(CustomScannerActivity::class.java)
             options.setDesiredBarcodeFormats(ScanOptions.QR_CODE)
             scanLauncher?.launch(options)
         }

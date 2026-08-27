@@ -35,6 +35,12 @@
             android:screenOrientation="portrait"
             android:exported="false" />
 
+        <activity
+            android:name=".CustomScannerActivity"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
