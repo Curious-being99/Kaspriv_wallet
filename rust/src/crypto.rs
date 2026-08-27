@@ -4,7 +4,7 @@ use aes_gcm::{
 };
 use hmac::SimpleHmac;
 use pbkdf2::pbkdf2;
-use rand::{rngs::OsRng, RngCore};
+use rand::{random, rngs::OsRng, RngCore};
 use sha2::Sha256;
 use std::error::Error;
 
@@ -24,16 +24,8 @@ pub fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32], Box<dyn Error
 /// Encrypts raw data using AES-256-GCM with a derived password key.
 pub fn encrypt_data(data: &[u8], password: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     // 1. Generate secure 16-byte random salt and 12-byte random nonce
-    let salt: [u8; 16] = {
-        let mut s = [0u8; 16];
-        OsRng.fill_bytes(&mut s);
-        s
-    };
-    let nonce_bytes: [u8; 12] = {
-        let mut n = [0u8; 12];
-        OsRng.fill_bytes(&mut n);
-        n
-    };
+    let salt: [u8; 16] = random();
+    let nonce_bytes: [u8; 12] = random();
 
     // 2. Derive encryption key
     let key = derive_key(password, &salt)?;

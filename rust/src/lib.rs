@@ -16,9 +16,9 @@ fn jstring_to_string(env: &mut JNIEnv, jstr: JString) -> Result<String, Box<dyn 
 /// Helper function to convert JNI byte array safely to Rust Vec<u8>.
 fn jbytearray_to_vec(env: &mut JNIEnv, jarr: jbyteArray) -> Result<Vec<u8>, Box<dyn Error>> {
     let len = env.get_array_length(&jarr)?;
-    let mut buf = vec![0u8; len as usize];
-    env.get_byte_array_region(&jarr, 0, bytemuck::cast_slice_mut(&mut buf))?;
-    Ok(buf)
+    let mut data_buffer = vec![0u8; len as usize];
+    env.get_byte_array_region(&jarr, 0, bytemuck::cast_slice_mut(&mut data_buffer))?;
+    Ok(data_buffer)
 }
 
 /// Helper function to convert Rust byte slice safely to JNI byte array.
