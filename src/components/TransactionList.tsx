@@ -192,6 +192,10 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
                 const kasVal = sompiToKas(tx.amountSompi);
                 const fiatVal = (kasVal * marketData.priceUsd * fiatRate).toFixed(2);
 
+                const confs = tx.blockDaaScore > 0 && currentDaaScore > tx.blockDaaScore
+                  ? currentDaaScore - tx.blockDaaScore
+                  : 0;
+
                 return (
                   <motion.div
                     key={tx.txid}
@@ -220,13 +224,21 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
                     </div>
 
                     <div>
-                      <div className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                      <div className="text-sm font-bold text-slate-100 flex items-center gap-2 flex-wrap">
                         <span className="capitalize">{tx.type}</span>
                         {tx.addressLabel && (
                           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1C2F42] text-slate-300">
                             {tx.addressLabel}
                           </span>
                         )}
+                        {/* Confirmation Badge */}
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          confs >= 1 
+                            ? 'bg-emerald-500/10 text-[#70C7BA] border border-emerald-500/20' 
+                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        }`}>
+                          {confs >= 1 ? 'Confirmed' : 'Pending'}
+                        </span>
                       </div>
                       <div className="text-xs text-slate-400 font-mono flex items-center gap-2 mt-0.5 flex-wrap">
                         <span>{isBalanceVisible ? shortenAddress(tx.address, 10, 6) : 'kaspa:••••••••••••'}</span>
@@ -348,10 +360,16 @@ export const TransactionList: React.FC<TransactionListProps> = ({ hideHeader = f
 
                   <div className="p-3 rounded-xl bg-[#090D12] ">
                     <div className="text-slate-400 mb-0.5">Confirmations</div>
-                    <div className="font-mono font-bold text-[#70C7BA]">
+                    <div className={`font-mono font-bold ${
+                      (selectedTx.blockDaaScore > 0 && currentDaaScore > selectedTx.blockDaaScore && (currentDaaScore - selectedTx.blockDaaScore) >= 1) 
+                        ? 'text-[#70C7BA]' 
+                        : 'text-amber-400'
+                    }`}>
                       {selectedTx.blockDaaScore > 0 && currentDaaScore > selectedTx.blockDaaScore
-                        ? `${(currentDaaScore - selectedTx.blockDaaScore).toLocaleString()} (Accepted)`
-                        : '1 (Accepted)'}
+                        ? `${(currentDaaScore - selectedTx.blockDaaScore).toLocaleString()} ${
+                            (currentDaaScore - selectedTx.blockDaaScore) >= 1 ? '(Confirmed)' : '(Pending)'
+                          }`
+                        : '0 (Pending)'}
                     </div>
                   </div>
                 </div>

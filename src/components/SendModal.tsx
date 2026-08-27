@@ -69,6 +69,7 @@ export const SendModal: React.FC = () => {
     toggleLockUtxo,
     setIsLocked,
     setPendingTransaction,
+    currentDaaScore,
   } = useWallet();
 
   const [toAddress, setToAddress] = useState('');
@@ -94,6 +95,42 @@ export const SendModal: React.FC = () => {
   const { openKeyboard, closeKeyboard, isKeyboardOpen } = useVirtualKeyboard();
 
   const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  // Only UTXOs with at least 1 confirmation (or our own change address outputs) are spendable
+  const spendableUtxos = useMemo(() => {
+    if (!utxos || !activeWallet) return [];
+    return utxos.filter((u: any) => {
+      // If it is our own change address UTXO, it is immediately spendable
+      if (activeWallet.changeAddress && u.address?.trim().toLowerCase() === activeWallet.changeAddress.trim().toLowerCase()) {
+        return true;
+      }
+      if (u.isCoinbase) {
+        const confs = currentDaaScore - Number(u.blockDaaScore || 0);
+        return confs >= 100;
+      }
+      const confs = currentDaaScore - Number(u.blockDaaScore || 0);
+      return confs >= 1;
+    });
+  }, [utxos, currentDaaScore, activeWallet]);
+
+  const spendableBalanceSompi = useMemo(() => {
+    return spendableUtxos.reduce((sum, u) => sum + u.amountSompi, 0n);
+  }, [spendableUtxos]);
+
+  const pendingSompi = useMemo(() => {
+    if (!utxos || !activeWallet) return 0n;
+    return utxos.reduce((sum, u) => {
+      if (activeWallet.changeAddress && u.address?.trim().toLowerCase() === activeWallet.changeAddress.trim().toLowerCase()) {
+        return sum;
+      }
+      if (u.isCoinbase) {
+        const confs = currentDaaScore - Number(u.blockDaaScore || 0);
+        return confs < 100 ? sum + u.amountSompi : sum;
+      }
+      const confs = currentDaaScore - Number(u.blockDaaScore || 0);
+      return confs < 1 ? sum + u.amountSompi : sum;
+    }, 0n);
+  }, [utxos, currentDaaScore, activeWallet]);
 
   const handleAddressChange = React.useCallback(async (val: string) => {
     setToAddress(val);
@@ -230,9 +267,9 @@ export const SendModal: React.FC = () => {
   const numericAmount = parseFloat(amountInput) || 0;
   const targetSompi = kasToSompi(amountInput);
 
-  // Dynamically calculate how many UTXOs are needed to fund numericAmount
+  // Dynamically calculate how many UTXOs are needed to fund numericAmount using strictly spendable UTXOs
   const dynamicFeeInfo = useMemo(() => {
-    if (!utxos || utxos.length === 0) {
+    if (!spendableUtxos || spendableUtxos.length === 0) {
       const rec = getRecommendedFees(1, 2, addrType);
       return {
         inputsCount: 1,
@@ -245,16 +282,16 @@ export const SendModal: React.FC = () => {
     }
 
     // Sort descending by amount
-    const sorted = [...utxos].sort((a, b) => {
-      const amtA = BigInt(a.amountSompi || 0);
-      const amtB = BigInt(b.amountSompi || 0);
+    const sorted = [...spendableUtxos].sort((a, b) => {
+      const amtA = a.amountSompi;
+      const amtB = b.amountSompi;
       return amtB > amtA ? 1 : amtB < amtA ? -1 : 0;
     });
 
     let accum = 0n;
     let count = 0;
     for (const u of sorted) {
-      accum += BigInt(u.amountSompi || 0);
+      accum += u.amountSompi;
       count++;
       const curFee = calculateDynamicFeeForTransaction(count, 2, addrType, 20, 15000n);
       if (accum >= (targetSompi + curFee) || count >= 80) {
@@ -272,14 +309,14 @@ export const SendModal: React.FC = () => {
         fast: Number(sompiToKas(rec.fastFeeSompi)),
       },
     };
-  }, [utxos, targetSompi, addrType]);
+  }, [spendableUtxos, targetSompi, addrType]);
 
   const feeValuesKas = dynamicFeeInfo.fees;
   const selectedFee = feeValuesKas[feeSpeed];
-  const maxBalanceKas = activeWallet ? sompiToKas(activeWallet.balanceSompi) : 0;
+  const maxBalanceKas = activeWallet ? sompiToKas(spendableBalanceSompi) : 0;
 
   const handleMaxClick = () => {
-    if (!utxos || utxos.length === 0) {
+    if (!spendableUtxos || spendableUtxos.length === 0) {
       const maxSendable = Math.max(0, maxBalanceKas - selectedFee);
       const strVal = maxSendable > 0 ? maxSendable.toFixed(8).replace(/\.?0+$/, '') : '0';
       setAmountInput(strVal);
@@ -288,8 +325,8 @@ export const SendModal: React.FC = () => {
     }
 
     // Up to 80 UTXOs
-    const usableUtxos = utxos.slice(0, 80);
-    const totalUtxoSompi = usableUtxos.reduce((sum, u) => sum + BigInt(u.amountSompi || 0), 0n);
+    const usableUtxos = spendableUtxos.slice(0, 80);
+    const totalUtxoSompi = usableUtxos.reduce((sum, u) => sum + u.amountSompi, 0n);
     const rec = getRecommendedFees(usableUtxos.length, 1, addrType);
     const feeSompi = feeSpeed === 'low' ? rec.lowFeeSompi : feeSpeed === 'fast' ? rec.fastFeeSompi : rec.normalFeeSompi;
     const maxSendableSompi = totalUtxoSompi > feeSompi ? totalUtxoSompi - feeSompi : 0n;
@@ -691,7 +728,7 @@ export const SendModal: React.FC = () => {
                   onClick={handleMaxClick}
                   className="text-[10px] font-mono text-[#70C7BA] hover:underline"
                 >
-                  Balance: {formatKas(activeWallet?.balanceSompi || 0n, 2)} KAS (Use Max)
+                  Spendable: {formatKas(spendableBalanceSompi || 0n, 2)} KAS {pendingSompi > 0n && `(+${formatKas(pendingSompi, 2)} pending)`} (Use Max)
                 </button>
               </div>
 

@@ -110,7 +110,7 @@ class KaspaWebSocketManager {
       };
 
       this.ws.onerror = (err) => {
-        console.warn(`[Kaspa WSS] Error on ${wsUrl}:`, err);
+        console.debug(`[Kaspa WSS] Connection closed on ${wsUrl}`);
       };
 
       this.ws.onclose = () => {
@@ -124,7 +124,7 @@ class KaspaWebSocketManager {
         }
       };
     } catch (e) {
-      console.warn('[Kaspa WSS] Connection attempt failed:', e);
+      console.debug('[Kaspa WSS] Connection attempt failed:', e);
       if (!this.isExplicitlyClosed) {
         if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
         this.reconnectTimer = setTimeout(() => {
@@ -158,7 +158,7 @@ class KaspaWebSocketManager {
         })
       );
     } catch (e) {
-      console.warn('[Kaspa WSS] Failed to send subscription:', e);
+      console.debug('[Kaspa WSS] Failed to send subscription:', e);
     }
   }
 
