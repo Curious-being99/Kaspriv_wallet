@@ -12,7 +12,6 @@ import {
   calculateMinFeeForInputs,
   getRecommendedFees,
 } from '../utils/kaspa';
-import { decryptWithPassword, buildAadContext } from '../utils/crypto';
 import {
   X,
   ArrowUpRight,
@@ -170,56 +169,6 @@ export const SendModal: React.FC = () => {
       }
     }
   }, [isSendOpen, activeWallet, isPasswordEnabled, handleAddressChange]);
-
-  const getMnemonicForSigning = async (): Promise<string | null> => {
-    if (activeWallet?.mnemonic) {
-      return activeWallet.mnemonic;
-    }
-
-    const effectivePassword = passwordInput || password;
-    if (isPasswordEnabled && activeWallet?.encryptedMnemonic && effectivePassword) {
-      try {
-        const decrypted = await decryptWithPassword(
-          activeWallet.encryptedMnemonic.ciphertext,
-          activeWallet.encryptedMnemonic.salt,
-          activeWallet.encryptedMnemonic.iv,
-          effectivePassword,
-          buildAadContext('MNEMONIC', activeWallet.id)
-        );
-        return decrypted;
-      } catch (e) {
-        return null;
-      }
-    }
-
-    return null;
-  };
-
-  const getPassphraseForSigning = async (): Promise<string | undefined> => {
-    if (passphraseInput) {
-      return passphraseInput;
-    }
-
-    const effectivePassword = passwordInput || password;
-    if (isPasswordEnabled && activeWallet?.encryptedPassphrase && effectivePassword) {
-      try {
-        const decrypted = await decryptWithPassword(
-          activeWallet.encryptedPassphrase.ciphertext,
-          activeWallet.encryptedPassphrase.salt,
-          activeWallet.encryptedPassphrase.iv,
-          effectivePassword,
-          buildAadContext('PASSPHRASE', activeWallet.id)
-        );
-        return decrypted || undefined;
-      } catch (e) {}
-    }
-
-    if (activeWallet?.passphrase) {
-      return activeWallet.passphrase;
-    }
-
-    return undefined;
-  };
 
   const transactionsRef = useRef(transactions);
   useEffect(() => {
@@ -426,16 +375,13 @@ export const SendModal: React.FC = () => {
     // Otherwise (no password security or password available in session), sign and broadcast immediately
     setIsSending(true);
     try {
-      let mnemonicToUse = await getMnemonicForSigning();
-      let passphraseToUse = await getPassphraseForSigning();
-
       const res = await sendKaspa(
         toAddress,
         amountInput || numericAmount,
         selectedFee.toString(),
         note,
-        mnemonicToUse || undefined,
-        passphraseToUse || undefined,
+        undefined,
+        passphraseInput || undefined,
         selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined
       );
 

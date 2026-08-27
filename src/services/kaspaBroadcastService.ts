@@ -217,8 +217,8 @@ export async function broadcastKaspaTransactionService(
   const endpoints = getBroadcastEndpoints(network);
   const rawTx = txPayload?.transaction || txPayload;
 
-  // Extract or compute local candidate transaction ID
-  let localComputedTxId = knownTxId || txPayload?.id || rawTx?.id || rawTx?.transactionId;
+  // Extract or compute local candidate transaction ID (checking all possible property names)
+  let localComputedTxId = knownTxId || txPayload?.txId || txPayload?.id || rawTx?.txId || rawTx?.id || rawTx?.transactionId;
   try {
     if (!localComputedTxId) {
       localComputedTxId = await computeTxIdWasm(rawTx);
@@ -255,53 +255,13 @@ export async function broadcastKaspaTransactionService(
   };
 
   const bodyPayload = { transaction: formattedTx };
-  let lastErrorMsg = 'Endpoints offline';
-  let hasTriedAtLeastOne = false;
+  const serializedBody = JSON.parse(JSON.stringify(bodyPayload, (_, v) => (typeof v === 'bigint' ? v.toString() : v)));
 
-  for (const baseUrl of endpoints) {
-    // Timeout safeguard: if we already completed a try that timed out,
-    // and we have a transaction ID, check if it exists on this next node
-    // before broadcasting again.
-    const checkTxId = localComputedTxId || knownTxId;
-    if (hasTriedAtLeastOne && checkTxId) {
-      try {
-        let checkData: any = null;
-        if (Capacitor.isNativePlatform()) {
-          const capCheck = await CapacitorHttp.request({
-            url: `${baseUrl}/transactions/${checkTxId}?include_payload=false`,
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-            connectTimeout: 3000,
-            readTimeout: 3000,
-          });
-          if (capCheck.status === 200) {
-            checkData = typeof capCheck.data === 'string' ? JSON.parse(capCheck.data) : capCheck.data;
-          }
-        } else {
-          const checkRes = await fetch(`${baseUrl}/transactions/${checkTxId}?include_payload=false`, {
-            signal: AbortSignal.timeout(3000)
-          });
-          if (checkRes.ok) {
-            checkData = await checkRes.json();
-          }
-        }
+  let lastErrorMsg = 'Endpoints offline or unresponsive';
 
-        const returnedTxId = checkData?.transactionId || checkData?.txId || checkData?.id;
-        if (returnedTxId) {
-          console.log(`[Rebroadcast Safeguard] Found existing transaction ${checkTxId} on node ${baseUrl}. Bypassing redundant broadcast.`);
-          return {
-            status: 'submitted',
-            txId: checkTxId,
-            endpointUsed: baseUrl,
-          };
-        }
-      } catch {
-        // Soft fail on check; proceed with broadcast
-      }
-    }
-
+  // Fast broadcast helper for a single endpoint
+  const sendToNode = async (baseUrl: string): Promise<BroadcastResult | null> => {
     try {
-      hasTriedAtLeastOne = true;
       let status = 0;
       let data: any = null;
 
@@ -313,9 +273,9 @@ export async function broadcastKaspaTransactionService(
             'Accept': 'application/json',
             'Content-Type': 'application/json',
           },
-          data: JSON.parse(JSON.stringify(bodyPayload, (_, v) => (typeof v === 'bigint' ? v.toString() : v))),
-          connectTimeout: 5000,
-          readTimeout: 5000,
+          data: serializedBody,
+          connectTimeout: 2500,
+          readTimeout: 2500,
         });
         status = capRes.status || 200;
         data = typeof capRes.data === 'string' ? JSON.parse(capRes.data || '{}') : capRes.data;
@@ -323,8 +283,8 @@ export async function broadcastKaspaTransactionService(
         const res = await fetch(`${baseUrl}/transactions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyPayload, (_, v) => (typeof v === 'bigint' ? v.toString() : v)),
-          signal: AbortSignal.timeout(5000),
+          body: JSON.stringify(serializedBody),
+          signal: AbortSignal.timeout(2500),
         });
         status = res.status;
         data = await res.json().catch(() => null);
@@ -333,11 +293,7 @@ export async function broadcastKaspaTransactionService(
       const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;
 
       if (status >= 200 && status < 300) {
-        // Authoritative validation: Node-returned TXID is the canonical network ID.
         const finalTxId = returnedTxId ? String(returnedTxId).toLowerCase() : (localComputedTxId || knownTxId || '');
-        if (localComputedTxId && returnedTxId && String(returnedTxId).toLowerCase() !== String(localComputedTxId).toLowerCase()) {
-          console.log(`[Broadcast Info] Node assigned canonical TXID ${returnedTxId} (local candidate was ${localComputedTxId}). Using node canonical TXID.`);
-        }
         return {
           status: 'submitted',
           txId: finalTxId,
@@ -354,9 +310,31 @@ export async function broadcastKaspaTransactionService(
         };
       }
 
-      lastErrorMsg = data?.message || `HTTP ${status}`;
-    } catch (err: any) {
-      lastErrorMsg = err.message || 'Connection timeout';
+      if (data?.message) {
+        lastErrorMsg = data.message;
+      }
+      return null;
+    } catch (e: any) {
+      if (e?.message) {
+        lastErrorMsg = e.message;
+      }
+      return null;
+    }
+  };
+
+  // 1. Try primary node immediately
+  const primaryResult = await sendToNode(endpoints[0]);
+  if (primaryResult) {
+    return primaryResult;
+  }
+
+  // 2. If primary failed or timed out, race remaining endpoints concurrently
+  if (endpoints.length > 1) {
+    const fallbackPromises = endpoints.slice(1).map((ep) => sendToNode(ep));
+    const results = await Promise.all(fallbackPromises);
+    const successResult = results.find((r) => r !== null);
+    if (successResult) {
+      return successResult;
     }
   }
 

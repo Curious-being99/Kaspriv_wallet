@@ -2734,7 +2734,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     let activePassword = password;
 
-    if (isBiometricsEnabled && !providedSeedPhrase) {
+    if (isBiometricsEnabled && !providedSeedPhrase && !seedToUse && !activePassword && !sessionId) {
       const authRes = await authorizeSigningWithBiometrics();
       if (!authRes.success) {
         return { success: false, error: authRes.error || 'Biometric authentication required.' };
@@ -2985,14 +2985,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           const nextIdx = maxIdx + 1;
           const nextDerivationPath = `m/44'/111111'/0'/1/${nextIdx}`;
 
-          const freshChangeAddress = await generateDeterministicAddress(
-            seedToUse,
-            passphraseToUse || undefined,
-            prefix,
-            addrType,
-            nextIdx,
-            true
-          );
+          const freshChangeAddress = (nextIdx === 0 && activeWallet.changeAddress)
+            ? activeWallet.changeAddress
+            : await generateDeterministicAddress(
+                seedToUse,
+                passphraseToUse || undefined,
+                prefix,
+                addrType,
+                nextIdx,
+                true
+              );
 
           effectiveChangeAddress = freshChangeAddress;
           effectiveChangePath = nextDerivationPath;
@@ -3787,46 +3789,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         // Handle pending transaction authorization if present
         if (pendingTransaction) {
           try {
-            let mnemonicToUse: string | null = null;
-            let passphraseToUse: string | undefined = undefined;
-
-            if (activeWalletToUnlock.encryptedMnemonic) {
-              mnemonicToUse = await decryptWithPassword(
-                activeWalletToUnlock.encryptedMnemonic.ciphertext,
-                activeWalletToUnlock.encryptedMnemonic.salt,
-                activeWalletToUnlock.encryptedMnemonic.iv,
-                cleanInput,
-                buildAadContext('MNEMONIC', activeWalletToUnlock.id)
-              );
-            } else {
-              mnemonicToUse = activeWalletToUnlock.mnemonic || null;
-            }
-
-            if (activeWalletToUnlock.encryptedPassphrase) {
-              passphraseToUse = await decryptWithPassword(
-                activeWalletToUnlock.encryptedPassphrase.ciphertext,
-                activeWalletToUnlock.encryptedPassphrase.salt,
-                activeWalletToUnlock.encryptedPassphrase.iv,
-                cleanInput,
-                buildAadContext('PASSPHRASE', activeWalletToUnlock.id)
-              );
-            } else if (pendingTransaction.passphrase) {
-              passphraseToUse = pendingTransaction.passphrase;
-            } else {
-              passphraseToUse = activeWalletToUnlock.passphrase || undefined;
-            }
-
-            if (!mnemonicToUse) {
-              throw new Error('Could not decrypt wallet credentials for signing.');
-            }
-
             const txRes = await sendKaspa(
               pendingTransaction.toAddress,
               pendingTransaction.amount,
               pendingTransaction.fee,
               pendingTransaction.note,
-              mnemonicToUse,
-              passphraseToUse,
+              undefined,
+              pendingTransaction.passphrase,
               pendingTransaction.selectedUtxoOutpoints
             );
 

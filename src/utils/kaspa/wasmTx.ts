@@ -220,7 +220,9 @@ export async function createSignedTransactionWasm(
       }
     })),
     lockTime: Number(finalJson.lockTime),
-    subnetworkId: finalJson.subnetworkId
+    subnetworkId: finalJson.subnetworkId,
+    id: signedTx.id,
+    txId: signedTx.id,
   };
 
   return {
@@ -413,7 +415,9 @@ export async function createSignedTransactionIsolatedWasm(
       }
     })),
     lockTime: Number(finalJson.lockTime),
-    subnetworkId: finalJson.subnetworkId
+    subnetworkId: finalJson.subnetworkId,
+    id: signedTx.id,
+    txId: signedTx.id,
   };
 
   return {

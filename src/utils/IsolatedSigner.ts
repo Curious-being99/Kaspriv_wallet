@@ -426,6 +426,7 @@ export class IsolatedSigner {
     success: boolean;
     transaction?: any;
     error?: string;
+    txId?: string;
   }> {
     const isP2SH = true;
 
@@ -521,7 +522,12 @@ export class IsolatedSigner {
 
       return {
         success: true,
-        transaction: signedTx,
+        transaction: {
+          ...signedTx,
+          id: signedTx.id || wasmResult.id,
+          txId: signedTx.txId || signedTx.id || wasmResult.id,
+        },
+        txId: signedTx.id || wasmResult.id,
       };
     } catch (err: unknown) {
       return {

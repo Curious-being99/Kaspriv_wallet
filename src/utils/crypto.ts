@@ -50,7 +50,10 @@ export async function ensureKaspaWasm(): Promise<void> {
         }
       };
 
-      // Attempt 1: Fetch and compile ArrayBuffer (Most robust, avoids streaming aborts/MIME issues)
+      // Attempt 1: Direct URL fast streaming compilation
+      if (await tryInit(resolvedWasmUrl)) return;
+
+      // Attempt 2: Fetch and compile ArrayBuffer
       try {
         const response = await fetch(resolvedWasmUrl);
         if (response.ok) {
@@ -60,9 +63,6 @@ export async function ensureKaspaWasm(): Promise<void> {
       } catch (fetchErr) {
         // Fallback silently
       }
-
-      // Attempt 2: Direct URL (may trigger instantiateStreaming network warnings in dev, but serves as fallback)
-      if (await tryInit(resolvedWasmUrl)) return;
 
       // Attempt 3: Last ditch - try a hardcoded relative path
       const relativeFallback = '/assets/kaspa_bg.wasm'; 
