@@ -1366,8 +1366,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           const prevAddrBal = BigInt(wallet.addressBalances?.[addr] || '0');
 
           let calculatedBal = 0n;
-          // If we have filtered UTXOs for this address or recent spent outpoints exist, use precise UTXO sum
-          if (addrUtxos.length > 0 || activeSpentSet.size > 0 || pendingChange.length > 0) {
+          // Check if this specific address has pending changes or spent UTXOs
+          const hasPendingChangeForAddr = pendingChange.some(cu => cu.address && cu.address.trim().toLowerCase() === normAddr);
+          const hasSpentUtxoForAddr = [...allMergedUtxos, ...utxosRef.current].some(u => u.address && u.address.trim().toLowerCase() === normAddr && activeSpentSet.has(`${u.txid}:${u.vout}`));
+
+          // If we have filtered UTXOs, pending changes, or spent UTXOs for this address, use the precise UTXO sum
+          if (addrUtxos.length > 0 || hasSpentUtxoForAddr || hasPendingChangeForAddr) {
             calculatedBal = addrUtxoSum;
           } else if (liveAddrBal !== null && liveAddrBal !== undefined) {
             calculatedBal = liveAddrBal;
