@@ -12,10 +12,6 @@ import java.io.InputStreamReader
 
 class MainActivity : BridgeActivity() {
 
-    companion object {
-        var activeInstance: MainActivity? = null
-    }
-
     class SecurityEnvironmentBridge {
         @JavascriptInterface
         fun isDeviceRooted(): Boolean {
@@ -121,7 +117,6 @@ class MainActivity : BridgeActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        activeInstance = this
         // Native FLAG_SECURE Window Enforcement
         // Blocks screenshots, screen recording, and hides wallet contents in Android Recents / App Switcher
         try {
@@ -138,7 +133,6 @@ class MainActivity : BridgeActivity() {
         registerPlugin(SQLitePlugin::class.java)
         registerPlugin(DecentralizedNotificationPlugin::class.java)
         registerPlugin(NativeScannerPlugin::class.java)
-        registerPlugin(NativeUIRouterPlugin::class.java)
 
         super.onCreate(savedInstanceState)
 

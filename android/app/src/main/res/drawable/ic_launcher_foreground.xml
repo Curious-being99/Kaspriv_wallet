@@ -4,10 +4,13 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Kaspa Dual-Chevron Geometric Icon -->
+    <!-- Left Chevron -->
     <path
         android:fillColor="#70C7BA"
-        android:pathData="M28,32 H41 L58,54 L41,76 H28 L45,54 Z" />
+        android:pathData="M32,36 L43,36 L58,54 L43,72 L32,72 L47,54 Z" />
+    <!-- Right Chevron (Overlapping Kaspa Brand Glyph) -->
     <path
-        android:fillColor="#70C7BA"
-        android:pathData="M48,32 H61 L78,54 L61,76 H48 L65,54 Z" />
+        android:fillColor="#49EACB"
+        android:pathData="M51,36 L62,36 L77,54 L62,72 L51,72 L66,54 Z" />
 </vector>

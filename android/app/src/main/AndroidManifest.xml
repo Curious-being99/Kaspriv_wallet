@@ -14,11 +14,11 @@
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
-            android:name=".NativeWalletActivity"
-            android:label="Kaspriv Native Wallet"
-            android:screenOrientation="portrait"
-            android:theme="@style/AppTheme"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:screenOrientation="portrait"
             android:exported="true">
 
             <intent-filter>
@@ -27,19 +27,6 @@
             </intent-filter>
 
         </activity>
-
-        <activity
-            android:name=".MainActivity"
-            android:label="@string/title_activity_main"
-            android:theme="@style/AppTheme.NoActionBarLaunch"
-            android:screenOrientation="portrait"
-            android:exported="false" />
-
-        <activity
-            android:name=".CustomScannerActivity"
-            android:screenOrientation="portrait"
-            android:theme="@style/Theme.AppCompat.NoActionBar"
-            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

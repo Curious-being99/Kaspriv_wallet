@@ -1,88 +1,72 @@
+const sharp = require('sharp');
 const fs = require('fs');
-const path = require('path');
 
-async function generateIcons() {
-  console.log('Starting icon generation script...');
+async function build() {
+  const svgBuffer = fs.readFileSync('public/assets/kas_icon.svg');
   
-  const iconDir = path.join(__dirname, '../public/assets');
-  if (!fs.existsSync(iconDir)) {
-    fs.mkdirSync(iconDir, { recursive: true });
-  }
-
-  const pngHeader = Buffer.from([
-    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
-    0, 0, 2, 0, 0, 0, 2, 0, 8, 6, 0, 0, 0, 114, 173, 65, 230,
-    0, 0, 0, 1, 115, 82, 71, 66, 0, 1, 230, 206, 28, 0, 0, 0,
-    17, 73, 68, 65, 84, 120, 156, 99, 96, 96, 96, 248, 207, 64, 3,
-    0, 0, 3, 0, 1, 48, af, 167, 128, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130
-  ]);
-
-  const webSizes = [
-    { name: 'kas_icon_512.png', size: 512 },
-    { name: 'kas_icon_192.png', size: 192 },
-    { name: 'kas_icon.png', size: 512 }
-  ];
-
-  for (const item of webSizes) {
-    const filePath = path.join(iconDir, item.name);
-    try {
-      const sharp = require('sharp');
-      const svgBuffer = fs.readFileSync(path.join(iconDir, 'kas_icon.svg'));
-      await sharp(svgBuffer)
-        .resize(item.size, item.size)
-        .png()
-        .toFile(filePath);
-      console.log(`Generated web icon: ${item.name} using sharp`);
-    } catch (e) {
-      fs.writeFileSync(filePath, pngHeader);
-    }
-  }
-
-  const densities = {
+  // 1. Fix Web PNGs
+  await sharp(svgBuffer).resize(512, 512).toFile('public/assets/kas_icon_512.png');
+  await sharp(svgBuffer).resize(192, 192).toFile('public/assets/kas_icon_192.png');
+  await sharp(svgBuffer).resize(512, 512).toFile('public/assets/kas_icon.png');
+  
+  const sizes = {
     'mdpi': 48,
     'hdpi': 72,
     'xhdpi': 96,
     'xxhdpi': 144,
     'xxxhdpi': 192
   };
-
-  for (const [density, size] of Object.entries(densities)) {
-    const dir = path.join(__dirname, `../android/app/src/main/res/mipmap-${density}`);
+  
+  for (const [density, size] of Object.entries(sizes)) {
+    const dir = `android/app/src/main/res/mipmap-${density}`;
     fs.mkdirSync(dir, { recursive: true });
-
-    const fileNames = ['ic_launcher.png', 'ic_launcher_round.png', 'ic_launcher_foreground.png'];
-    for (const name of fileNames) {
-      const targetPath = path.join(dir, name);
-      try {
-        const sharp = require('sharp');
-        const svgBuffer = fs.readFileSync(path.join(iconDir, 'kas_icon.svg'));
-        await sharp(svgBuffer)
-          .resize(size, size)
-          .png()
-          .toFile(targetPath);
-      } catch (e) {
-        fs.writeFileSync(targetPath, pngHeader);
-      }
-    }
-  }
-
-  const splashDir = path.join(__dirname, '../android/app/src/main/res/drawable');
-  fs.mkdirSync(splashDir, { recursive: true });
-  try {
-    const sharp = require('sharp');
-    const svgBuffer = fs.readFileSync(path.join(iconDir, 'kas_icon.svg'));
+    
+    // Foreground (Transparent + Logo)
     await sharp(svgBuffer)
-      .resize(300, 300)
-      .flatten({ background: '#0F172A' })
-      .png()
-      .toFile(path.join(splashDir, 'splash.png'));
-  } catch (e) {
-    fs.writeFileSync(path.join(splashDir, 'splash.png'), pngHeader);
+      .resize(size, size)
+      .toFile(`${dir}/ic_launcher_foreground.png`);
+      
+    // Legacy Square (Slate 900 Background + Logo)
+    await sharp({
+      create: { width: size, height: size, channels: 4, background: '#0F172A' }
+    })
+      .composite([{ input: await sharp(svgBuffer).resize(size, size).toBuffer() }])
+      .toFile(`${dir}/ic_launcher.png`);
+      
+    // Legacy Round (Slate 900 Circle + Logo)
+    const circleSvg = Buffer.from(
+      `<svg width="${size}" height="${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2}" fill="#0F172A"/></svg>`
+    );
+    await sharp({
+      create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+    })
+      .composite([
+        { input: circleSvg },
+        { input: await sharp(svgBuffer).resize(size, size).toBuffer() }
+      ])
+      .toFile(`${dir}/ic_launcher_round.png`);
   }
-
-  console.log('Icon generation completed successfully!');
+  
+  // Splash screens
+  const portW = 480, portH = 800;
+  const logoPort = Math.round(portW * 0.4);
+  fs.mkdirSync('android/app/src/main/res/drawable', { recursive: true });
+  await sharp({
+    create: { width: portW, height: portH, channels: 4, background: '#0F172A' }
+  })
+    .composite([{ input: await sharp(svgBuffer).resize(logoPort, logoPort).toBuffer() }])
+    .toFile('android/app/src/main/res/drawable/splash.png');
+    
+  const landW = 800, landH = 480;
+  const logoLand = Math.round(landH * 0.4);
+  fs.mkdirSync('android/app/src/main/res/drawable-land-hdpi', { recursive: true });
+  await sharp({
+    create: { width: landW, height: landH, channels: 4, background: '#0F172A' }
+  })
+    .composite([{ input: await sharp(svgBuffer).resize(logoLand, logoLand).toBuffer() }])
+    .toFile('android/app/src/main/res/drawable-land-hdpi/splash.png');
+    
+  console.log('All icons generated successfully with sharp!');
 }
 
-generateIcons().catch(err => {
-  console.error('Icon generation error (non-fatal):', err);
-});
+build().catch(console.error);
