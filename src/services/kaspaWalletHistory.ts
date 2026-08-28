@@ -169,6 +169,14 @@ function isSameAddress(addrA?: string, addrB?: string): boolean {
   return stripA === stripB;
 }
 
+function isAddressInList(addr?: string, list?: string | string[]): boolean {
+  if (!addr || !list) return false;
+  if (Array.isArray(list)) {
+    return list.some(l => isSameAddress(addr, l));
+  }
+  return isSameAddress(addr, list);
+}
+
 export function sompiToKas(sompi: bigint): string {
   const negative = sompi < 0n;
   const absolute = negative ? -sompi : sompi;
@@ -208,20 +216,73 @@ export class KaspaWalletHistory {
     this.fetchFn = options.fetchFn ?? fetch;
   }
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await this.fetchFn(`${this.apiBaseUrl}${path}`, {
-      ...init,
-      headers: {
-        Accept: 'application/json',
-        ...(init?.headers ?? {}),
-      },
-    });
+  private async requestWithHeaders<T>(path: string, init?: RequestInit): Promise<{ data: T, headers: Headers }> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await this.fetchFn(`${this.apiBaseUrl}${path}`, {
+        ...init,
+        headers: {
+          Accept: 'application/json',
+          ...(init?.headers ?? {}),
+        },
+      });
 
-    if (!response.ok) {
-      throw new Error(`KASPA_API_HTTP_${response.status}`);
+      if (response.status === 429) {
+        if (attempt < 2) {
+          const retryAfterStr = response.headers.get('Retry-After');
+          const retryAfter = retryAfterStr ? parseInt(retryAfterStr, 10) : (1 << attempt);
+          const delay = Math.min(Math.max(Number.isNaN(retryAfter) ? 1 : retryAfter, 1), 15);
+          await new Promise(resolve => setTimeout(resolve, delay * 1000));
+          continue;
+        } else {
+          throw new Error('KASPA_API_RATE_LIMITED');
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(`KASPA_API_HTTP_${response.status}`);
+      }
+
+      const data = await response.json() as T;
+      return { data, headers: response.headers };
     }
+    throw new Error('KASPA_API_RATE_LIMITED');
+  }
 
-    return response.json() as Promise<T>;
+  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await this.requestWithHeaders<T>(path, init);
+    return res.data;
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Active Addresses                                                          */
+  /* ------------------------------------------------------------------------ */
+
+  async getActiveAddresses(addresses: string[]): Promise<string[]> {
+    if (!addresses || addresses.length === 0) return [];
+
+    const activeList: string[] = [];
+    // Process in chunks of 250 to avoid large payloads
+    const chunkSize = 250;
+    for (let i = 0; i < addresses.length; i += chunkSize) {
+      const chunk = addresses.slice(i, i + chunkSize);
+      const data = await this.request<any[]>('/addresses/active', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ addresses: chunk }),
+      });
+
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          if (item?.active && item?.address) {
+            activeList.push(item.address);
+          }
+        }
+      }
+    }
+    
+    return Array.from(new Set(activeList));
   }
 
   /* ------------------------------------------------------------------------ */
@@ -298,26 +359,43 @@ export class KaspaWalletHistory {
     address: string,
     options: TransactionHistoryOptions = {}
   ): Promise<KaspaTransaction[]> {
-    const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+    let before: string | undefined = options.cursor;
+    const allRawTransactions: any[] = [];
+    
+    // Fetch up to 100 pages to prevent infinite loops, matching native implementations
+    for (let page = 0; page < 100; page++) {
+      const query = new URLSearchParams();
+      query.set('limit', '500'); // Use 500 limit for pagination efficiency like native
+      query.set('resolve_previous_outpoints', 'light');
+      
+      if (before) {
+        query.set('before', before);
+      }
 
-    const query = new URLSearchParams();
-    query.set('limit', String(limit));
+      const res = await this.requestWithHeaders<any>(
+        `/addresses/${encodeURIComponent(address)}/full-transactions-page?${query}`
+      );
+      
+      const data = res.data;
+      const headers = res.headers;
 
-    if (options.cursor) {
-      query.set('cursor', options.cursor);
+      const rawTransactions = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.transactions)
+        ? data.transactions
+        : [];
+        
+      allRawTransactions.push(...rawTransactions);
+      
+      const nextBefore = headers.get('X-Next-Page-Before');
+      if (nextBefore && nextBefore !== before) {
+        before = nextBefore;
+      } else {
+        break; // No more pages
+      }
     }
 
-    const data = await this.request<any>(
-      `/addresses/${encodeURIComponent(address)}/full-transactions-page?${query}`
-    );
-
-    const rawTransactions = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.transactions)
-      ? data.transactions
-      : [];
-
-    return rawTransactions.map((tx: any): KaspaTransaction => {
+    return allRawTransactions.map((tx: any): KaspaTransaction => {
       const inputs = Array.isArray(tx.inputs) ? tx.inputs : [];
       const outputs = Array.isArray(tx.outputs) ? tx.outputs : [];
 
@@ -496,15 +574,15 @@ export class KaspaWalletHistory {
 
   analyzeTransaction(
     transaction: KaspaTransaction,
-    walletAddress: string
+    walletAddress: string | string[]
   ): WalletTransaction {
     // 1. Separate outputs into wallet outputs and external outputs
     const outputsToWallet = transaction.outputs.filter(output =>
-      isSameAddress(output.address, walletAddress)
+      isAddressInList(output.address, walletAddress)
     );
 
     const outputsToOthers = transaction.outputs.filter(
-      output => !isSameAddress(output.address, walletAddress)
+      output => !isAddressInList(output.address, walletAddress)
     );
 
     const walletOutputsSompi = outputsToWallet.reduce(
@@ -524,7 +602,7 @@ export class KaspaWalletHistory {
 
     // 2. Identify inputs belonging specifically to this wallet
     const walletInputs = transaction.inputs.filter(input =>
-      isSameAddress(input.previousAddress, walletAddress)
+      isAddressInList(input.previousAddress, walletAddress)
     );
 
     const isWalletSender = walletInputs.length > 0;
@@ -581,7 +659,7 @@ export class KaspaWalletHistory {
       }
     } else {
       const isExternalSender = transaction.inputs.some(
-        input => input.previousAddress && !isSameAddress(input.previousAddress, walletAddress)
+        input => input.previousAddress && !isAddressInList(input.previousAddress, walletAddress)
       );
 
       if (outputsToWallet.length > 0 || isExternalSender) {
@@ -634,21 +712,66 @@ export class KaspaWalletHistory {
    * - Historical page balance delta (`balanceChangeSompi` across fetched page)
    */
   async getWalletSnapshot(
-    address: string,
+    addressOrAddresses: string | string[],
     options: TransactionHistoryOptions = {}
   ): Promise<WalletSnapshot> {
-    const [balanceSompi, utxos, rawTransactions] = await Promise.all([
-      this.getBalance(address),
-      this.getUtxos(address),
-      this.getTransactions(address, options),
-    ]);
+    const addresses = Array.isArray(addressOrAddresses) ? addressOrAddresses : [addressOrAddresses];
+    // Check active addresses to prevent rate limits
+    const activeAddresses = await this.getActiveAddresses(addresses);
+    
+    if (activeAddresses.length === 0) {
+      return {
+        address: addresses[0] ?? '',
+        balanceSompi: 0n,
+        balanceKas: '0',
+        utxos: [],
+        transactions: [],
+        balanceChangeSompi: 0n,
+        balanceChangeKas: '0',
+        fetchedAt: Date.now(),
+      };
+    }
+
+    let balanceSompi = 0n;
+    const utxos: KaspaUtxo[] = [];
+    const rawTransactions: KaspaTransaction[] = [];
+    
+    // Concurrency batching mimicking Swift TaskGroup / Kotlin coroutine batching
+    const batchSize = 6;
+    for (let i = 0; i < activeAddresses.length; i += batchSize) {
+      const batch = activeAddresses.slice(i, i + batchSize);
+      
+      const batchResults = await Promise.all(
+        batch.map(async (address) => {
+          const [bal, u, txs] = await Promise.all([
+            this.getBalance(address).catch(() => 0n),
+            this.getUtxos(address).catch(() => []),
+            this.getTransactions(address, options).catch(() => [])
+          ]);
+          return { bal, u, txs };
+        })
+      );
+      
+      for (const res of batchResults) {
+        balanceSompi += res.bal;
+        utxos.push(...res.u);
+        rawTransactions.push(...res.txs);
+      }
+    }
+
+    // Deduplicate transactions by ID to handle cross-wallet transfers cleanly
+    const uniqueTxMap = new Map<string, KaspaTransaction>();
+    for (const tx of rawTransactions) {
+      uniqueTxMap.set(tx.transactionId, tx);
+    }
+    const uniqueRawTransactions = Array.from(uniqueTxMap.values());
 
     // Resolve any inputs missing previous outpoint amount/address metadata
-    const resolvedTransactions = await this.resolveMissingInputs(rawTransactions);
+    const resolvedTransactions = await this.resolveMissingInputs(uniqueRawTransactions);
 
     const analyzedTransactions = resolvedTransactions.map(tx =>
-      this.analyzeTransaction(tx, address)
-    );
+      this.analyzeTransaction(tx, activeAddresses)
+    ).sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
 
     // Note: balanceChangeSompi is the net delta for the fetched transaction page/range,
     // NOT a replacement for the authoritative UTXO balance.
@@ -658,7 +781,7 @@ export class KaspaWalletHistory {
     );
 
     return {
-      address,
+      address: activeAddresses.length > 1 ? `${activeAddresses.length} addresses` : activeAddresses[0],
       balanceSompi,
       balanceKas: sompiToKas(balanceSompi),
       utxos,
@@ -719,7 +842,7 @@ export function formatTransaction(transaction: WalletTransaction) {
 /* Simple React-friendly loader                                                */
 /* -------------------------------------------------------------------------- */
 
-export async function loadKaspaWalletData(address: string): Promise<{
+export async function loadKaspaWalletData(addressOrAddresses: string | string[]): Promise<{
   balance: string;
   balanceSompi: bigint;
   utxos: ReturnType<typeof formatUtxo>[];
@@ -730,7 +853,7 @@ export async function loadKaspaWalletData(address: string): Promise<{
     network: 'mainnet',
   });
 
-  const snapshot = await wallet.getWalletSnapshot(address, {
+  const snapshot = await wallet.getWalletSnapshot(addressOrAddresses, {
     limit: 50,
   });
 

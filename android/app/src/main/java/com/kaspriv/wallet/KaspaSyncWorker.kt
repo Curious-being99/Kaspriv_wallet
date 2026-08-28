@@ -98,6 +98,8 @@ class KaspaSyncWorker(
                 val ownedAddresses = extractOwnedAddresses(wEntity.value)
                 if (ownedAddresses.isEmpty()) continue
 
+                // Check which addresses are actually active to prevent rate limits
+                val activeAddresses = fetchActiveAddresses(db, ownedAddresses)
                 val isFirstSyncForWallet = !initializedWallets.contains(wEntity.id)
 
                 val ownedLower = ownedAddresses.map { it.lowercase() }.toSet()
@@ -105,80 +107,95 @@ class KaspaSyncWorker(
                 val addressBalanceMap = mutableMapOf<String, String>()
                 var hasBalanceUpdate = false
 
-                for (addr in ownedAddresses) {
-                    // Fetch live address balance for flawless state sync
-                    val addrBal = fetchBalanceForAddress(db, addr)
-                    if (addrBal != null) {
-                        totalWalletSompi += addrBal
-                        addressBalanceMap[addr] = addrBal.toString()
-                        hasBalanceUpdate = true
+                // Process active addresses using coroutines for concurrency in batches
+                val batchSize = 6
+                val chunks = activeAddresses.chunked(batchSize)
+                for (batch in chunks) {
+                    val deferredBatch = batch.map { addr ->
+                        kotlinx.coroutines.async(kotlinx.coroutines.Dispatchers.IO) {
+                            val addrBal = fetchBalanceForAddress(db, addr)
+                            val txList = fetchRecentTransactionsForAddress(db, addr)
+                            Triple(addr, addrBal, txList)
+                        }
                     }
-
-                    val txs = fetchRecentTransactionsForAddress(db, addr)
-                    val now = System.currentTimeMillis()
-
-                    for (tx in txs) {
-                        val txid = tx.optString("transaction_id").ifEmpty { tx.optString("txid") }
-                        if (txid.isEmpty() || notifiedSet.contains(txid)) {
-                            continue
+                    
+                    val batchResults = deferredBatch.map { it.await() }
+                    for (res in batchResults) {
+                        val addr = res.first
+                        val addrBal = res.second
+                        val txs = res.third
+                        
+                        if (addrBal != null) {
+                            totalWalletSompi += addrBal
+                            addressBalanceMap[addr] = addrBal.toString()
+                            hasBalanceUpdate = true
                         }
 
-                        // On the first background sync pass for a restored or new wallet,
-                        // swallow all existing historical transactions into notifiedSet quietly.
-                        if (isFirstSyncForWallet) {
-                            notifiedSet.add(txid)
-                            continue
-                        }
+                        val now = System.currentTimeMillis()
 
-                        // Verify transaction age from block_time or timestamp
-                        var blockTime = tx.optLong("block_time", 0L)
-                        if (blockTime == 0L) {
-                            blockTime = tx.optLong("timestamp", 0L)
-                        }
-                        if (blockTime in 1..9999999999L) {
-                            blockTime *= 1000L
-                        }
+                        for (tx in txs) {
+                            val txid = tx.optString("transaction_id").ifEmpty { tx.optString("txid") }
+                            if (txid.isEmpty() || notifiedSet.contains(txid)) {
+                                continue
+                            }
 
-                        val isRecentTx = blockTime > 0 && (now - blockTime) < 900_000L // within 15 mins
+                            // On the first background sync pass for a restored or new wallet,
+                            // swallow all existing historical transactions into notifiedSet quietly.
+                            if (isFirstSyncForWallet) {
+                                notifiedSet.add(txid)
+                                continue
+                            }
 
-                        // Ignore old historical transactions
-                        if (!isRecentTx) {
-                            notifiedSet.add(txid)
-                            continue
-                        }
+                            // Verify transaction age from block_time or timestamp
+                            var blockTime = tx.optLong("block_time", 0L)
+                            if (blockTime == 0L) {
+                                blockTime = tx.optLong("timestamp", 0L)
+                            }
+                            if (blockTime in 1..9999999999L) {
+                                blockTime *= 1000L
+                            }
 
-                        // Determine if incoming receive funds
-                        var incomingSompi = 0L
-                        var isReceive = false
+                            val isRecentTx = blockTime > 0 && (now - blockTime) < 900_000L // within 15 mins
 
-                        val outputs = tx.optJSONArray("outputs")
-                        if (outputs != null) {
-                            for (i in 0 until outputs.length()) {
-                                val outObj = outputs.optJSONObject(i) ?: continue
-                                val outAddr = outObj.optString("script_public_key_address").lowercase()
-                                val amt = outObj.optLong("amount", 0L)
-                                if (ownedLower.contains(outAddr)) {
-                                    incomingSompi += amt
-                                    isReceive = true
+                            // Ignore old historical transactions
+                            if (!isRecentTx) {
+                                notifiedSet.add(txid)
+                                continue
+                            }
+
+                            // Determine if incoming receive funds
+                            var incomingSompi = 0L
+                            var isReceive = false
+
+                            val outputs = tx.optJSONArray("outputs")
+                            if (outputs != null) {
+                                for (i in 0 until outputs.length()) {
+                                    val outObj = outputs.optJSONObject(i) ?: continue
+                                    val outAddr = outObj.optString("script_public_key_address").lowercase()
+                                    val amt = outObj.optLong("amount", 0L)
+                                    if (ownedLower.contains(outAddr)) {
+                                        incomingSompi += amt
+                                        isReceive = true
+                                    }
                                 }
                             }
-                        }
 
-                        // Strictly notify ONLY for recent incoming receive transactions
-                        if (isReceive && incomingSompi > 0) {
-                            val kasAmount = incomingSompi.toDouble() / 100_000_000.0
-                            val shortAddr = if (addr.length > 18) "${addr.take(10)}...${addr.takeLast(6)}" else addr
-                            val formatted = String.format("%.4f", kasAmount).trimEnd('0').trimEnd('.')
+                            // Strictly notify ONLY for recent incoming receive transactions
+                            if (isReceive && incomingSompi > 0) {
+                                val kasAmount = incomingSompi.toDouble() / 100_000_000.0
+                                val shortAddr = if (addr.length > 18) "${addr.take(10)}...${addr.takeLast(6)}" else addr
+                                val formatted = String.format("%.4f", kasAmount).trimEnd('0').trimEnd('.')
 
-                            DecentralizedNotificationPlugin.showNativeNotification(
-                                context = context,
-                                title = "Received Kaspa 🟢",
-                                message = "+$formatted KAS received on $shortAddr",
-                                txid = txid,
-                                type = "receive"
-                            )
+                                DecentralizedNotificationPlugin.showNativeNotification(
+                                    context = context,
+                                    title = "Received Kaspa \uD83DFE2",
+                                    message = "+$formatted KAS received on $shortAddr",
+                                    txid = txid,
+                                    type = "receive"
+                                )
+                            }
+                            notifiedSet.add(txid)
                         }
-                        notifiedSet.add(txid)
                     }
                 }
 
@@ -268,49 +285,170 @@ class KaspaSyncWorker(
 
     private suspend fun fetchRecentTransactionsForAddress(db: AppDatabase, address: String): List<JSONObject> {
         val primaryApi = getApiUrlFromDb(db)
-        val endpoints = mutableListOf(
-            "$primaryApi/addresses/$address/full-transactions?limit=10&resolve_previous_outpoints=light"
-        )
-        if (primaryApi != "https://api.kaspa.org") {
-            endpoints.add("https://api.kaspa.org/addresses/$address/full-transactions?limit=10&resolve_previous_outpoints=light")
-        }
-        endpoints.add("https://api-mainnet.kaspa.org/addresses/$address/full-transactions?limit=10&resolve_previous_outpoints=light")
+        val allTx = mutableListOf<JSONObject>()
+        var before: String? = null
 
-        for (endpoint in endpoints.distinct()) {
-            var conn: HttpURLConnection? = null
-            try {
-                val url = URL(endpoint)
-                conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"
-                conn.connectTimeout = 8000
-                conn.readTimeout = 8000
-                conn.setRequestProperty("Accept", "application/json")
-                conn.setRequestProperty("User-Agent", "KasprivWallet-BackgroundSync/1.2")
+        for (page in 0 until 100) {
+            val endpoints = mutableListOf<String>()
+            val queryParams = if (before != null) "limit=500&resolve_previous_outpoints=light&before=$before" else "limit=500&resolve_previous_outpoints=light"
+            
+            endpoints.add("$primaryApi/addresses/$address/full-transactions-page?$queryParams")
+            if (primaryApi != "https://api.kaspa.org") {
+                endpoints.add("https://api.kaspa.org/addresses/$address/full-transactions-page?$queryParams")
+            }
+            endpoints.add("https://api-mainnet.kaspa.org/addresses/$address/full-transactions-page?$queryParams")
 
-                if (conn.responseCode == 200) {
-                    val reader = BufferedReader(InputStreamReader(conn.inputStream))
-                    val sb = java.lang.StringBuilder()
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        sb.append(line)
+            var pageSuccess = false
+            for (endpoint in endpoints.distinct()) {
+                for (attempt in 0..2) {
+                    var conn: HttpURLConnection? = null
+                    try {
+                        val url = URL(endpoint)
+                        conn = url.openConnection() as HttpURLConnection
+                        conn.requestMethod = "GET"
+                        conn.connectTimeout = 8000
+                        conn.readTimeout = 8000
+                        conn.setRequestProperty("Accept", "application/json")
+                        conn.setRequestProperty("User-Agent", "KasprivWallet-BackgroundSync/1.2")
+
+                        if (conn.responseCode == 429) {
+                            if (attempt < 2) {
+                                val retryAfterStr = conn.getHeaderField("Retry-After")
+                                val retryAfter = retryAfterStr?.toLongOrNull() ?: (1L shl attempt)
+                                val delay = minOf(maxOf(retryAfter, 1L), 15L)
+                                kotlinx.coroutines.delay(delay * 1000)
+                                continue
+                            } else {
+                                break
+                            }
+                        }
+
+                        if (conn.responseCode in 200..299) {
+                            val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                            val sb = java.lang.StringBuilder()
+                            var line: String?
+                            while (reader.readLine().also { line = it } != null) {
+                                sb.append(line)
+                            }
+                            reader.close()
+
+                            val resArray = JSONArray(sb.toString())
+                            for (i in 0 until resArray.length()) {
+                                val obj = resArray.optJSONObject(i)
+                                if (obj != null) allTx.add(obj)
+                            }
+                            
+                            val nextBefore = conn.getHeaderField("X-Next-Page-Before")
+                            if (!nextBefore.isNullOrEmpty() && nextBefore != before) {
+                                before = nextBefore
+                                pageSuccess = true
+                            } else {
+                                // No more pages
+                                return allTx
+                            }
+                            break // Break attempt loop
+                        } else {
+                            break // Non-429 error, try next endpoint
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Endpoint $endpoint failed: ${e.message}")
+                        break
+                    } finally {
+                        conn?.disconnect()
                     }
-                    reader.close()
-
-                    val resArray = JSONArray(sb.toString())
-                    val txList = mutableListOf<JSONObject>()
-                    for (i in 0 until resArray.length()) {
-                        val obj = resArray.optJSONObject(i)
-                        if (obj != null) txList.add(obj)
-                    }
-                    return txList
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Endpoint $endpoint failed: ${e.message}")
-            } finally {
-                conn?.disconnect()
+                if (pageSuccess) break // Break endpoint loop, continue to next page
+            }
+            if (!pageSuccess) {
+                // If we failed to fetch a page from all endpoints, return what we have
+                break
             }
         }
-        return emptyList()
+        return allTx
+    }
+
+    private suspend fun fetchActiveAddresses(db: AppDatabase, addresses: List<String>): List<String> {
+        val primaryApi = getApiUrlFromDb(db)
+        val activeList = mutableListOf<String>()
+        
+        // Chunk requests to avoid payload size issues
+        val chunks = addresses.chunked(250)
+        for (chunk in chunks) {
+            val jsonPayload = JSONObject().apply {
+                put("addresses", JSONArray(chunk))
+            }.toString()
+
+            val endpoints = mutableListOf("$primaryApi/addresses/active")
+            if (primaryApi != "https://api.kaspa.org") {
+                endpoints.add("https://api.kaspa.org/addresses/active")
+            }
+            endpoints.add("https://api-mainnet.kaspa.org/addresses/active")
+
+            for (endpoint in endpoints.distinct()) {
+                var success = false
+                for (attempt in 0..2) {
+                    var conn: HttpURLConnection? = null
+                    try {
+                        val url = URL(endpoint)
+                        conn = url.openConnection() as HttpURLConnection
+                        conn.requestMethod = "POST"
+                        conn.connectTimeout = 8000
+                        conn.readTimeout = 8000
+                        conn.setRequestProperty("Accept", "application/json")
+                        conn.setRequestProperty("Content-Type", "application/json")
+                        conn.setRequestProperty("User-Agent", "KasprivWallet-BackgroundSync/1.2")
+                        conn.doOutput = true
+
+                        conn.outputStream.use { os ->
+                            val input = jsonPayload.toByteArray(Charsets.UTF_8)
+                            os.write(input, 0, input.size)
+                        }
+
+                        if (conn.responseCode == 429) {
+                            if (attempt < 2) {
+                                val retryAfterStr = conn.getHeaderField("Retry-After")
+                                val retryAfter = retryAfterStr?.toLongOrNull() ?: (1L shl attempt)
+                                val delay = minOf(maxOf(retryAfter, 1L), 15L)
+                                kotlinx.coroutines.delay(delay * 1000)
+                                continue
+                            } else {
+                                break
+                            }
+                        }
+
+                        if (conn.responseCode in 200..299) {
+                            val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                            val sb = java.lang.StringBuilder()
+                            var line: String?
+                            while (reader.readLine().also { line = it } != null) {
+                                sb.append(line)
+                            }
+                            reader.close()
+
+                            val resArray = JSONArray(sb.toString())
+                            for (i in 0 until resArray.length()) {
+                                val obj = resArray.optJSONObject(i)
+                                if (obj?.optBoolean("active") == true) {
+                                    val addr = obj.optString("address")
+                                    if (addr.isNotEmpty()) activeList.add(addr)
+                                }
+                            }
+                            success = true
+                            break
+                        } else {
+                            break // Try next endpoint
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Endpoint $endpoint failed: ${e.message}")
+                        break
+                    } finally {
+                        conn?.disconnect()
+                    }
+                }
+                if (success) break
+            }
+        }
+        return activeList.distinct()
     }
 
     private suspend fun fetchBalanceForAddress(db: AppDatabase, address: String): Long? {
