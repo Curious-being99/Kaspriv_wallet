@@ -829,7 +829,7 @@ class NativeWalletActivity : AppCompatActivity() {
             val emptyTv = TextView(this).apply {
                 text = "No spendable UTXOs cached locally. Synchronizing with Kaspa network..."
                 setTextColor(0xFF888888.toInt())
-                textSize = 13sp
+                textSize = 13f
                 setPadding(0, 10, 0, 10)
             }
             layoutUtxosContainer.addView(emptyTv)
@@ -844,31 +844,32 @@ class NativeWalletActivity : AppCompatActivity() {
                 val amountSompi = utxo.optJSONObject("utxoEntry")?.optString("amount", "0") ?: "0"
                 val kas = BigDecimal(amountSompi).divide(BigDecimal(100_000_000)).toPlainString()
 
+                val density = resources.displayMetrics.density
                 val card = androidx.cardview.widget.CardView(this).apply {
                     layoutParams = LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { setMargins(0, 0, 0, 16) }
-                    radius = 8.sp
-                    cardElevation = 1.sp
+                    ).apply { setMargins(0, 0, 0, (12 * density).toInt()) }
+                    radius = 8f * density
+                    cardElevation = 2f * density
                     setCardBackgroundColor(0xFFF9FAFB.toInt())
                 }
 
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
-                    setPadding(24, 20, 24, 20)
+                    setPadding((16 * density).toInt(), (12 * density).toInt(), (16 * density).toInt(), (12 * density).toInt())
                 }
 
                 val title = TextView(this).apply {
                     text = "$kas KAS"
-                    textSize = 14sp
+                    textSize = 14f
                     setTextColor(0xFF111827.toInt())
                     textStyleBold()
                 }
 
                 val subtitle = TextView(this).apply {
                     text = "Outpoint: ${txId.take(12)}...:$index"
-                    textSize = 11sp
+                    textSize = 11f
                     setTextColor(0xFF6B7280.toInt())
                 }
 
@@ -1080,6 +1081,3 @@ class NativeWalletActivity : AppCompatActivity() {
 private fun TextView.textStyleBold() {
     this.setTypeface(null, android.graphics.Typeface.BOLD)
 }
-
-private val Int.sp: Float
-    get() = this.toFloat()

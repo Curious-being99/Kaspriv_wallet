@@ -2,7 +2,7 @@ pub mod bip32;
 pub mod crypto;
 pub mod transaction;
 
-use jni::objects::{JClass, JString};
+use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jbyteArray, jstring};
 use jni::JNIEnv;
 use std::error::Error;
@@ -15,17 +15,19 @@ fn jstring_to_string(env: &mut JNIEnv, jstr: JString) -> Result<String, Box<dyn 
 
 /// Helper function to convert JNI byte array safely to Rust Vec<u8>.
 fn jbytearray_to_vec(env: &mut JNIEnv, jarr: jbyteArray) -> Result<Vec<u8>, Box<dyn Error>> {
-    let len = env.get_array_length(&jarr)?;
-    let mut data_buffer = vec![0u8; len as usize];
-    env.get_byte_array_region(&jarr, 0, bytemuck::cast_slice_mut(&mut data_buffer))?;
-    Ok(data_buffer)
+    if jarr.is_null() {
+        return Err("Null jbyteArray reference provided".into());
+    }
+    let array_obj = unsafe { JByteArray::from_raw(jarr) };
+    let vec = env.convert_byte_array(&array_obj)?;
+    std::mem::forget(array_obj); // Prevent premature deletion of caller's local ref
+    Ok(vec)
 }
 
 /// Helper function to convert Rust byte slice safely to JNI byte array.
 fn vec_to_jbytearray(env: &mut JNIEnv, buf: &[u8]) -> Result<jbyteArray, Box<dyn Error>> {
-    let jarr = env.new_byte_array(buf.len() as jni::sys::jsize)?;
-    env.set_byte_array_region(&jarr, 0, bytemuck::cast_slice(buf))?;
-    Ok(jarr)
+    let jarr = env.byte_array_from_slice(buf)?;
+    Ok(jarr.into_raw())
 }
 
 /// Native Android JNI Bridge implementation to encrypt a mnemonic phrase.
