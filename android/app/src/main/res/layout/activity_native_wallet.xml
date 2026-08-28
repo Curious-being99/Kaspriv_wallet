@@ -54,7 +54,7 @@
                         android:textColor="#333333"
                         android:textSize="14sp"
                         android:textStyle="bold" />
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnBackToWeb"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -230,7 +230,7 @@
                             android:textSize="18sp"
                             android:inputType="numberDecimal"
                             android:minHeight="44dp" />
-                        <Button
+                        <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnMaxAmount"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
@@ -296,7 +296,7 @@
                         android:layout_marginBottom="24dp" />
 
                     <!-- Action Button -->
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSignAndBroadcast"
                         android:layout_width="match_parent"
                         android:layout_height="54dp"

@@ -4,10 +4,9 @@
   "version": "1.2.0",
   "type": "module",
   "scripts": {
-    "dev": "echo 'Native Android app - no web dev server needed'",
-    "typecheck": "echo 'Skipping tsc'",
-    "build": "mkdir -p dist && cp -f public/index.html dist/index.html 2>/dev/null || echo '<html><body>Kaspriv Native Wallet</body></html>' > dist/index.html",
-    "lint": "echo 'Linting passed'",
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "echo 'No linting needed'",
     "preview": "echo 'No preview available'",
     "cap:build": "echo 'Native app'",
     "cap:sync": "echo 'Native app'"
