@@ -32,7 +32,7 @@
             android:orientation="vertical"
             android:padding="20dp">
 
-            <!-- Back to Web View Toggle Card -->
+            <!-- Top Action Controls Card -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -44,26 +44,122 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:padding="14dp"
+                    android:padding="12dp"
                     android:gravity="center_vertical">
+                    
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Running in Pure Native Kotlin Mode"
-                        android:textColor="#333333"
+                        android:text="KasPriv Native Vault"
+                        android:textColor="#1E293B"
                         android:textSize="14sp"
                         android:textStyle="bold" />
+
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnBackToWeb"
+                        android:id="@+id/btnLockWallet"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Web View"
-                        android:backgroundTint="#2196F3"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="6dp"
+                        android:text="🔒 Lock"
+                        android:backgroundTint="#EF4444"
+                        android:textColor="#FFFFFF"
+                        android:textAllCaps="false"
+                        android:textSize="11sp"
+                        app:cornerRadius="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnWalletSettings"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="6dp"
+                        android:text="⚙️"
+                        android:backgroundTint="#334155"
                         android:textColor="#FFFFFF"
                         android:textAllCaps="false"
                         android:textSize="12sp"
-                        style="@style/Widget.MaterialComponents.Button.TextButton" />
+                        app:cornerRadius="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBackToWeb"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="🌐 Web"
+                        android:backgroundTint="#2196F3"
+                        android:textColor="#FFFFFF"
+                        android:textAllCaps="false"
+                        android:textSize="11sp"
+                        app:cornerRadius="8dp" />
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- Wallet Actions Quick Bar: Create, Import, Track -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#FFFFFF">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Wallet Management"
+                        android:textColor="#666666"
+                        android:textSize="12sp"
+                        android:textAllCaps="true"
+                        android:layout_marginBottom="10dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+                        
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnCreateWallet"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="4dp"
+                            android:text="+ Create"
+                            android:textSize="12sp"
+                            android:textAllCaps="false"
+                            android:backgroundTint="#70C7BA"
+                            android:textColor="#090D12"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnImportWallet"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="4dp"
+                            android:layout_marginEnd="4dp"
+                            android:text="Import"
+                            android:textSize="12sp"
+                            android:textAllCaps="false"
+                            android:backgroundTint="#2A303C"
+                            android:textColor="#FFFFFF"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnTrackAddress"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="4dp"
+                            android:text="Track Address"
+                            android:textSize="11sp"
+                            android:textAllCaps="false"
+                            android:backgroundTint="#334155"
+                            android:textColor="#FFFFFF"
+                            app:cornerRadius="8dp" />
+                    </LinearLayout>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
@@ -329,4 +425,13 @@
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+
+    <!-- Full-Screen Lock Overlay Screen -->
+    <include
+        android:id="@+id/includedLockScreen"
+        layout="@layout/activity_lock_screen"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
