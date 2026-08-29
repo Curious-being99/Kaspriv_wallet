@@ -482,7 +482,7 @@ class KaspaSyncWorker(
                     reader.close()
 
                     val json = JSONObject(sb.toString())
-                    val balVal = json.if (json.has("balance")) json.getLong("balance") else -1L
+                    val balVal = if (json.has("balance")) json.getLong("balance") else -1L
                     if (balVal >= 0) {
                         return balVal
                     }
