@@ -122,6 +122,10 @@ fun MainWalletDashboard(
     onToggleUtxoLock: (utxoId: String) -> Unit,
     onCompoundUtxos: () -> Unit,
     onSwitchWallet: (walletId: String) -> Unit,
+    onNodeManagerClick: () -> Unit = {},
+    onDuressSetupClick: () -> Unit = {},
+    onSignMessageClick: () -> Unit = {},
+    onLogoutClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(BottomNavTab.HOME) }
@@ -264,7 +268,14 @@ fun MainWalletDashboard(
                     ContactsTabView(contacts = contacts, onAddContact = onAddContact)
                 }
                 BottomNavTab.SETTINGS -> {
-                    SettingsTabView(activeWallet = activeWallet)
+                    SettingsTabView(
+                        activeWallet = activeWallet,
+                        onNodeManagerClick = onNodeManagerClick,
+                        onDuressSetupClick = onDuressSetupClick,
+                        onSignMessageClick = onSignMessageClick,
+                        onLockClick = onLockClick,
+                        onLogoutClick = onLogoutClick
+                    )
                 }
             }
         }
@@ -727,7 +738,14 @@ private fun ContactsTabView(
 }
 
 @Composable
-private fun SettingsTabView(activeWallet: WalletModel?) {
+private fun SettingsTabView(
+    activeWallet: WalletModel?,
+    onNodeManagerClick: () -> Unit = {},
+    onDuressSetupClick: () -> Unit = {},
+    onSignMessageClick: () -> Unit = {},
+    onLockClick: () -> Unit = {},
+    onLogoutClick: () -> Unit = {}
+) {
     var biometricsEnabled by remember { mutableStateOf(true) }
     var highPrivacyMode by remember { mutableStateOf(true) }
 
@@ -757,7 +775,7 @@ private fun SettingsTabView(activeWallet: WalletModel?) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text("Hardware Biometrics", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFF1F5F9))
                         Text("Unlock via Android Keystore Fingerprint", fontSize = 11.sp, color = Color(0xFF64748B))
                     }
@@ -775,7 +793,7 @@ private fun SettingsTabView(activeWallet: WalletModel?) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text("Anti-Tapjacking & FLAG_SECURE", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFF1F5F9))
                         Text("Blocks screenshots & screen mirroring", fontSize = 11.sp, color = Color(0xFF64748B))
                     }
@@ -788,7 +806,7 @@ private fun SettingsTabView(activeWallet: WalletModel?) {
             }
         }
 
-        // Node & Network Config
+        // Action Tools (Node Switcher, Duress PIN, Sign Message)
         item {
             Column(
                 modifier = Modifier
@@ -797,11 +815,129 @@ private fun SettingsTabView(activeWallet: WalletModel?) {
                     .background(Color(0xFF131924))
                     .border(1.dp, Color(0xFF212B38), RoundedCornerShape(14.dp))
                     .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("RPC Consensus Node", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFF1F5F9))
-                Text("https://api.kaspa.org", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Color(0xFF70C7BA))
-                Text("Failover: kaspa.aspectron.org, api-mainnet.kaspa.org", fontSize = 10.sp, color = Color(0xFF64748B))
+                Text("Network & Privacy Tools", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF1F5F9))
+
+                // Node Switcher
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF0F172A))
+                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                        .clickable { onNodeManagerClick() }
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("RPC Consensus Node", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFF1F5F9))
+                        Text("https://api.kaspa.org", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color(0xFF70C7BA))
+                    }
+                    Button(
+                        onClick = onNodeManagerClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color(0xFF70C7BA)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("Manage", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Duress Setup
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF0F172A))
+                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                        .clickable { onDuressSetupClick() }
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Emergency Duress Password", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFF1F5F9))
+                        Text("Configures decoy vault & panic wipe", fontSize = 11.sp, color = Color(0xFF64748B))
+                    }
+                    Button(
+                        onClick = onDuressSetupClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color(0xFFF43F5E)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("Configure", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Sign Message
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF0F172A))
+                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                        .clickable { onSignMessageClick() }
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Sign Cryptographic Message", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFF1F5F9))
+                        Text("Schnorr signature verification", fontSize = 11.sp, color = Color(0xFF64748B))
+                    }
+                    Button(
+                        onClick = onSignMessageClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color(0xFF70C7BA)),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("Sign", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Vault Session Management
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF131924))
+                    .border(1.dp, Color(0xFF212B38), RoundedCornerShape(14.dp))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Session Management", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF1F5F9))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = onLockClick,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color(0xFFF1F5F9)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Lock, contentDescription = "Lock", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Lock Vault", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = onLogoutClick,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B1219), contentColor = Color(0xFFF43F5E)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = "Logout", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Reset / Exit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
     }

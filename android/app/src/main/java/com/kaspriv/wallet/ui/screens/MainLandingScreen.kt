@@ -1,5 +1,6 @@
 package com.kaspriv.wallet.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,11 +17,67 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kaspriv.wallet.ui.theme.*
+
+@Composable
+fun KaspaBlackLogoView(
+    modifier: Modifier = Modifier,
+    size: Dp = 80.dp,
+    cornerRadius: Dp = 20.dp
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(Color(0xFF000000))
+            .border(1.dp, Color(0xFF212B38), RoundedCornerShape(cornerRadius)),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(
+            modifier = Modifier.size(size * 0.65f)
+        ) {
+            val scaleX = this.size.width / 512f
+            val scaleY = this.size.height / 512f
+
+            // Left Chevron (M86 100 H166 L286 256 L166 412 H86 L206 256 L86 100 Z)
+            val leftChevron = Path().apply {
+                moveTo(86f * scaleX, 100f * scaleY)
+                lineTo(166f * scaleX, 100f * scaleY)
+                lineTo(286f * scaleX, 256f * scaleY)
+                lineTo(166f * scaleX, 412f * scaleY)
+                lineTo(86f * scaleX, 412f * scaleY)
+                lineTo(206f * scaleX, 256f * scaleY)
+                close()
+            }
+
+            // Right Chevron (M226 100 H306 L426 256 L306 412 H226 L346 256 L226 100 Z)
+            val rightChevron = Path().apply {
+                moveTo(226f * scaleX, 100f * scaleY)
+                lineTo(306f * scaleX, 100f * scaleY)
+                lineTo(426f * scaleX, 256f * scaleY)
+                lineTo(306f * scaleX, 412f * scaleY)
+                lineTo(226f * scaleX, 412f * scaleY)
+                lineTo(346f * scaleX, 256f * scaleY)
+                close()
+            }
+
+            drawPath(
+                path = leftChevron,
+                color = Color(0xFF70C7BA)
+            )
+            drawPath(
+                path = rightChevron,
+                color = Color(0xFF70C7BA)
+            )
+        }
+    }
+}
 
 @Composable
 fun MainLandingScreen(
@@ -37,16 +94,8 @@ fun MainLandingScreen(
     ) {
         Spacer(modifier = Modifier.weight(1f))
         
-        // Logo / Branding Placeholder
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .background(KaspaTeal.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
-                .border(1.dp, KaspaTeal.copy(alpha = 0.3f), RoundedCornerShape(20.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("K", color = KaspaTeal, fontSize = 40.sp, fontWeight = FontWeight.Bold)
-        }
+        // Sleek Black Kaspa >> Logo (Zero Top Logo, Replaces K placeholder)
+        KaspaBlackLogoView(size = 80.dp, cornerRadius = 20.dp)
         
         Spacer(modifier = Modifier.height(24.dp))
         

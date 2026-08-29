@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,6 +64,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -70,6 +72,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -251,6 +254,60 @@ fun MainLandingPage(
 // ─────────────────────────────────────────────────────────────
 
 @Composable
+fun KaspaBlackLogo(
+    modifier: Modifier = Modifier,
+    size: Dp = 76.dp,
+    cornerRadius: Dp = 20.dp
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(Color(0xFF000000))
+            .border(1.dp, Color(0xFF212B38), RoundedCornerShape(cornerRadius)),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(
+            modifier = Modifier.size(size * 0.65f)
+        ) {
+            val scaleX = this.size.width / 512f
+            val scaleY = this.size.height / 512f
+
+            // Left Chevron (M86 100 H166 L286 256 L166 412 H86 L206 256 L86 100 Z)
+            val leftChevron = Path().apply {
+                moveTo(86f * scaleX, 100f * scaleY)
+                lineTo(166f * scaleX, 100f * scaleY)
+                lineTo(286f * scaleX, 256f * scaleY)
+                lineTo(166f * scaleX, 412f * scaleY)
+                lineTo(86f * scaleX, 412f * scaleY)
+                lineTo(206f * scaleX, 256f * scaleY)
+                close()
+            }
+
+            // Right Chevron (M226 100 H306 L426 256 L306 412 H226 L346 256 L226 100 Z)
+            val rightChevron = Path().apply {
+                moveTo(226f * scaleX, 100f * scaleY)
+                lineTo(306f * scaleX, 100f * scaleY)
+                lineTo(426f * scaleX, 256f * scaleY)
+                lineTo(306f * scaleX, 412f * scaleY)
+                lineTo(226f * scaleX, 412f * scaleY)
+                lineTo(346f * scaleX, 256f * scaleY)
+                close()
+            }
+
+            drawPath(
+                path = leftChevron,
+                color = Color(0xFF70C7BA)
+            )
+            drawPath(
+                path = rightChevron,
+                color = Color(0xFF70C7BA)
+            )
+        }
+    }
+}
+
+@Composable
 fun LandingHomeView(
     onSelectCreate: () -> Unit,
     onSelectImportSeed: () -> Unit,
@@ -265,26 +322,10 @@ fun LandingHomeView(
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        // Glowing Top Icon
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.size(72.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(PrimaryTealMuted)
-            )
-            Icon(
-                imageVector = Icons.Default.Shield,
-                contentDescription = null,
-                tint = PrimaryTeal,
-                modifier = Modifier.size(36.dp)
-            )
-        }
+        // Sleek Black Kaspa >> Logo
+        KaspaBlackLogo(size = 76.dp, cornerRadius = 20.dp)
 
         Spacer(modifier = Modifier.height(20.dp))
 

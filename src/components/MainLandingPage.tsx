@@ -294,27 +294,10 @@ export const MainLandingPage: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 bg-[#090D12] flex flex-col justify-between overflow-hidden selection:bg-[#70C7BA]/30 selection:text-[#70C7BA]">
-      {/* Top Header */}
-      <AnimatePresence>
-        {activeTab === 'home' && (
-          <motion.header 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="w-full px-5 pb-3 flex items-center justify-between bg-[#090D12] flex-shrink-0"
-            style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 2.5rem)' }}
-          >
-            <div className="flex items-center cursor-pointer" onClick={() => setActiveTab('home')}>
-              <img src="/assets/kas_icon.svg" alt="Kaspriv Logo" className="w-7 h-7 object-contain flex-shrink-0" />
-            </div>
-          </motion.header>
-        )}
-      </AnimatePresence>
-
       {/* Main Container */}
       <main 
         className={`flex-1 w-full flex flex-col overflow-y-auto no-scrollbar transition-all duration-200 ${
-          activeTab === 'home' ? 'px-5 py-4 justify-center' : 'sm:px-5 sm:py-6'
+          activeTab === 'home' ? 'px-5 py-6 justify-center' : 'sm:px-5 sm:py-6'
         }`}
         style={{ paddingBottom: isKeyboardOpen ? '220px' : undefined }}
       >
@@ -329,7 +312,12 @@ export const MainLandingPage: React.FC = () => {
               transition={{ duration: 0.2 }}
               className="w-full max-w-sm mx-auto space-y-6 text-center my-auto"
             >
-              <div className="space-y-2.5 w-full text-left">
+              <div className="space-y-3 w-full text-left">
+                {/* Black Logo with >> */}
+                <div className="w-16 h-16 rounded-2xl bg-black border border-[#212B38] flex items-center justify-center p-3 shadow-lg">
+                  <img src="/assets/kas_icon.svg" alt="Kaspa Logo" className="w-10 h-10 object-contain" />
+                </div>
+
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#131924] border border-[#212B38] text-[10px] text-[#70C7BA] font-bold shadow-sm">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#70C7BA]" />
                   <span>On-Chain Cryptographic</span>
