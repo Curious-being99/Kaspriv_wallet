@@ -147,9 +147,9 @@ class KaspaSyncWorker(
                             }
 
                             // Verify transaction age from block_time or timestamp
-                            var blockTime = tx.optLong("block_time")
+                            var blockTime = if (tx.has("block_time")) tx.getLong("block_time") else 0L
                             if (blockTime == 0L) {
-                                blockTime = tx.optLong("timestamp")
+                                blockTime = if (tx.has("timestamp")) tx.getLong("timestamp") else 0L
                             }
                             if (blockTime in 1..9999999999L) {
                                 blockTime *= 1000L
