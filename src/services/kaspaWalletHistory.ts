@@ -511,22 +511,30 @@ export class KaspaWalletHistory {
 
     // Limit concurrent resolution batch size for API performance
     const prevTxMap = new Map<string, any>();
-    const idsToFetch = Array.from(missingTxIds).slice(0, 20);
+    const idsToFetch = Array.from(missingTxIds).slice(0, 32); // Swift limits to 32
 
-    await Promise.all(
-      idsToFetch.map(async txId => {
-        try {
-          const txData = await this.request<any>(
-            `/transactions/${encodeURIComponent(txId)}`
-          );
-          if (txData) {
-            prevTxMap.set(txId, txData);
+    if (idsToFetch.length > 0) {
+      try {
+        const searchResults = await this.request<any[]>('/transactions/search?resolve_previous_outpoints=light', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ transactionIds: idsToFetch }),
+        });
+        
+        if (Array.isArray(searchResults)) {
+          for (const txData of searchResults) {
+            const txId = txData.transactionId ?? txData.transaction_id ?? txData.id;
+            if (txId) {
+              prevTxMap.set(txId, txData);
+            }
           }
-        } catch {
-          // Gracefully ignore individual resolution failures
         }
-      })
-    );
+      } catch {
+        // Gracefully ignore batch resolution failures
+      }
+    }
 
     return transactions.map(tx => {
       const enrichedInputs = tx.inputs.map(input => {
