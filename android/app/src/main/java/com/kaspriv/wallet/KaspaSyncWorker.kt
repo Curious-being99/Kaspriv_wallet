@@ -147,9 +147,9 @@ class KaspaSyncWorker(
                             }
 
                             // Verify transaction age from block_time or timestamp
-                            var blockTime = tx.optLong("block_time", 0L)
+                            var blockTime = tx.optLong("block_time")
                             if (blockTime == 0L) {
-                                blockTime = tx.optLong("timestamp", 0L)
+                                blockTime = tx.optLong("timestamp")
                             }
                             if (blockTime in 1..9999999999L) {
                                 blockTime *= 1000L
@@ -172,7 +172,7 @@ class KaspaSyncWorker(
                                 for (i in 0 until outputs.length()) {
                                     val outObj = outputs.optJSONObject(i) ?: continue
                                     val outAddr = outObj.optString("script_public_key_address").lowercase()
-                                    val amt = outObj.optLong("amount", 0L)
+                                    val amt = if (outObj.has("amount")) outObj.getLong("amount") else 0L
                                     if (ownedLower.contains(outAddr)) {
                                         incomingSompi += amt
                                         isReceive = true
@@ -482,7 +482,7 @@ class KaspaSyncWorker(
                     reader.close()
 
                     val json = JSONObject(sb.toString())
-                    val balVal = json.optLong("balance", -1L)
+                    val balVal = json.if (json.has("balance")) json.getLong("balance") else -1L
                     if (balVal >= 0) {
                         return balVal
                     }

@@ -43,7 +43,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Sparkles
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
@@ -344,7 +344,7 @@ fun WalletSetupModal(
                                     SetupActionRow(
                                         title = "Generate New 24-Word Seed",
                                         subtitle = "Recommended standard with BIP-39 entropy",
-                                        icon = Icons.Default.Sparkles,
+                                        icon = Icons.Default.Star,
                                         iconColor = PrimaryTeal,
                                         onClick = {
                                             pendingFlow = "create"
