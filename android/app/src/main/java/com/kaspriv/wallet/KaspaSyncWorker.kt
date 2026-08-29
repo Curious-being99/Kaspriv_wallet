@@ -126,8 +126,9 @@ class KaspaSyncWorker(
                         val txs = res.third
                         
                         if (addrBal != null) {
-                            totalWalletSompi += addrBal
-                            addressBalanceMap[addr] = addrBal.toString()
+                            val balanceSompi: Long = addrBal.toLong()
+                            totalWalletSompi = totalWalletSompi + balanceSompi
+                            addressBalanceMap[addr] = balanceSompi.toString()
                             hasBalanceUpdate = true
                         }
 
@@ -167,17 +168,20 @@ class KaspaSyncWorker(
                             var incomingSompi = 0L
                             var isReceive = false
 
-                            val outputs = tx.optJSONArray("outputs")
+                            val outputs: JSONArray? = tx.optJSONArray("outputs")
                             if (outputs != null) {
                                 for (i in 0 until outputs.length()) {
                                     val outObj: JSONObject? = outputs.optJSONObject(i)
-                                    if (outObj != null) {
-                                        val outAddr = outObj.optString("script_public_key_address", "").lowercase()
-                                        val amt = if (outObj.has("amount")) outObj.optLong("amount", 0L) else 0L
-                                        if (ownedLower.contains(outAddr)) {
-                                            incomingSompi += amt
-                                            isReceive = true
-                                        }
+                                    if (outObj == null) {
+                                        continue
+                                    }
+                                    val outAddr: String =
+                                        outObj.optString("script_public_key_address", "").lowercase()
+                                    val amountSompi: Long =
+                                        outObj.optLong("amount", 0L)
+                                    if (ownedLower.contains(outAddr)) {
+                                        incomingSompi += amountSompi
+                                        isReceive = true
                                     }
                                 }
                             }
