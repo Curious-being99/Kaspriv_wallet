@@ -372,15 +372,23 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await runDatabaseMigrations();
         
         const savedWallets = await getWalletsFromDB();
-        const cleanedWallets = savedWallets.map(w => {
-          const cleanName = sanitizeWalletName(w.name, 'Kaspa Wallet');
-          if (cleanName !== w.name) {
-            const updated = { ...w, name: cleanName };
-            saveWalletToDB(updated);
-            return updated;
+        const cleanedWallets = await Promise.all(savedWallets.map(async w => {
+          let bal = w.balanceSompi || 0n;
+          if (bal === 0n) {
+            try {
+              const cachedUtxos = await getUtxosFromDB(w.id);
+              if (cachedUtxos && cachedUtxos.length > 0) {
+                bal = cachedUtxos.reduce((acc, u) => acc + (u.amountSompi || 0n), 0n);
+              }
+            } catch {}
           }
-          return w;
-        });
+          const cleanName = sanitizeWalletName(w.name, 'Kaspa Wallet');
+          const updated = { ...w, name: cleanName, balanceSompi: bal };
+          if (cleanName !== w.name || bal !== w.balanceSompi) {
+            saveWalletToDB(updated).catch(() => {});
+          }
+          return updated;
+        }));
         setWallets(cleanedWallets);
 
         const savedActiveId = await getSetting<string>('kaspa_active_wallet_id');
@@ -1397,17 +1405,21 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           const prevAddrBal = BigInt(wallet.addressBalances?.[addr] || '0');
 
           let calculatedBal = 0n;
-          // Check if this specific address has pending changes or spent UTXOs
           const hasPendingChangeForAddr = pendingChange.some(cu => cu.address && cu.address.trim().toLowerCase() === normAddr);
-          const hasSpentUtxoForAddr = [...allMergedUtxos, ...utxosRef.current].some(u => u.address && u.address.trim().toLowerCase() === normAddr && activeSpentSet.has(`${u.txid}:${u.vout}`));
-
-          // If we have filtered UTXOs, pending changes, or spent UTXOs for this address, use the precise UTXO sum
-          if (addrUtxos.length > 0 || hasSpentUtxoForAddr || hasPendingChangeForAddr) {
+          
+          if (addrUtxos.length > 0) {
+            calculatedBal = addrUtxoSum;
+          } else if (hasPendingChangeForAddr) {
             calculatedBal = addrUtxoSum;
           } else if (liveAddrBal !== null && liveAddrBal !== undefined) {
             calculatedBal = liveAddrBal;
           } else {
             calculatedBal = prevAddrBal;
+          }
+
+          // Safety guard: if node returned a positive balance, ensure it is honored
+          if (liveAddrBal !== null && liveAddrBal !== undefined && liveAddrBal > 0n && calculatedBal < liveAddrBal && addrUtxos.length === 0) {
+            calculatedBal = liveAddrBal;
           }
 
           if (calculatedBal !== prevAddrBal) {
@@ -2721,10 +2733,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   ): Promise<{ success: boolean; txid?: string; error?: string; inputs?: any[] }> => {
     if (!activeWallet) return { success: false, error: 'No active wallet selected' };
     
-    let seedToUse: string | null = (providedSeedPhrase && providedSeedPhrase.trim()) || activeWallet.mnemonic || null;
+    const isProvidedStringMnemonic = providedSeedPhrase && providedSeedPhrase.trim().split(/\s+/).length > 1;
+    let seedToUse: string | null = isProvidedStringMnemonic ? providedSeedPhrase.trim() : (activeWallet.mnemonic || null);
     let passphraseToUse: string | null | undefined = providedPassphrase !== undefined ? providedPassphrase : activeWallet.passphrase;
 
     let activePassword = password;
+    if (!isProvidedStringMnemonic && providedSeedPhrase && providedSeedPhrase.trim()) {
+      activePassword = providedSeedPhrase.trim();
+    }
 
     if (isBiometricsEnabled && !providedSeedPhrase && !seedToUse && !activePassword && !sessionId) {
       const authRes = await authorizeSigningWithBiometrics();
@@ -3786,7 +3802,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               pendingTransaction.amount,
               pendingTransaction.fee,
               pendingTransaction.note,
-              undefined,
+              cleanInput,
               pendingTransaction.passphrase,
               pendingTransaction.selectedUtxoOutpoints
             );

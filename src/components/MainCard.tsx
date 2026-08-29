@@ -8,6 +8,7 @@ export const MainCard: React.FC = () => {
   const {
     activeWallet,
     wallets,
+    utxos,
     marketData,
     currency,
     fiatRate,
@@ -32,7 +33,8 @@ export const MainCard: React.FC = () => {
     );
   }
 
-  const totalSompi = activeWallet.balanceSompi;
+  const utxosTotal = (utxos || []).reduce((acc, u) => acc + (u.amountSompi || 0n), 0n);
+  const totalSompi = activeWallet.balanceSompi > 0n ? activeWallet.balanceSompi : utxosTotal;
   const totalKas = sompiToKas(totalSompi);
 
   const totalFiatValue = (totalKas * marketData.priceUsd * fiatRate).toLocaleString('en-US', {
