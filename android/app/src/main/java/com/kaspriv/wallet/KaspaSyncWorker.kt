@@ -190,7 +190,6 @@ class KaspaSyncWorker(
                             notifiedSet.add(txid)
                         }
                     }
-                }
 
                 // If live balance was fetched, update Room DB wallet record for instantaneous synchronization
                 if (hasBalanceUpdate) {
