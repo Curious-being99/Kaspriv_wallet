@@ -14,7 +14,6 @@ import {
   AAD_CONTEXT,
   KDF_SPEC_VERSION 
 } from '../utils/crypto';
-import { cryptoWorkerManager } from '../utils/cryptoWorkerManager';
 
 export type AuthState = 'UNINITIALIZED' | 'LOCKED' | 'AUTHENTICATING' | 'UNLOCKED';
 
@@ -49,22 +48,11 @@ class UnifiedAuthService {
     password: string, 
     context: string = AAD_CONTEXT
   ): Promise<{ ciphertext: string; salt: string; iv: string }> {
-    try {
-      if (cryptoWorkerManager.isSupported()) {
-        return await cryptoWorkerManager.runTask<{ ciphertext: string; salt: string; iv: string }>(
-          'encryptWithPassword',
-          { plaintext, password, context }
-        );
-      }
-    } catch {
-      // Fallback to direct call
-    }
     return await encryptWithPassword(plaintext, password, context);
   }
 
   /**
-   * Decrypt payload using Rust WASM ChaCha20-Poly1305 / XChaCha20Poly1305
-   * via background worker bridge if available, falling back to direct WebAssembly bridge.
+   * Decrypt payload using Rust WASM ChaCha20-Poly1305 / XChaCha20Poly1305.
    */
   public async decryptChaCha20(
     ciphertextHex: string,
@@ -73,16 +61,6 @@ class UnifiedAuthService {
     password: string,
     context: string = AAD_CONTEXT
   ): Promise<string> {
-    try {
-      if (cryptoWorkerManager.isSupported()) {
-        return await cryptoWorkerManager.runTask<string>(
-          'decryptWithPassword',
-          { ciphertextHex, saltHex, ivHex, password, context }
-        );
-      }
-    } catch {
-      // Fallback to direct call
-    }
     return await decryptWithPassword(ciphertextHex, saltHex, ivHex, password, context);
   }
 

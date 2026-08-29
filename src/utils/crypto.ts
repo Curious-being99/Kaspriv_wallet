@@ -176,12 +176,6 @@ export async function unwrapKeyWithHardwareKeystore(
   return await decryptWithPassword(wrappedCiphertext, saltHex, ivHex, hardwareKeySeed, HARDWARE_KEYSTORE_BINDING_AAD);
 }
 
-let mainThreadDelegate: ((action: string, payload: any) => Promise<any>) | null = null;
-
-export function registerMainThreadDelegate(delegate: (action: string, payload: any) => Promise<any>): void {
-  mainThreadDelegate = delegate;
-}
-
 export function buildAadContext(kind: 'MNEMONIC' | 'PASSPHRASE' | 'CANARY' | string = 'MNEMONIC', walletId?: string): string {
   const baseKind = kind.toUpperCase();
   if (walletId) {
@@ -192,22 +186,13 @@ export function buildAadContext(kind: 'MNEMONIC' | 'PASSPHRASE' | 'CANARY' | str
 
 /**
  * Encrypts a plaintext string using Rusty Kaspa WASM XChaCha20Poly1305.
- * Seamlessly routes to CryptoWorker off-thread on main thread to prevent UI blocking.
+ * Instantaneous, secure native WebAssembly cryptography.
  */
 export async function encryptWithPassword(
   plaintext: string, 
   password: string, 
   context: string = AAD_CONTEXT
 ): Promise<{ ciphertext: string; salt: string; iv: string }> {
-  const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
-  if (isMainThread && mainThreadDelegate) {
-    try {
-      return await mainThreadDelegate('encryptWithPassword', { plaintext, password, context });
-    } catch (err) {
-      console.warn('Worker encryption delegate failed, executing in-thread fallback:', err);
-    }
-  }
-
   try {
     await ensureKaspaWasm();
     const ciphertext = encryptXChaCha20Poly1305(plaintext, password);
@@ -223,8 +208,7 @@ export async function encryptWithPassword(
 
 /**
  * Decrypts a ciphertext string using Rusty Kaspa WASM XChaCha20Poly1305.
- * Seamlessly routes to CryptoWorker off-thread on main thread to prevent UI blocking,
- * with instantaneous in-thread fallback if worker times out or is unsupported.
+ * Instantaneous, secure native WebAssembly decryption without recursive delegate delays.
  */
 export async function decryptWithPassword(
   ciphertextHex: string, 
@@ -233,15 +217,6 @@ export async function decryptWithPassword(
   password: string, 
   context: string = AAD_CONTEXT
 ): Promise<string> {
-  const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
-  if (isMainThread && mainThreadDelegate) {
-    try {
-      return await mainThreadDelegate('decryptWithPassword', { ciphertextHex, saltHex, ivHex, password, context });
-    } catch (err) {
-      console.warn('Worker decryption delegate failed, executing in-thread fallback:', err);
-    }
-  }
-
   // Enforce ultra-fast, secure Rusty Kaspa WASM ChaCha20-Poly1305 decryption
   await ensureKaspaWasm();
   return decryptXChaCha20Poly1305(ciphertextHex, password);

@@ -24,10 +24,8 @@ import { DevConsoleDrawer } from './components/DevConsoleDrawer';
 import { IndexingOverlay } from './components/IndexingOverlay';
 import { Toast } from './components/Toast';
 import { PrivacyShield } from './components/PrivacyShield';
-import { SplashScreen } from './components/SplashScreen';
 import { SecurityEnvironmentAlert } from './components/SecurityEnvironmentAlert';
 import { ArrowUpRight, ArrowDownLeft, Scan } from 'lucide-react';
-import { AnimatePresence } from 'motion/react';
 
 const WalletAppContent: React.FC = () => {
   const {
@@ -45,12 +43,12 @@ const WalletAppContent: React.FC = () => {
 
   const hasActiveWallet = wallets.length > 0 && !isLoggedOut;
 
+  if (isInitializing) {
+    return <div className="fixed inset-0 bg-[#090D12]" />;
+  }
+
   return (
     <div className="fixed inset-0 bg-[#090D12] text-slate-100 font-sans flex flex-col overflow-hidden selection:bg-[#70C7BA]/30 selection:text-[#70C7BA]">
-      <AnimatePresence mode="wait">
-        {isInitializing && <SplashScreen key="app-splash-screen" />}
-      </AnimatePresence>
-
       {!hasActiveWallet ? (
         <MainLandingPage />
       ) : (

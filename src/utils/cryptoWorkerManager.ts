@@ -1,5 +1,5 @@
 import { isAndroid } from './platform';
-import { registerMainThreadDelegate, decryptWithPassword, encryptWithPassword, wipe, ensureKaspaWasm } from './crypto';
+import { decryptWithPassword, encryptWithPassword, wipe, ensureKaspaWasm } from './crypto';
 import { IsolatedSigner } from './IsolatedSigner';
 
 // Ensure WASM is loaded for main thread operations
@@ -12,10 +12,7 @@ const SESSIONS = new Map<string, { mnemonic: string; passphrase?: string }>();
 class CryptoWorkerManager {
   private supportState: 'supported' = 'supported';
 
-  constructor() {
-    // Register delegate so that direct calls to decryptWithPassword/encryptWithPassword can be routed if needed
-    registerMainThreadDelegate((action, payload) => this.runTask(action, payload));
-  }
+  constructor() {}
 
   public isSupported(): boolean {
     return true; // We always support running natively on the main thread
