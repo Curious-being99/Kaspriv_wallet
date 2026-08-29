@@ -314,7 +314,7 @@ export const MainLandingPage: React.FC = () => {
             >
               <div className="space-y-3 w-full text-left">
                 {/* Black Logo with >> */}
-                <div className="w-16 h-16 rounded-2xl bg-black border border-[#212B38] flex items-center justify-center p-3 shadow-lg">
+                <div className="w-16 h-16 rounded-2xl bg-black flex items-center justify-center p-3 shadow-lg">
                   <img src="/assets/kas_icon.svg" alt="Kaspa Logo" className="w-10 h-10 object-contain" />
                 </div>
 

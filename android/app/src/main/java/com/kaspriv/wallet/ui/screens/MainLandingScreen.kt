@@ -35,8 +35,7 @@ fun KaspaBlackLogoView(
         modifier = modifier
             .size(size)
             .clip(RoundedCornerShape(cornerRadius))
-            .background(Color(0xFF000000))
-            .border(1.dp, Color(0xFF212B38), RoundedCornerShape(cornerRadius)),
+            .background(Color(0xFF000000)),
         contentAlignment = Alignment.Center
     ) {
         Canvas(
