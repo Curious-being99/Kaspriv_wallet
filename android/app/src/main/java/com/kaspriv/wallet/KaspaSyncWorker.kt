@@ -170,12 +170,14 @@ class KaspaSyncWorker(
                             val outputs = tx.optJSONArray("outputs")
                             if (outputs != null) {
                                 for (i in 0 until outputs.length()) {
-                                    val outObj = outputs.optJSONObject(i) ?: continue
-                                    val outAddr = outObj.optString("script_public_key_address").lowercase()
-                                    val amt = if (outObj.has("amount")) outObj.getLong("amount") else 0L
-                                    if (ownedLower.contains(outAddr)) {
-                                        incomingSompi += amt
-                                        isReceive = true
+                                    val outObj: JSONObject? = outputs.optJSONObject(i)
+                                    if (outObj != null) {
+                                        val outAddr = outObj.optString("script_public_key_address", "").lowercase()
+                                        val amt = if (outObj.has("amount")) outObj.optLong("amount", 0L) else 0L
+                                        if (ownedLower.contains(outAddr)) {
+                                            incomingSompi += amt
+                                            isReceive = true
+                                        }
                                     }
                                 }
                             }

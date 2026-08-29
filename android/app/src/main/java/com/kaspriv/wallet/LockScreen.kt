@@ -104,7 +104,7 @@ fun LockScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF05080A))
+            .background(Color(0xFF090D12))
             .padding(horizontal = 24.dp, vertical = 32.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -182,8 +182,8 @@ fun LockScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF0B151E))
-                        .border(1.dp, Color(0xFF273E54), RoundedCornerShape(12.dp))
+                        .background(Color(0xFF131924))
+                        .border(1.dp, Color(0xFF212B38), RoundedCornerShape(12.dp))
                         .padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {

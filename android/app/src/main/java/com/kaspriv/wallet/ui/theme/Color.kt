@@ -3,10 +3,10 @@ package com.kaspriv.wallet.ui.theme
 import androidx.compose.ui.graphics.Color
 
 val KaspaTeal = Color(0xFF70C7BA)
-val DarkBgBase = Color(0xFF0B151E)
-val DarkBgCard = Color(0xFF132230)
-val DarkBgElevated = Color(0xFF1C2F42)
-val DarkBgBorder = Color(0xFF273E54)
+val DarkBgBase = Color(0xFF090D12)
+val DarkBgCard = Color(0xFF131924)
+val DarkBgElevated = Color(0xFF1A2230)
+val DarkBgBorder = Color(0xFF212B38)
 
 val Slate100 = Color(0xFFF1F5F9)
 val Slate200 = Color(0xFFE2E8F0)

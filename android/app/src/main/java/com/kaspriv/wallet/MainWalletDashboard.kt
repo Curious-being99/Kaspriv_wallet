@@ -171,14 +171,14 @@ fun MainWalletDashboard(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0B151E),
+                    containerColor = Color(0xFF090D12),
                     titleContentColor = Color.White
                 )
             )
         },
         bottomBar = {
             NavigationBar(
-                containerColor = Color(0xFF0B151E),
+                containerColor = Color(0xFF131924),
                 contentColor = Color(0xFF70C7BA)
             ) {
                 NavigationBarItem(
@@ -554,8 +554,8 @@ private fun HistoryTabView(transactions: List<TransactionModel>) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF0F172A))
-                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(14.dp))
+                    .background(Color(0xFF131924))
+                    .border(1.dp, Color(0xFF212B38), RoundedCornerShape(14.dp))
                     .padding(14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -649,7 +649,7 @@ private fun ContactsTabView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFF0F172A))
+                        .background(Color(0xFF131924))
                         .border(1.dp, Color(0xFF70C7BA), RoundedCornerShape(14.dp))
                         .padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -704,8 +704,8 @@ private fun ContactsTabView(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF0F172A))
-                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(14.dp))
+                    .background(Color(0xFF131924))
+                    .border(1.dp, Color(0xFF212B38), RoundedCornerShape(14.dp))
                     .padding(14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -747,8 +747,8 @@ private fun SettingsTabView(activeWallet: WalletModel?) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF0F172A))
-                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(14.dp))
+                    .background(Color(0xFF131924))
+                    .border(1.dp, Color(0xFF212B38), RoundedCornerShape(14.dp))
                     .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -794,8 +794,8 @@ private fun SettingsTabView(activeWallet: WalletModel?) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF0F172A))
-                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(14.dp))
+                    .background(Color(0xFF131924))
+                    .border(1.dp, Color(0xFF212B38), RoundedCornerShape(14.dp))
                     .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {

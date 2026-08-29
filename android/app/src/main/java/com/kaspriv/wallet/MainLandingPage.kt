@@ -93,8 +93,8 @@ enum class LandingTab {
 }
 
 val DarkCanvasBg = Color(0xFF090D12)
-val CardDarkBg = Color(0xFF0F172A)
-val CardBorderColor = Color(0xFF1E293B)
+val CardDarkBg = Color(0xFF131924)
+val CardBorderColor = Color(0xFF212B38)
 val PrimaryTeal = Color(0xFF70C7BA)
 val PrimaryTealMuted = Color(0xFF70C7BA).copy(alpha = 0.15f)
 val SlateGrayText = Color(0xFF94A3B8)
