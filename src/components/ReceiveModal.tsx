@@ -72,15 +72,28 @@ export const ReceiveModal: React.FC = () => {
 
   if (!isReceiveOpen || !activeWallet) return null;
 
-  const currentAddress = activeWallet.receiveAddress;
+  const currentAddress = activeWallet.receiveAddress || '';
   const numAmount = parseFloat(requestedAmount) || 0;
   const kaspaUri = createKaspaUri(currentAddress, numAmount, note);
 
   const handleCopyAddress = () => {
-    navigator.clipboard.writeText(kaspaUri);
-    setCopied(true);
-    showToast('Kaspa address copied to clipboard!', 'success');
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(kaspaUri);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = kaspaUri;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopied(true);
+      showToast('Kaspa address copied to clipboard!', 'success');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      showToast('Copied address', 'info');
+    }
   };
 
   const handleGenerateNew = async () => {
@@ -96,11 +109,12 @@ export const ReceiveModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.98 }}
+        transition={{ duration: 0.12 }}
         className="w-full max-w-lg bg-[#0F151C] rounded-2xl border border-[#212B38] p-6 text-slate-100 relative max-h-[90vh] overflow-y-auto no-scrollbar flex flex-col gap-5"
       >
         {/* Header */}

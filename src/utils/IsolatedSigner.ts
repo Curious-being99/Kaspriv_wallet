@@ -429,30 +429,7 @@ export class IsolatedSigner {
     txId?: string;
   }> {
     const isP2SH = true;
-
     const effectiveAddressType: 'P2SH' = 'P2SH';
-
-    const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
-    if (isMainThread && !skipWorker) {
-      try {
-        const { cryptoWorkerManager, serializeWithBigInt, deserializeWithBigInt } = await import('./cryptoWorkerManager');
-        if (cryptoWorkerManager.isSupported()) {
-          const serializedIntent = serializeWithBigInt(intentInput);
-          const res = await cryptoWorkerManager.runTask<any>('signTransactionIsolated', {
-            serializedIntent,
-            mnemonic,
-            passphrase,
-            addressType: effectiveAddressType,
-            redeemScriptHex,
-            useSession: true, // Instruction to keep the mnemonic in Rust memory
-            sessionId
-          }, 12000);
-          return deserializeWithBigInt(res);
-        }
-      } catch (workerErr) {
-        console.warn('CryptoWorker signing failed or timed out, performing fast in-thread signing fallback:', workerErr);
-      }
-    }
 
     // Zero-Trust Deep Clone & Freeze: Completely isolate intent to prevent post-verification memory mutation by malware
     const intent = deepCloneAndFreeze(intentInput);
@@ -552,20 +529,6 @@ export class IsolatedSigner {
     message: string,
     sessionId?: string | null
   ): Promise<{ success: boolean; signature?: string; error?: string }> {
-    const isMainThread = typeof window !== 'undefined' && typeof window.document !== 'undefined';
-    if (isMainThread) {
-      const { cryptoWorkerManager } = await import('./cryptoWorkerManager');
-      if (!cryptoWorkerManager.isSupported()) {
-        throw new Error('CRITICAL: CryptoWorker is not supported or initialized on main thread.');
-      }
-      return await cryptoWorkerManager.runTask<{ success: boolean; signature?: string; error?: string }>('signMessageIsolated', {
-        mnemonic,
-        passphrase,
-        message,
-        sessionId
-      });
-    }
-
     let privKeyBytes: Uint8Array | null = null;
 
     try {

@@ -322,13 +322,52 @@ export async function broadcastKaspaTransactionService(
     }
   };
 
-  // 1. Try primary node immediately
-  const primaryResult = await sendToNode(endpoints[0]);
+  // Ultra-Fast Multi-Node Broadcast Dispatch
+  // Try the primary endpoint immediately; if it doesn't return within 450ms, race the fallbacks concurrently so fastest node wins.
+  const primaryPromise = sendToNode(endpoints[0]);
+
+  // Delayed fallback race if primary is sluggish
+  const fallbackRace = new Promise<BroadcastResult | null>((resolve) => {
+    const timer = setTimeout(async () => {
+      if (endpoints.length > 1) {
+        try {
+          const fallbackPromises = endpoints.slice(1).map(ep => sendToNode(ep));
+          // Wait for any valid successful response
+          const results = await Promise.all(fallbackPromises);
+          const firstSuccess = results.find(r => r !== null && (r.status === 'submitted' || r.status === 'accepted'));
+          if (firstSuccess) {
+            resolve(firstSuccess);
+            return;
+          }
+          const anyResult = results.find(r => r !== null);
+          resolve(anyResult || null);
+        } catch {
+          resolve(null);
+        }
+      } else {
+        resolve(null);
+      }
+    }, 450);
+
+    primaryPromise.then((res) => {
+      if (res && (res.status === 'submitted' || res.status === 'accepted')) {
+        clearTimeout(timer);
+        resolve(res);
+      }
+    }).catch(() => {});
+  });
+
+  const fastestResult = await Promise.race([primaryPromise, fallbackRace]);
+  if (fastestResult && (fastestResult.status === 'submitted' || fastestResult.status === 'accepted')) {
+    return fastestResult;
+  }
+
+  // If initial race didn't succeed, await whichever completes first or check fallback results
+  const primaryResult = await primaryPromise;
   if (primaryResult) {
     return primaryResult;
   }
 
-  // 2. If primary failed or timed out, race remaining endpoints concurrently
   if (endpoints.length > 1) {
     const fallbackPromises = endpoints.slice(1).map((ep) => sendToNode(ep));
     const results = await Promise.all(fallbackPromises);
