@@ -107,38 +107,25 @@ class KaspaSyncWorker(
                 val addressBalanceMap = mutableMapOf<String, String>()
                 var hasBalanceUpdate = false
 
-                // Process active addresses using coroutines for concurrency in batches
-                val batchSize = 6
-                val chunks = activeAddresses.chunked(batchSize)
-                for (batch in chunks) {
-                    val deferredBatch = batch.map { addr ->
-                        kotlinx.coroutines.async(kotlinx.coroutines.Dispatchers.IO) {
-                            val addrBal = fetchBalanceForAddress(db, addr)
-                            val txList = fetchRecentTransactionsForAddress(db, addr)
-                            Triple(addr, addrBal, txList)
-                        }
-                    }
+                // Process active addresses and synchronize balances & transactions
+                for (addr in activeAddresses) {
+                    val addrBal: Long? = fetchBalanceForAddress(db, addr)
+                    val txs: List<JSONObject> = fetchRecentTransactionsForAddress(db, addr)
                     
-                    val batchResults = deferredBatch.map { it.await() }
-                    for (res in batchResults) {
-                        val addr = res.first
-                        val addrBal = res.second
-                        val txs = res.third
-                        
-                        if (addrBal != null) {
-                            val balanceSompi: Long = addrBal.toLong()
-                            totalWalletSompi = totalWalletSompi + balanceSompi
-                            addressBalanceMap[addr] = balanceSompi.toString()
-                            hasBalanceUpdate = true
+                    if (addrBal != null) {
+                        val balanceSompi: Long = addrBal.toLong()
+                        totalWalletSompi = totalWalletSompi + balanceSompi
+                        addressBalanceMap[addr] = balanceSompi.toString()
+                        hasBalanceUpdate = true
+                    }
+
+                    val now = System.currentTimeMillis()
+
+                    for (tx in txs) {
+                        val txid = tx.optString("transaction_id", "").ifEmpty { tx.optString("txid", "") }
+                        if (txid.isEmpty() || notifiedSet.contains(txid)) {
+                            continue
                         }
-
-                        val now = System.currentTimeMillis()
-
-                        for (tx in txs) {
-                            val txid = tx.optString("transaction_id").ifEmpty { tx.optString("txid") }
-                            if (txid.isEmpty() || notifiedSet.contains(txid)) {
-                                continue
-                            }
 
                             // On the first background sync pass for a restored or new wallet,
                             // swallow all existing historical transactions into notifiedSet quietly.
