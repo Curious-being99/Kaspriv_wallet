@@ -22,11 +22,6 @@ import com.kaspriv.wallet.ui.LockScreen
 import com.kaspriv.wallet.ui.MainLandingPage
 import com.kaspriv.wallet.ui.MainWalletDashboard
 import com.kaspriv.wallet.ui.SendKasModal
-import com.kaspriv.wallet.ui.ReceiveModal
-import com.kaspriv.wallet.ui.NodeManagerModal
-import com.kaspriv.wallet.ui.CompoundUtxoModal
-import com.kaspriv.wallet.ui.SignMessageModal
-import com.kaspriv.wallet.ui.LogoutModal
 import com.kaspriv.wallet.ui.SplashScreen
 import com.kaspriv.wallet.ui.theme.KaspaWalletTheme
 import kotlinx.coroutines.delay
