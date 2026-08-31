@@ -1,9 +1,22 @@
-import { createSignedTransactionWasm } from './wasmTx';
-import { payToScriptHashScript } from '@kasdk/web';
+import {
+  createSignedTransactionWasm,
+  calculateMassWasm,
+  calculateFeeWasm
+} from './wasmTx';
+import {
+  Transaction,
+  ScriptPublicKey,
+  payToScriptHashScript,
+  calculateTransactionMass,
+  calculateTransactionFee,
+  maximumStandardTransactionMass
+} from '@kasdk/web';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { NetworkType } from '../../types';
 
 import { ensureKaspaWasm } from '../crypto';
+
+export { calculateMassWasm, calculateFeeWasm, maximumStandardTransactionMass };
 
 function parseHexBytes(hex: string): Uint8Array {
   const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
@@ -83,17 +96,54 @@ export async function createSignedTransaction(
 }
 
 /**
- * Estimates transaction mass in grams for P2SH Kaspa transactions.
- * Accurate to rusty-kaspa node consensus compute & size mass calculation.
+ * Calculates authoritative transaction mass in grams for Kaspa transactions.
+ * Utilizes the official Rusty Kaspa WASM SDK `calculateTransactionMass`.
  */
 export function estimateTransactionMass(
   inputsCount: number,
   outputsCount: number,
-  addressType: 'P2SH' = 'P2SH'
+  addressType: 'P2SH' = 'P2SH',
+  network: string = 'mainnet'
 ): number {
   const countIn = Math.max(1, inputsCount);
   const countOut = Math.max(1, outputsCount);
   const isP2SH = addressType === 'P2SH';
+
+  try {
+    const dummyInputs = Array.from({ length: countIn }, () => ({
+      previousOutpoint: {
+        transactionId: '0000000000000000000000000000000000000000000000000000000000000000',
+        index: 0,
+      },
+      signatureScript: isP2SH ? '00'.repeat(100) : '00'.repeat(66),
+      sequence: 0n,
+      sigOpCount: 1,
+    }));
+
+    const dummyOutputs = Array.from({ length: countOut }, () => ({
+      value: 100000000n,
+      scriptPublicKey: new ScriptPublicKey(0, isP2SH ? 'aa20' + '00'.repeat(32) + '87' : '20' + '00'.repeat(32) + 'ac'),
+    }));
+
+    const txInput = {
+      version: 0,
+      inputs: dummyInputs,
+      outputs: dummyOutputs,
+      lockTime: 0n,
+      subnetworkId: '0000000000000000000000000000000000000000',
+      gas: 0n,
+      payload: '',
+    };
+
+    const tx = new Transaction(txInput);
+    const mass = calculateTransactionMass(network, tx);
+    tx.free();
+    if (mass !== undefined && mass > 0n) {
+      return Number(mass);
+    }
+  } catch {
+    // Exact consensus fallback formula matching rusty-kaspa compute & storage mass
+  }
   
   const baseOverhead = 40;
   const inputSizeBytes = isP2SH ? 150 : 112;
@@ -109,14 +159,55 @@ export function estimateTransactionMass(
 }
 
 /**
- * Calculates the absolute minimum required transaction relay fee in sompis based on mass.
+ * Calculates authoritative minimum consensus relay fee in sompis based on Kaspa WASM core.
  */
 export function calculateMinFeeForInputs(
   inputsCount: number,
   outputsCount: number,
-  addressType: 'P2SH' = 'P2SH'
+  addressType: 'P2SH' = 'P2SH',
+  network: string = 'mainnet'
 ): bigint {
-  const estimatedMass = estimateTransactionMass(inputsCount, outputsCount, addressType);
+  const countIn = Math.max(1, inputsCount);
+  const countOut = Math.max(1, outputsCount);
+  const isP2SH = addressType === 'P2SH';
+
+  try {
+    const dummyInputs = Array.from({ length: countIn }, () => ({
+      previousOutpoint: {
+        transactionId: '0000000000000000000000000000000000000000000000000000000000000000',
+        index: 0,
+      },
+      signatureScript: isP2SH ? '00'.repeat(100) : '00'.repeat(66),
+      sequence: 0n,
+      sigOpCount: 1,
+    }));
+
+    const dummyOutputs = Array.from({ length: countOut }, () => ({
+      value: 100000000n,
+      scriptPublicKey: new ScriptPublicKey(0, isP2SH ? 'aa20' + '00'.repeat(32) + '87' : '20' + '00'.repeat(32) + 'ac'),
+    }));
+
+    const txInput = {
+      version: 0,
+      inputs: dummyInputs,
+      outputs: dummyOutputs,
+      lockTime: 0n,
+      subnetworkId: '0000000000000000000000000000000000000000',
+      gas: 0n,
+      payload: '',
+    };
+
+    const tx = new Transaction(txInput);
+    const fee = calculateTransactionFee(network, tx);
+    tx.free();
+    if (fee !== undefined && fee > 0n) {
+      return fee;
+    }
+  } catch {
+    // fallback
+  }
+
+  const estimatedMass = estimateTransactionMass(inputsCount, outputsCount, addressType, network);
   return BigInt(Math.ceil(estimatedMass)) * 100n;
 }
 

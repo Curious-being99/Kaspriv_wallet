@@ -1,5 +1,6 @@
 import { broadcastKaspaTransactionService } from "../services/kaspaBroadcastService";
 import { kaspaWebSocketManager } from "../services/kaspaWebSocketService";
+import { changeIndexManager, getNextUnusedChangeIndex } from "../services/changeAddressService";
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import {
   Wallet,
@@ -61,6 +62,7 @@ import { unifiedAuthService, AuthState } from '../services/unifiedAuthService';
 import {
   kasToSompi,
   sompiToKas,
+  sompiToKasString,
   formatKas,
   generateRandomKaspaAddress,
   generate24WordMnemonic,
@@ -2791,20 +2793,25 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     try {
       // Ensure minimum fee for node compute mass (P2SH standard)
-      const minFeeKas = 0.001;
-      const effectiveFeeKas = Math.max(Number(feeKas) || 0, minFeeKas);
+      const minFeeSompi = 100_000n; // 0.001 KAS exact sompis
+      let parsedFeeSompi = 0n;
+      try {
+        parsedFeeSompi = kasToSompi(String(feeKas || '0.001'));
+      } catch {
+        parsedFeeSompi = minFeeSompi;
+      }
+      const feeSompi = parsedFeeSompi > minFeeSompi ? parsedFeeSompi : minFeeSompi;
 
       let amountSompi = kasToSompi(amountKas);
-      const feeSompi = kasToSompi(effectiveFeeKas);
       let totalSompiNeeded = amountSompi + feeSompi;
 
       if (activeWallet.balanceSompi < totalSompiNeeded && (!selectedUtxoOutpoints || selectedUtxoOutpoints.length === 0)) {
         // If user specified an amount close to or equal to their balance (e.g. 0.01 KAS with 0.01 balance), auto-deduct fee from amount
-        if (activeWallet.balanceSompi >= feeSompi && Number(amountKas) >= sompiToKas(activeWallet.balanceSompi) * 0.95) {
+        if (activeWallet.balanceSompi >= feeSompi && (amountSompi * 100n >= activeWallet.balanceSompi * 95n)) {
           amountSompi = activeWallet.balanceSompi - feeSompi;
           totalSompiNeeded = activeWallet.balanceSompi;
         } else {
-          const err = `Insufficient balance. Required: ${sompiToKas(totalSompiNeeded).toFixed(4)} KAS, Available: ${sompiToKas(activeWallet.balanceSompi)} KAS`;
+          const err = `Insufficient balance. Required: ${sompiToKasString(totalSompiNeeded, 4)} KAS, Available: ${sompiToKasString(activeWallet.balanceSompi, 4)} KAS`;
           console.error('[Send Transaction] Balance check failed:', err);
           return { success: false, error: err };
         }
@@ -2954,43 +2961,32 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       // If user specified Max send or balance is just short of the fee, adjust final amount
       if (accumulatedSum < totalNeededWithBump) {
-        if (accumulatedSum > finalFeeSompi && (Number(amountKas) >= sompiToKas(activeWallet.balanceSompi) * 0.85 || accumulatedSum >= amountSompi)) {
+        if (accumulatedSum > finalFeeSompi && ((amountSompi * 100n >= activeWallet.balanceSompi * 85n) || accumulatedSum >= amountSompi)) {
           finalAmountSompi = accumulatedSum - finalFeeSompi;
           totalNeededWithBump = accumulatedSum;
-          console.warn(`[Fee Scaling] Adjusted sendable amount to ${sompiToKas(finalAmountSompi)} KAS to safely cover network relay fee of ${sompiToKas(finalFeeSompi)} KAS for ${selectedUtxos.length} UTXOs.`);
+          console.warn(`[Fee Scaling] Adjusted sendable amount to ${sompiToKasString(finalAmountSompi, 8)} KAS to safely cover network relay fee of ${sompiToKasString(finalFeeSompi, 8)} KAS for ${selectedUtxos.length} UTXOs.`);
         } else {
-          const err = `Insufficient spendable balance across selected UTXOs. Available: ${sompiToKas(accumulatedSum)} KAS (in ${selectedUtxos.length} UTXOs), Needed: ${sompiToKas(totalNeededWithBump)} KAS (${amountKas} KAS + ${sompiToKas(finalFeeSompi)} KAS network relay fee).`;
+          const err = `Insufficient spendable balance across selected UTXOs. Available: ${sompiToKasString(accumulatedSum, 4)} KAS (in ${selectedUtxos.length} UTXOs), Needed: ${sompiToKasString(totalNeededWithBump, 4)} KAS (${sompiToKasString(amountSompi, 4)} KAS + ${sompiToKasString(finalFeeSompi, 4)} KAS network relay fee).`;
           console.error('[Send Transaction] UTXO accumulation failed:', err);
           return { success: false, error: err };
         }
       }
 
-      // Privacy & UTXO Integrity: Use next sequential unused change address and persist derivation path
+      // Privacy & UTXO Integrity: Use next sequential unused change address and persist derivation path atomically
       let effectiveChangeAddress = activeWallet.changeAddress;
       let effectiveChangePath = activeWallet.addressPaths?.[effectiveChangeAddress] || '';
+      let reservedChangeIdx: number | null = null;
 
       if (seedToUse) {
         try {
           const prefix = getAddressPrefix(network);
-          const paths = activeWallet.addressPaths || {};
-          const allDiscovered = activeWallet.discoveredAddresses || [activeWallet.receiveAddress];
+          const nextIdx = changeIndexManager.getNextUnusedIndex(
+            activeWallet.addressPaths,
+            new Set(activeWallet.discoveredAddresses || [])
+          );
+          reservedChangeIdx = nextIdx;
+          changeIndexManager.reserveIndex(nextIdx);
 
-          const changeAddressesList = allDiscovered
-            .filter((addr) => {
-              const p = paths[addr] || '';
-              return p.includes('/1/');
-            })
-            .map((addr) => {
-              const p = paths[addr] || '';
-              const parts = p.split('/');
-              const idx = parseInt(parts[parts.length - 1] || '0', 10);
-              return { addr, idx, path: p };
-            })
-            .sort((a, b) => a.idx - b.idx);
-
-          // Find the highest existing change index
-          const maxIdx = changeAddressesList.reduce((max, item) => Math.max(max, item.idx), -1);
-          const nextIdx = maxIdx + 1;
           const nextDerivationPath = `m/44'/111111'/0'/1/${nextIdx}`;
 
           const freshChangeAddress = (nextIdx === 0 && activeWallet.changeAddress)
@@ -3007,28 +3003,29 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           effectiveChangeAddress = freshChangeAddress;
           effectiveChangePath = nextDerivationPath;
 
-          // Reliably persist the newly derived change address and its derivation path in wallet state
-          setWallets((prev) =>
-            prev.map((w) => {
-              if (w.id === activeWallet.id) {
-                const updatedDiscovered = w.discoveredAddresses ? [...w.discoveredAddresses] : [];
-                if (!updatedDiscovered.includes(freshChangeAddress)) {
-                  updatedDiscovered.push(freshChangeAddress);
-                }
-                const updatedPaths = { ...w.addressPaths, [freshChangeAddress]: nextDerivationPath };
-                return {
-                  ...w,
-                  discoveredAddresses: updatedDiscovered,
-                  addressPaths: updatedPaths,
-                  changeAddress: freshChangeAddress,
-                };
-              }
-              return w;
-            })
-          );
-        } catch {
-          effectiveChangeAddress = activeWallet.changeAddress || activeWallet.receiveAddress;
-          effectiveChangePath = activeWallet.addressPaths?.[effectiveChangeAddress] || (effectiveChangeAddress === activeWallet.receiveAddress ? "m/44'/111111'/0'/0/0" : "m/44'/111111'/0'/1/0");
+          // ATOMIC PERSISTENCE: Save new change address and derivation path to SQLite database BEFORE signing/broadcast
+          const updatedDiscovered = activeWallet.discoveredAddresses ? [...activeWallet.discoveredAddresses] : [];
+          if (!updatedDiscovered.includes(freshChangeAddress)) {
+            updatedDiscovered.push(freshChangeAddress);
+          }
+          const updatedPaths = { ...(activeWallet.addressPaths || {}), [freshChangeAddress]: nextDerivationPath };
+          const updatedWallet: Wallet = {
+            ...activeWallet,
+            discoveredAddresses: updatedDiscovered,
+            addressPaths: updatedPaths,
+            changeAddress: freshChangeAddress,
+          };
+
+          // Strict atomic persistence: await DB commit directly before transaction construction
+          await saveWalletToDB(updatedWallet);
+          setWallets((prev) => prev.map((w) => (w.id === activeWallet.id ? updatedWallet : w)));
+        } catch (err: any) {
+          if (reservedChangeIdx !== null) {
+            changeIndexManager.releaseIndex(reservedChangeIdx);
+            reservedChangeIdx = null;
+          }
+          console.error('Failed to atomically reserve/persist change address:', err);
+          return { success: false, error: `Change address persistence failed: ${err?.message || err}` };
         }
       } else if (!effectiveChangeAddress) {
         effectiveChangeAddress = activeWallet.receiveAddress;
@@ -3052,6 +3049,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       };
 
       if (!seedToUse && !sessionId) {
+        if (reservedChangeIdx !== null) {
+          changeIndexManager.releaseIndex(reservedChangeIdx);
+        }
         return { success: false, error: 'No wallet seed phrase available for signing' };
       }
 
@@ -3068,6 +3068,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         );
 
         if (!signerResult.success || !signerResult.transaction) {
+          if (reservedChangeIdx !== null) {
+            changeIndexManager.releaseIndex(reservedChangeIdx);
+          }
           return { success: false, error: signerResult.error || 'Failed to construct or sign transaction.' };
         }
 
@@ -3080,6 +3083,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         };
 
         if (broadcastResult.success && broadcastResult.txId) {
+          if (reservedChangeIdx !== null) {
+            changeIndexManager.markIndexUsed(reservedChangeIdx);
+          }
           showToast(`Transaction sent! TXID: ${shortenAddress(broadcastResult.txId!)}`, 'success');
           
           // 1. Record broadcasted transaction in local state
@@ -3162,24 +3168,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             updatedAddressBalances[effectiveChangeAddress] = (curChangeBal + changeSompi).toString();
           }
 
-          let updatedActiveWalletToSave: Wallet | undefined;
-          setWallets((prev) => prev.map((w) => {
-            if (w.id === activeWallet.id) {
-              const updatedW = {
-                ...w,
-                balanceSompi: newWalletBalance,
-                addressBalances: updatedAddressBalances,
-                changeAddress: effectiveChangeAddress || w.changeAddress,
-              };
-              updatedActiveWalletToSave = updatedW;
-              return updatedW;
-            }
-            return w;
-          }));
-          
-          if (updatedActiveWalletToSave) {
-            saveWalletToDB(updatedActiveWalletToSave).catch(() => {});
-          }
+          const updatedW: Wallet = {
+            ...activeWallet,
+            balanceSompi: newWalletBalance,
+            addressBalances: updatedAddressBalances,
+            changeAddress: effectiveChangeAddress || activeWallet.changeAddress,
+          };
+          setWallets((prev) => prev.map((w) => (w.id === activeWallet.id ? updatedW : w)));
+          saveWalletToDB(updatedW).catch((e) => console.warn('Post-send wallet DB sync:', e));
 
           // Schedule jittered post-transaction refreshes to avoid rate-limit bursts while indexing on-chain
           scheduleJitteredPostTxRefreshes(refreshBalance);
@@ -3513,7 +3509,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
-  const setPassword = async (password: string | null, customWalletsList?: Wallet[]) => {
+  const setPassword = async (password: string | null, customWalletsList?: Wallet[], currentPassword?: string) => {
     if (password) {
       setIsPasswordEnabled(true);
       setPasswordState(password);
@@ -3578,8 +3574,82 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       } catch (err) {
         showToast('Password enabled, but error encrypting existing keys', 'error');
       }
-        } else {
-      const activePassword = password;
+    } else {
+      // Disabling password protection requires the current active password to safely decrypt and persist plaintext
+      const activePassword = currentPassword || password;
+      const existingWallets = wallets.length > 0 ? wallets : await getWalletsFromDB();
+      const hasEncryptedWallets = existingWallets.some(w => !!w.encryptedMnemonic);
+
+      if (hasEncryptedWallets && !activePassword) {
+        showToast('Cannot disable password protection: wallet must be unlocked with current password first.', 'error');
+        return;
+      }
+
+      let allDecryptedSuccessfully = true;
+      const decryptedWallets = await Promise.all(existingWallets.map(async (w) => {
+        let decryptedMnemonic = w.mnemonic;
+        let decryptedPassphrase = w.passphrase;
+        
+        if (!decryptedMnemonic && w.encryptedMnemonic && activePassword) {
+          try {
+            decryptedMnemonic = await decryptWithPassword(
+              w.encryptedMnemonic.ciphertext,
+              w.encryptedMnemonic.salt,
+              w.encryptedMnemonic.iv,
+              activePassword,
+              buildAadContext('MNEMONIC', w.id)
+            );
+          } catch (e) {
+            console.error(`Failed to decrypt wallet ${w.id} during password disable:`, e);
+            allDecryptedSuccessfully = false;
+          }
+        }
+        
+        if (!decryptedPassphrase && w.encryptedPassphrase && activePassword) {
+          try {
+            decryptedPassphrase = await decryptWithPassword(
+              w.encryptedPassphrase.ciphertext,
+              w.encryptedPassphrase.salt,
+              w.encryptedPassphrase.iv,
+              activePassword,
+              buildAadContext('PASSPHRASE', w.id)
+            );
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        // Safety Invariant: Never wipe encryptedMnemonic if decryption failed or resulted in empty string!
+        if (w.encryptedMnemonic && (!decryptedMnemonic || decryptedMnemonic.trim().length === 0)) {
+          allDecryptedSuccessfully = false;
+          return w; // Keep encrypted representation safely intact
+        }
+        
+        const updatedW: Wallet = {
+          ...w,
+          mnemonic: decryptedMnemonic || w.mnemonic,
+          passphrase: decryptedPassphrase || w.passphrase,
+          encryptedMnemonic: undefined,
+          encryptedPassphrase: undefined
+        };
+
+        return updatedW;
+      }));
+
+      if (!allDecryptedSuccessfully && hasEncryptedWallets) {
+        showToast('Failed to decrypt one or more wallets with current password. Password protection retained.', 'error');
+        return;
+      }
+
+      // Persist all successfully decrypted wallets to DB
+      for (const dw of decryptedWallets) {
+        try {
+          await saveWalletToDB(dw);
+        } catch (e) {
+          console.error('Failed to persist decrypted wallet to DB:', e);
+        }
+      }
+
       setIsPasswordEnabled(false);
       setIsBiometricsEnabled(false);
       setPasswordState(null);
@@ -3589,59 +3659,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       await saveSetting('wallet_biometrics_enabled', false);
       await deleteNativeKeystoreAlias();
       setIsLocked(false);
-      
-      if (activePassword) {
-        const updatedWallets = await Promise.all(wallets.map(async (w) => {
-          let decryptedMnemonic = w.mnemonic;
-          let decryptedPassphrase = w.passphrase;
-          
-          if (!decryptedMnemonic && w.encryptedMnemonic) {
-            try {
-              decryptedMnemonic = await decryptWithPassword(w.encryptedMnemonic.ciphertext, w.encryptedMnemonic.salt, w.encryptedMnemonic.iv, activePassword, buildAadContext('MNEMONIC', w.id));
-            } catch (e) {
-              // ignore
-            }
-          }
-          
-          if (!decryptedPassphrase && w.encryptedPassphrase) {
-            try {
-              decryptedPassphrase = await decryptWithPassword(w.encryptedPassphrase.ciphertext, w.encryptedPassphrase.salt, w.encryptedPassphrase.iv, activePassword, buildAadContext('PASSPHRASE', w.id));
-            } catch (e) {
-              // ignore
-            }
-          }
-          
-          const updatedW = {
-            ...w,
-            mnemonic: decryptedMnemonic,
-            passphrase: decryptedPassphrase,
-            encryptedMnemonic: undefined,
-            encryptedPassphrase: undefined
-          };
-
-          try {
-            await saveWalletToDB(updatedW);
-          } catch (e) {
-            console.error('Failed to persist decrypted wallet to DB:', e);
-          }
-
-          return updatedW;
-        }));
-        setWallets(updatedWallets);
-      } else {
-        const updatedWallets = wallets.map(w => {
-          const updatedW = {
-            ...w,
-            encryptedPassphrase: undefined,
-            encryptedMnemonic: undefined
-          };
-          try {
-            saveWalletToDB(updatedW);
-          } catch (e) {}
-          return updatedW;
-        });
-        setWallets(updatedWallets);
-      }
+      setWallets(decryptedWallets);
       showToast('Password security disabled', 'info');
     }
   };

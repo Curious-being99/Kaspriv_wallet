@@ -36,14 +36,17 @@ export async function isBiometricsSupported(): Promise<boolean> {
   try {
     if (typeof window === 'undefined') return false;
 
-    // 1. Check Native Android HardwareVault or container support
-    if (isNative() || !!(window as any).AndroidNativeBiometrics || typeof HardwareVault?.storeSecure === 'function') {
-      return true;
-    }
-
-    // 2. Web or secure context PWA fallback
-    if (typeof window !== 'undefined' && (window.isSecureContext || window.location.protocol === 'https:' || window.location.hostname === 'localhost')) {
-      return true;
+    // 1. Check Native Android HardwareVault support
+    if (isNative()) {
+      if (typeof HardwareVault?.checkBiometricSupport === 'function') {
+        try {
+          const res = await HardwareVault.checkBiometricSupport();
+          return !!(res && res.available && (res as any).isStrong !== false);
+        } catch {
+          return false;
+        }
+      }
+      return typeof HardwareVault?.storeSecure === 'function';
     }
 
     return false;

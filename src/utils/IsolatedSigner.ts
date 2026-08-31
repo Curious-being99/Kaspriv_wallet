@@ -377,8 +377,8 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
     const inputsCount = signedTx.inputs?.length || intent.utxos?.length || 1;
     const outputsCount = signedTx.outputs?.length || 2;
 
-    const actualMass = estimateTransactionMass(inputsCount, outputsCount, addressType);
-    const minRequiredFee = calculateMinFeeForInputs(inputsCount, outputsCount, addressType);
+    const actualMass = estimateTransactionMass(inputsCount, outputsCount, addressType, intent.network);
+    const minRequiredFee = calculateMinFeeForInputs(inputsCount, outputsCount, addressType, intent.network);
 
     // Enforce standard maximum mass limit (100,000 grams)
     if (actualMass > 100000) {

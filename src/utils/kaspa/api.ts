@@ -1,5 +1,6 @@
 import { blake2b } from '@noble/hashes/blake2.js';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { computeTxIdWasm } from './wasmTx';
 
 let GLOBAL_API_URL = (((typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env.VITE_KASPA_API_URL : undefined) || 'https://api.kaspa.org') as string;
 let GLOBAL_EXPLORER_URL = (((typeof import.meta !== 'undefined' && (import.meta as any).env) ? (import.meta as any).env.VITE_KASPA_EXPLORER_URL : undefined) || 'https://explorer.kaspa.org') as string;
@@ -278,55 +279,84 @@ export interface KaspaUtxo {
 export function validateAndCleanUtxo(raw: any): KaspaUtxo | null {
   if (!raw || typeof raw !== 'object') return null;
 
+  // 1. Transaction ID: Must be exactly 64-character lowercase hex string
   let txId = raw.transactionId || raw.txid || raw.outpoint?.transactionId;
-  if (typeof txId !== 'string' || !/^[0-9a-fA-F]{64}$/.test(txId)) {
+  if (typeof txId !== 'string' || !/^[0-9a-fA-F]{64}$/.test(txId.trim())) {
     return null;
   }
+  txId = txId.trim().toLowerCase();
 
+  // 2. Index: Must be a non-negative integer within standard uint32 range
   let idxVal = raw.index !== undefined ? raw.index : (raw.vout !== undefined ? raw.vout : raw.outpoint?.index);
-  if (idxVal === undefined) return null;
+  if (idxVal === undefined || idxVal === null) return null;
   let idx = Number(idxVal);
-  if (isNaN(idx) || idx < 0 || !Number.isInteger(idx)) {
+  if (isNaN(idx) || idx < 0 || idx > 0xffffffff || !Number.isInteger(idx)) {
     return null;
   }
 
+  // 3. Amount: Must be a positive decimal integer string/bigint without floats
   let amountVal = raw.amount !== undefined ? raw.amount : (raw.amountSompi !== undefined ? raw.amountSompi : raw.utxoEntry?.amount);
-  if (amountVal === undefined) return null;
-  let amountStr = String(amountVal);
+  if (amountVal === undefined || amountVal === null) return null;
+  let amountStr = String(amountVal).trim();
   if (!/^\d+$/.test(amountStr)) {
     return null;
   }
   try {
-    BigInt(amountStr);
+    const amountBig = BigInt(amountStr);
+    if (amountBig < 0n || amountBig > 2900000000000000000n) { // Exceeds Kaspa max total supply sompis
+      return null;
+    }
   } catch {
     return null;
   }
 
+  // 4. Script Public Key: Must be valid hex and cannot exceed maximum standard script size (10,000 bytes)
   let spkHex = raw.scriptPublicKey || raw.utxoEntry?.scriptPublicKey?.scriptPublicKey || raw.utxoEntry?.scriptPublicKey || '';
   if (typeof spkHex === 'object' && spkHex !== null && typeof spkHex.scriptPublicKey === 'string') {
     spkHex = spkHex.scriptPublicKey;
   }
-  if (typeof spkHex !== 'string' || !/^[0-9a-fA-F]+$/.test(spkHex)) {
-    spkHex = '';
+  if (typeof spkHex !== 'string') {
+    return null;
+  }
+  spkHex = spkHex.trim().toLowerCase();
+  if (spkHex.length > 0 && (!/^[0-9a-f]+$/.test(spkHex) || spkHex.length % 2 !== 0 || spkHex.length > 20000)) {
+    return null;
+  }
+
+  // 5. Version: Must be uint16
+  const rawVersion = raw.utxoEntry?.scriptPublicKey?.version !== undefined ? raw.utxoEntry.scriptPublicKey.version : 0;
+  const versionNum = Number(rawVersion);
+  if (isNaN(versionNum) || versionNum < 0 || versionNum > 65535 || !Number.isInteger(versionNum)) {
+    return null;
+  }
+
+  // 6. Block DAA Score: Must be valid integer string if present
+  let daaScoreStr: string | undefined = undefined;
+  const rawDaa = raw.utxoEntry?.blockDaaScore !== undefined ? raw.utxoEntry.blockDaaScore : raw.blockDaaScore;
+  if (rawDaa !== undefined && rawDaa !== null) {
+    const s = String(rawDaa).trim();
+    if (/^\d+$/.test(s)) {
+      daaScoreStr = s;
+    }
   }
 
   const cleanUtxo: KaspaUtxo = {
     address: typeof raw.address === 'string' && raw.address.trim() ? raw.address.trim() : undefined,
-    transactionId: txId.toLowerCase(),
+    transactionId: txId,
     index: idx,
     amount: amountStr,
-    scriptPublicKey: spkHex ? spkHex.toLowerCase() : '',
+    scriptPublicKey: spkHex,
     outpoint: {
-      transactionId: txId.toLowerCase(),
+      transactionId: txId,
       index: idx
     },
     utxoEntry: {
       amount: amountStr,
       scriptPublicKey: {
-        scriptPublicKey: spkHex ? spkHex.toLowerCase() : '',
-        version: raw.utxoEntry?.scriptPublicKey?.version !== undefined ? Number(raw.utxoEntry.scriptPublicKey.version) : 0
+        scriptPublicKey: spkHex,
+        version: versionNum
       },
-      blockDaaScore: raw.utxoEntry?.blockDaaScore !== undefined ? String(raw.utxoEntry.blockDaaScore) : (raw.blockDaaScore !== undefined ? String(raw.blockDaaScore) : undefined),
+      blockDaaScore: daaScoreStr,
       isCoinbase: Boolean(raw.utxoEntry?.isCoinbase || raw.isCoinbase)
     }
   };
@@ -778,6 +808,15 @@ export async function broadcastKaspaTransaction(txPayload: any, network: string 
   const bodyPayload = { transaction: formattedTx };
   const jsonBody = JSON.stringify(bodyPayload, (_, v) => typeof v === 'bigint' ? v.toString() : v);
 
+  // Calculate authoritative local TXID
+  let expectedTxId = '';
+  try {
+    expectedTxId = await computeTxIdWasm(rawTx);
+  } catch (e) {
+    expectedTxId = rawTx?.txId || rawTx?.id || rawTx?.transactionId || '';
+  }
+  expectedTxId = String(expectedTxId || '').trim().toLowerCase();
+
   // Helper to attempt a single endpoint broadcast with tight timeout
   const attemptEndpoint = async (endpoint: string): Promise<{ success: boolean; txId?: string; error?: string }> => {
     const pathsToTry = ['/transactions', '/submit_transaction'];
@@ -794,8 +833,13 @@ export async function broadcastKaspaTransaction(txPayload: any, network: string 
         const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result || (typeof data === 'string' && /^[0-9a-fA-F]{64}$/.test(data.trim()) ? data.trim() : undefined);
 
         if (res.ok && returnedTxId) {
-          console.log(`[Kaspa Node Broadcast] Successfully broadcasted transaction via ${endpoint}${apiPath}: ${returnedTxId}`);
-          return { success: true, txId: String(returnedTxId) };
+          const cleanReturnedTxId = String(returnedTxId).trim().toLowerCase();
+          if (expectedTxId && cleanReturnedTxId !== expectedTxId) {
+            console.error(`[Kaspa Node Broadcast] TXID mismatch! Node returned ${cleanReturnedTxId} but local calculation was ${expectedTxId}`);
+            return { success: false, error: `TXID Mismatch: Node returned ${cleanReturnedTxId} but locally computed TXID was ${expectedTxId}` };
+          }
+          console.log(`[Kaspa Node Broadcast] Successfully broadcasted transaction via ${endpoint}${apiPath}: ${cleanReturnedTxId}`);
+          return { success: true, txId: cleanReturnedTxId };
         }
 
         if (data) {

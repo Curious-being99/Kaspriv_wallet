@@ -65,21 +65,16 @@ android {
                 v1SigningEnabled true
                 v2SigningEnabled true
             } else {
-                // Graceful fallback to debug keystore for builds if release keystore is missing
-                storeFile file('debug.keystore')
-                storePassword 'android'
-                keyAlias 'androiddebugkey'
-                keyPassword 'android'
-                v1SigningEnabled true
-                v2SigningEnabled true
+                // Strict Production Invariant: Do not silently fallback to debug.keystore for release builds
+                throw new GradleException("CRITICAL: Release keystore file or password is missing or unconfigured. Refusing to build production release with insecure debug keys.")
             }
         }
     }
     lint {
-        abortOnError = false
-        checkReleaseBuilds = false
-        ignoreWarnings = true
-        checkDependencies = false
+        abortOnError = true
+        checkReleaseBuilds = true
+        ignoreWarnings = false
+        checkDependencies = true
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_21
@@ -184,8 +179,7 @@ tasks.withType(JavaCompile).configureEach {
 tasks.register("compileRustJni", Exec) {
     workingDir "../../" // Root of the project
     commandLine "bash", "./compile_rust.sh"
-    // Ignore exit value if Rust/cargo-ndk is not configured on this machine yet, so Android Studio still syncs
-    ignoreExitValue true 
+    ignoreExitValue false 
 }
 
 // Make the Java compilation depend on our Rust task

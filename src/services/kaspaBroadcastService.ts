@@ -217,14 +217,24 @@ export async function broadcastKaspaTransactionService(
   const endpoints = getBroadcastEndpoints(network);
   const rawTx = txPayload?.transaction || txPayload;
 
-  // Extract or compute local candidate transaction ID (checking all possible property names)
-  let localComputedTxId = knownTxId || txPayload?.txId || txPayload?.id || rawTx?.txId || rawTx?.id || rawTx?.transactionId;
+  // 2. Authoritative Local TXID Calculation using Kaspa WASM core
+  let localTxId = '';
   try {
-    if (!localComputedTxId) {
-      localComputedTxId = await computeTxIdWasm(rawTx);
-    }
+    localTxId = await computeTxIdWasm(rawTx);
   } catch (e) {
-    console.warn('Failed to compute local TXID via WASM, falling back to payload ID:', e);
+    console.warn('WASM computeTxIdWasm error, attempting payload txId verification:', e);
+  }
+
+  if (!localTxId) {
+    localTxId = knownTxId || txPayload?.txId || txPayload?.id || rawTx?.txId || rawTx?.id || rawTx?.transactionId || '';
+  }
+
+  localTxId = String(localTxId || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(localTxId)) {
+    return {
+      status: 'invalid_transaction',
+      error: `Invalid local transaction ID (${localTxId || 'empty'}). Transaction cannot be verified.`,
+    };
   }
 
   // Normalize formatting for BigInt JSON parsing
@@ -259,7 +269,7 @@ export async function broadcastKaspaTransactionService(
 
   let lastErrorMsg = 'Endpoints offline or unresponsive';
 
-  // Fast broadcast helper for a single endpoint
+  // Fast broadcast helper for a single endpoint with strict local TXID verification
   const sendToNode = async (baseUrl: string): Promise<BroadcastResult | null> => {
     try {
       let status = 0;
@@ -293,10 +303,27 @@ export async function broadcastKaspaTransactionService(
       const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;
 
       if (status >= 200 && status < 300) {
-        const finalTxId = returnedTxId ? String(returnedTxId).toLowerCase() : (localComputedTxId || knownTxId || '');
+        // Enforce strict local TXID verification: node must return matching TXID
+        if (!returnedTxId) {
+          return {
+            status: 'rejected',
+            error: `Broadcast rejected: Node returned HTTP ${status} without a valid transaction ID.`,
+            endpointUsed: baseUrl,
+          };
+        }
+
+        const cleanReturnedTxId = String(returnedTxId).trim().toLowerCase();
+        if (cleanReturnedTxId !== localTxId) {
+          return {
+            status: 'rejected',
+            error: `TXID Mismatch: Node returned ${cleanReturnedTxId} but locally computed TXID was ${localTxId}`,
+            endpointUsed: baseUrl,
+          };
+        }
+
         return {
           status: 'submitted',
-          txId: finalTxId,
+          txId: localTxId,
           endpointUsed: baseUrl,
         };
       }
@@ -322,39 +349,82 @@ export async function broadcastKaspaTransactionService(
     }
   };
 
-  // Ultra-Fast Multi-Node Broadcast Dispatch
-  // Try the primary endpoint immediately; if it doesn't return within 450ms, race the fallbacks concurrently so fastest node wins.
-  const primaryPromise = sendToNode(endpoints[0]);
+  // Ultra-Fast Zero-Delay Multi-Node Broadcast Dispatch
+  // If there's only 1 endpoint, await it directly.
+  if (endpoints.length === 1) {
+    const singleRes = await sendToNode(endpoints[0]);
+    if (singleRes) return singleRes;
+    return {
+      status: 'network_error',
+      error: `Broadcast failed: ${lastErrorMsg}`,
+    };
+  }
 
-  // Delayed fallback race if primary is sluggish
-  const fallbackRace = new Promise<BroadcastResult | null>((resolve) => {
-    const timer = setTimeout(async () => {
-      if (endpoints.length > 1) {
-        try {
-          const fallbackPromises = endpoints.slice(1).map(ep => sendToNode(ep));
-          // Wait for any valid successful response
-          const results = await Promise.all(fallbackPromises);
-          const firstSuccess = results.find(r => r !== null && (r.status === 'submitted' || r.status === 'accepted'));
-          if (firstSuccess) {
-            resolve(firstSuccess);
+  // Multi-endpoint race:
+  // Start primary endpoint. If primary fails or is sluggish (>350ms),
+  // immediately race fallbacks and resolve on the very FIRST successful node response.
+  let fallbackLaunched = false;
+  let fallbackTimer: any = null;
+
+  const runFallbacks = (): Promise<BroadcastResult | null> => {
+    if (fallbackLaunched) return Promise.resolve(null);
+    fallbackLaunched = true;
+    if (fallbackTimer) {
+      clearTimeout(fallbackTimer);
+      fallbackTimer = null;
+    }
+
+    return new Promise<BroadcastResult | null>((resolve) => {
+      let resolved = false;
+      let pendingCount = endpoints.length - 1;
+      let definitiveReject: BroadcastResult | null = null;
+
+      for (let i = 1; i < endpoints.length; i++) {
+        sendToNode(endpoints[i]).then((res) => {
+          if (resolved) return;
+          if (res && (res.status === 'submitted' || res.status === 'accepted')) {
+            resolved = true;
+            resolve(res);
             return;
           }
-          const anyResult = results.find(r => r !== null);
-          resolve(anyResult || null);
-        } catch {
-          resolve(null);
-        }
-      } else {
-        resolve(null);
+          if (res && res.status === 'rejected' && !definitiveReject) {
+            definitiveReject = res;
+          }
+          pendingCount--;
+          if (pendingCount <= 0 && !resolved) {
+            resolved = true;
+            resolve(definitiveReject);
+          }
+        }).catch(() => {
+          if (resolved) return;
+          pendingCount--;
+          if (pendingCount <= 0 && !resolved) {
+            resolved = true;
+            resolve(definitiveReject);
+          }
+        });
       }
-    }, 450);
+    });
+  };
 
-    primaryPromise.then((res) => {
-      if (res && (res.status === 'submitted' || res.status === 'accepted')) {
-        clearTimeout(timer);
-        resolve(res);
-      }
-    }).catch(() => {});
+  const primaryPromise = sendToNode(endpoints[0]);
+
+  // Delayed fallback race trigger if primary is sluggish (>350ms)
+  const fallbackRace = new Promise<BroadcastResult | null>((resolve) => {
+    fallbackTimer = setTimeout(() => {
+      runFallbacks().then(resolve);
+    }, 350);
+  });
+
+  // If primary finishes fast and succeeds, cancel fallback timer. If primary fails fast, trigger fallbacks immediately!
+  primaryPromise.then((res) => {
+    if (res && (res.status === 'submitted' || res.status === 'accepted')) {
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+    } else {
+      runFallbacks();
+    }
+  }).catch(() => {
+    runFallbacks();
   });
 
   const fastestResult = await Promise.race([primaryPromise, fallbackRace]);
@@ -362,19 +432,18 @@ export async function broadcastKaspaTransactionService(
     return fastestResult;
   }
 
-  // If initial race didn't succeed, await whichever completes first or check fallback results
   const primaryResult = await primaryPromise;
-  if (primaryResult) {
+  if (primaryResult && (primaryResult.status === 'submitted' || primaryResult.status === 'accepted')) {
     return primaryResult;
   }
 
-  if (endpoints.length > 1) {
-    const fallbackPromises = endpoints.slice(1).map((ep) => sendToNode(ep));
-    const results = await Promise.all(fallbackPromises);
-    const successResult = results.find((r) => r !== null);
-    if (successResult) {
-      return successResult;
-    }
+  const fallbackResult = await runFallbacks();
+  if (fallbackResult) {
+    return fallbackResult;
+  }
+
+  if (primaryResult) {
+    return primaryResult;
   }
 
   return {

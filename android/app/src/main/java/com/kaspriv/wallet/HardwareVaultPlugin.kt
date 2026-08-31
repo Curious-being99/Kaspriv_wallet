@@ -168,31 +168,34 @@ class HardwareVaultPlugin : Plugin() {
             }
         }
 
-        // Check biometric enrollment to decide whether auth is required on key
+        // Enforce strict fail-closed: Strong biometrics MUST be enrolled and available
         val biometricManager = BiometricManager.from(context)
         val canAuthStrong = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
+        if (!canAuthStrong) {
+            throw SecurityException("Strong biometrics (BIOMETRIC_STRONG) are not enrolled or available on this device. Biometric key generation failed closed.")
+        }
 
         // 1. Try StrongBox if hardware feature is present
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
                 val hasStrongBox = context.packageManager.hasSystemFeature("android.hardware.strongbox_keystore")
                 if (hasStrongBox) {
-                    return generateAesKey(alias, useStrongBox = true, authRequired = canAuthStrong)
+                    return generateAesKey(alias, useStrongBox = true)
                 }
             } catch (e: Exception) {
                 // Fallback to standard hardware-backed Keystore
             }
         }
 
-        // 2. Try standard TEE hardware-backed Keystore with biometric authentication
+        // 2. Try standard TEE hardware-backed Keystore with mandatory biometric authentication
         try {
-            return generateAesKey(alias, useStrongBox = false, authRequired = canAuthStrong)
+            return generateAesKey(alias, useStrongBox = false)
         } catch (e: Exception) {
             throw Exception("Failed to generate hardware-backed biometric key: ${e.message}", e)
         }
     }
 
-    private fun generateAesKey(alias: String, useStrongBox: Boolean, authRequired: Boolean): SecretKey {
+    private fun generateAesKey(alias: String, useStrongBox: Boolean): SecretKey {
         val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEY_STORE_NAME)
         val specBuilder = KeyGenParameterSpec.Builder(
             alias,
@@ -202,21 +205,18 @@ class HardwareVaultPlugin : Plugin() {
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
 
-        if (authRequired) {
-            specBuilder.setUserAuthenticationRequired(true)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                specBuilder.setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                specBuilder.setUserAuthenticationValidityDurationSeconds(-1)
-            }
-            // Invalidate key only if permanently removed; avoid transient disconnects
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                try {
-                    specBuilder.setInvalidatedByBiometricEnrollment(false)
-                } catch (e: Exception) {}
-            }
-        } else {
-            specBuilder.setUserAuthenticationRequired(false)
+        // Strict security invariant: userAuthenticationRequired is ALWAYS true for biometric keys
+        specBuilder.setUserAuthenticationRequired(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            specBuilder.setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            specBuilder.setUserAuthenticationValidityDurationSeconds(-1)
+        }
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                specBuilder.setInvalidatedByBiometricEnrollment(false)
+            } catch (e: Exception) {}
         }
 
         if (useStrongBox && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -374,28 +374,22 @@ class HardwareVaultPlugin : Plugin() {
 
     @PluginMethod
     fun getHardwareSecurityLevel(call: PluginCall) {
-        val alias = "security_probe_${System.currentTimeMillis()}"
-        try {
-            val key = getOrCreateKey(alias)
-            val secretKeyFactory = javax.crypto.SecretKeyFactory.getInstance(key.algorithm, KEY_STORE_NAME)
-            val keyInfo = secretKeyFactory.getKeySpec(key, KeyInfo::class.java) as KeyInfo
-            
-            val ret = JSObject()
-            ret.put("insideSecureHardware", keyInfo.isInsideSecureHardware)
-            ret.put("isStrongBoxBacked", false)
-            
-            val keyStore = KeyStore.getInstance(KEY_STORE_NAME)
-            keyStore.load(null)
-            keyStore.deleteEntry(alias)
-            
-            call.resolve(ret)
-        } catch (e: Exception) {
-            val ret = JSObject()
-            ret.put("insideSecureHardware", true)
-            ret.put("isStrongBoxBacked", false)
-            ret.put("error", e.message)
-            call.resolve(ret)
+        val ret = JSObject()
+        val biometricManager = BiometricManager.from(context)
+        val canAuthStrong = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
+        val hasStrongBox = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try {
+                context.packageManager.hasSystemFeature("android.hardware.strongbox_keystore")
+            } catch (e: Exception) {
+                false
+            }
+        } else {
+            false
         }
+        ret.put("insideSecureHardware", true)
+        ret.put("isStrongBoxBacked", hasStrongBox)
+        ret.put("isStrongBiometricAvailable", canAuthStrong)
+        call.resolve(ret)
     }
 }
 

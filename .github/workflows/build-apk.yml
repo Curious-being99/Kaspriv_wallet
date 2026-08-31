@@ -51,6 +51,12 @@ jobs:
       - name: Install Dependencies
         run: npm install --legacy-peer-deps
 
+      - name: Dependency Security Audit
+        run: npm audit --audit-level=high || true
+
+      - name: Run Security Regression Suite
+        run: npm run test:security
+
       - name: Generate Pristine Native Icons
         run: |
           npm install --no-save sharp
@@ -136,7 +142,7 @@ jobs:
           ./gradlew --version
           
           echo "Starting Gradle Release Build..."
-          ./gradlew assembleRelease -x lint -x lintVitalRelease -x lintVitalAnalyzeRelease -x test --no-daemon --stacktrace --info
+          ./gradlew assembleRelease --no-daemon --stacktrace --info
 
       - name: Stage APK Files
         run: |
@@ -144,25 +150,20 @@ jobs:
           echo "Scanning build directory for generated APKs:"
           ls -laR android/app/build/outputs/apk/ || echo "Directory not found"
           
-          # Stage the best available APK
+          # Stage ONLY the signed production release APK (no unsigned or debug fallbacks)
           if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
             cp android/app/build/outputs/apk/release/app-release.apk release-apks/KasPriv-Wallet-Release.apk
-          elif [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
-            cp android/app/build/outputs/apk/release/app-release-unsigned.apk release-apks/KasPriv-Wallet-Release.apk
-          elif [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            cp android/app/build/outputs/apk/debug/app-debug.apk release-apks/KasPriv-Wallet-Release.apk
           else
-            find android/app/build/outputs/apk -name "*.apk" -exec cp {} release-apks/KasPriv-Wallet-Release.apk \;
+            echo "CRITICAL: Signed production release APK (app-release.apk) not found! Refusing to stage debug or unsigned APKs."
+            exit 1
           fi
           
           echo "Staged APKs:"
           ls -lh release-apks/
 
-          # Verify signature with apksigner if available
-          if [ -f "release-apks/KasPriv-Wallet-Release.apk" ]; then
-            echo "Verifying APK signature..."
-            $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose release-apks/KasPriv-Wallet-Release.apk || echo "APK signer verification completed."
-          fi
+          # Verify signature with apksigner - MUST fail build if signature verification fails
+          echo "Verifying APK signature..."
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose release-apks/KasPriv-Wallet-Release.apk
 
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
