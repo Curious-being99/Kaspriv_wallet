@@ -3,8 +3,9 @@
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jstring};
-use bip39::{Mnemonic, MnemonicType, Language};
+use bip39::{Mnemonic, Language};
 use rand::rngs::OsRng;
+use rand::RngCore;
 
 // -------------------------------------------------------------------------
 // generateMnemonic() -> String
@@ -14,8 +15,12 @@ pub extern "system" fn Java_com_kaspriv_wallet_core_KaspaNativeCore_generateMnem
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> jstring {
-    let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
-    let output = env.new_string(mnemonic.phrase()).expect("Couldn't create java string!");
+    let mut entropy = [0u8; 32];
+    OsRng.fill_bytes(&mut entropy);
+    let mnemonic = Mnemonic::from_entropy_in(Language::English, &entropy)
+        .expect("Failed to create mnemonic from 32-byte entropy");
+    let phrase = mnemonic.to_string();
+    let output = env.new_string(phrase).expect("Couldn't create java string!");
     output.into_raw()
 }
 
@@ -28,9 +33,12 @@ pub extern "system" fn Java_com_kaspriv_wallet_core_KaspaNativeCore_validateMnem
     _class: JClass<'local>,
     mnemonic_jstring: JString<'local>,
 ) -> jboolean {
-    let mnemonic_str: String = env.get_string(&mnemonic_jstring).expect("Couldn't get java string!").into();
+    let mnemonic_str: String = match env.get_string(&mnemonic_jstring) {
+        Ok(s) => s.into(),
+        Err(_) => return 0,
+    };
     
-    match Mnemonic::from_phrase(&mnemonic_str, Language::English) {
+    match Mnemonic::parse_in_normalized(Language::English, mnemonic_str.trim()) {
         Ok(_) => 1,
         Err(_) => 0,
     }

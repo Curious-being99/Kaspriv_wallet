@@ -46,7 +46,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-36 build-tools;35.0.0 platform-tools'
+          packages: 'platforms;android-36 build-tools;35.0.0 platform-tools ndk;26.1.10909125'
+
+      - name: Setup Rust Toolchain & Targets
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          cargo install cargo-ndk --locked || cargo install cargo-ndk
 
       - name: Install Dependencies
         run: npm install --legacy-peer-deps
