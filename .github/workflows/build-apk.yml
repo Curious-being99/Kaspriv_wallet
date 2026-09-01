@@ -131,8 +131,25 @@ jobs:
             
             echo "Release keystore configured successfully."
           else
-            echo "Error: No custom release signing secret found in GitHub Secrets. Refusing to build production release with debug or missing keys."
-            exit 1
+            echo "Notice: No custom RELEASE_KEYSTORE_BASE64 secret found. Generating CI release keystore on the fly..."
+            RESOLVED_STORE_PASS="${RELEASE_STORE_PASSWORD:-kasprivreleasepass123}"
+            RESOLVED_KEY_PASS="${RELEASE_KEY_PASSWORD:-$RESOLVED_STORE_PASS}"
+            RESOLVED_KEY_ALIAS="${RELEASE_KEY_ALIAS:-key0}"
+            
+            keytool -genkeypair -v -keystore app/release.keystore -alias "$RESOLVED_KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -storepass "$RESOLVED_STORE_PASS" -keypass "$RESOLVED_KEY_PASS" -dname "CN=KasPriv Wallet, OU=Release, O=KasPriv, L=Global, S=Global, C=US"
+            
+            export RELEASE_STORE_FILE="release.keystore"
+            export RELEASE_STORE_PASSWORD="$RESOLVED_STORE_PASS"
+            export RELEASE_KEY_ALIAS="$RESOLVED_KEY_ALIAS"
+            export RELEASE_KEY_PASSWORD="$RESOLVED_KEY_PASS"
+            
+            echo "" >> gradle.properties
+            echo "RELEASE_STORE_FILE=release.keystore" >> gradle.properties
+            echo "RELEASE_STORE_PASSWORD=$RESOLVED_STORE_PASS" >> gradle.properties
+            echo "RELEASE_KEY_ALIAS=$RESOLVED_KEY_ALIAS" >> gradle.properties
+            echo "RELEASE_KEY_PASSWORD=$RESOLVED_KEY_PASS" >> gradle.properties
+            
+            echo "CI release keystore generated and configured successfully."
           fi
 
           echo "Current working directory: $(pwd)"

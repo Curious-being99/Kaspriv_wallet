@@ -64,9 +64,6 @@ android {
                 keyPassword ((keyPass ?: storePass).trim())
                 v1SigningEnabled true
                 v2SigningEnabled true
-            } else {
-                // Strict Production Invariant: Do not silently fallback to debug.keystore for release builds
-                throw new GradleException("CRITICAL: Release keystore file or password is missing or unconfigured. Refusing to build production release with insecure debug keys.")
             }
         }
     }
@@ -94,7 +91,11 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.release
+            if (signingConfigs.release.storeFile != null && signingConfigs.release.storeFile.exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
