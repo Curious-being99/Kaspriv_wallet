@@ -107,7 +107,6 @@ export function estimateTransactionMass(
 ): number {
   const countIn = Math.max(1, inputsCount);
   const countOut = Math.max(1, outputsCount);
-  const isP2SH = addressType === 'P2SH';
 
   try {
     const dummyInputs = Array.from({ length: countIn }, () => ({
@@ -115,14 +114,14 @@ export function estimateTransactionMass(
         transactionId: '0000000000000000000000000000000000000000000000000000000000000000',
         index: 0,
       },
-      signatureScript: isP2SH ? '00'.repeat(100) : '00'.repeat(66),
+      signatureScript: '00'.repeat(100), // 100 bytes P2SH signature script
       sequence: 0n,
       sigOpCount: 1,
     }));
 
     const dummyOutputs = Array.from({ length: countOut }, () => ({
       value: 100000000n,
-      scriptPublicKey: new ScriptPublicKey(0, isP2SH ? 'aa20' + '00'.repeat(32) + '87' : '20' + '00'.repeat(32) + 'ac'),
+      scriptPublicKey: new ScriptPublicKey(0, 'aa20' + '00'.repeat(32) + '87'),
     }));
 
     const txInput = {
@@ -146,11 +145,11 @@ export function estimateTransactionMass(
   }
   
   const baseOverhead = 40;
-  const inputSizeBytes = isP2SH ? 150 : 112;
+  const inputSizeBytes = 150; // P2SH input size
   const outputSizeBytes = 44;
   
   const serializedSizeMass = baseOverhead + (countIn * inputSizeBytes) + (countOut * outputSizeBytes);
-  const scriptPubKeySize = isP2SH ? 35 : 34;
+  const scriptPubKeySize = 35; // P2SH scriptPublicKey size
   const scriptPubKeyMass = countOut * scriptPubKeySize * 10;
   const sigOpsMass = countIn * 1000;
   const safetyPadding = 300;
@@ -169,7 +168,6 @@ export function calculateMinFeeForInputs(
 ): bigint {
   const countIn = Math.max(1, inputsCount);
   const countOut = Math.max(1, outputsCount);
-  const isP2SH = addressType === 'P2SH';
 
   try {
     const dummyInputs = Array.from({ length: countIn }, () => ({
@@ -177,14 +175,14 @@ export function calculateMinFeeForInputs(
         transactionId: '0000000000000000000000000000000000000000000000000000000000000000',
         index: 0,
       },
-      signatureScript: isP2SH ? '00'.repeat(100) : '00'.repeat(66),
+      signatureScript: '00'.repeat(100),
       sequence: 0n,
       sigOpCount: 1,
     }));
 
     const dummyOutputs = Array.from({ length: countOut }, () => ({
       value: 100000000n,
-      scriptPublicKey: new ScriptPublicKey(0, isP2SH ? 'aa20' + '00'.repeat(32) + '87' : '20' + '00'.repeat(32) + 'ac'),
+      scriptPublicKey: new ScriptPublicKey(0, 'aa20' + '00'.repeat(32) + '87'),
     }));
 
     const txInput = {

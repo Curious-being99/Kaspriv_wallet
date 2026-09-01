@@ -12,7 +12,7 @@ data class WalletModel(
     val isWatchOnly: Boolean = false,
     val balanceSompi: Long = 0L,
     val createdAt: Long = System.currentTimeMillis(),
-    val addressType: String = "P2PK",
+    val addressType: String = "P2SH",
     val discoveredAddresses: List<String> = emptyList(),
     val lockedUtxoOutpoints: List<String> = emptyList(),
     val lockedUtxos: List<String> = emptyList()

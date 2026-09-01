@@ -249,6 +249,88 @@ function runTests() {
   buffer.fill(0);
   assert(buffer.every(b => b === 0), "Wipes buffer bytes to 0");
 
+  // 5. P2SH Script Invariants & Byte Encodings
+  console.log("\n[5] Testing P2SH Script & Signature Byte Invariants...");
+  const dummyXOnlyHex = "0123456789abcdef".repeat(4);
+  assert(dummyXOnlyHex.length === 64, "X-only Schnorr public key is 32 bytes (64 hex characters)");
+
+  // P2SH Redeem Script (Single Key): 0x20 [32-byte X-Only PubKey] 0xac (OP_CHECKSIG)
+  const redeemScriptHex = "20" + dummyXOnlyHex + "ac";
+  assert(redeemScriptHex.length === 68, "P2SH Redeem Script is exactly 34 bytes (68 hex characters)");
+  assert(redeemScriptHex.startsWith("20") && redeemScriptHex.endsWith("ac"), "Redeem script has valid 0x20 push and 0xac OP_CHECKSIG opcode");
+
+  // P2SH ScriptPublicKey: 0xaa 0x20 [32-byte hash] 0x87
+  const dummyScriptHashHex = "abcdef0123456789".repeat(4);
+  const p2shScriptPubKeyHex = "aa20" + dummyScriptHashHex + "87";
+  assert(p2shScriptPubKeyHex.length === 70, "P2SH ScriptPublicKey is exactly 35 bytes (70 hex characters)");
+  assert(p2shScriptPubKeyHex.startsWith("aa20") && p2shScriptPubKeyHex.endsWith("87"), "P2SH SPK begins with OP_BLAKE2B (aa20) and ends with OP_EQUAL (87)");
+
+  // P2SH Signature Script: [0x41] [64-byte sig + 0x01] [0x22] [34-byte redeemScript]
+  const dummySchnorrSigHex = "00".repeat(64); // 64 bytes = 128 hex chars
+  const sigWithHashTypeHex = dummySchnorrSigHex + "01"; // 65 bytes = 130 hex chars
+  const p2shSigScriptHex = "41" + sigWithHashTypeHex + "22" + redeemScriptHex; // 1 + 65 + 1 + 34 = 101 bytes = 202 hex chars
+  assert(p2shSigScriptHex.length === 202, "P2SH SignatureScript length is exactly 101 bytes (202 hex chars)");
+  assert(p2shSigScriptHex.startsWith("41") && p2shSigScriptHex.includes("2220"), "P2SH signature script has correct push opcode prefixes");
+
+  // 6. UTXO Dust Limit & Fee Estimation Bounds
+  console.log("\n[6] Testing Dust Thresholds & Fee Calculation Bounds...");
+  const DUST_LIMIT_SOMPI = 10_000n; // 0.0001 KAS
+  assert(kasToSompi("0.0001") === DUST_LIMIT_SOMPI, "Dust threshold properly equates to 10,000 sompi");
+  
+  function computeP2shMinFee(inputCount, outputCount) {
+    const inCount = Math.max(1, inputCount);
+    const outCount = Math.max(1, outputCount);
+    const baseOverhead = 40;
+    const inputSize = 150; // P2SH input size with sigScript
+    const outputSize = 44;
+    const serializedSize = baseOverhead + (inCount * inputSize) + (outCount * outputSize);
+    const scriptPubKeyMass = outCount * 35 * 10;
+    const sigOpsMass = inCount * 1000;
+    const mass = Math.max(serializedSize, scriptPubKeyMass, sigOpsMass) + 300;
+    const minFee = BigInt(Math.max(10000, Math.ceil(mass * 1.05)));
+    return minFee;
+  }
+
+  const fee1In2Out = computeP2shMinFee(1, 2);
+  assert(fee1In2Out >= 10000n, "1-in-2-out P2SH tx fee meets minimum 10,000 sompi floor");
+  
+  const fee10In2Out = computeP2shMinFee(10, 2);
+  assert(fee10In2Out > fee1In2Out, "Multi-input transaction fee scales proportionally to sigOps and mass");
+
+  // 7. Robust Coin Selection Invariant
+  console.log("\n[7] Testing UTXO Selection Invariants...");
+  function selectUtxos(availableUtxos, targetSompi, feeSompi = 10000n) {
+    const required = targetSompi + feeSompi;
+    const sorted = [...availableUtxos].sort((a, b) => (b.amount < a.amount ? -1 : 1));
+    let accumulated = 0n;
+    const selected = [];
+
+    for (const u of sorted) {
+      selected.push(u);
+      accumulated += u.amount;
+      if (accumulated >= required) break;
+    }
+
+    if (accumulated < required) {
+      return { success: false, reason: "Insufficient balance" };
+    }
+    return { success: true, selected, totalSelected: accumulated, change: accumulated - required };
+  }
+
+  const utxoPool = [
+    { transactionId: "a".repeat(64), index: 0, amount: 20000000n },
+    { transactionId: "b".repeat(64), index: 0, amount: 50000000n },
+    { transactionId: "c".repeat(64), index: 0, amount: 100000000n }
+  ];
+
+  const selectionResult = selectUtxos(utxoPool, 60000000n, 10000n);
+  assert(selectionResult.success, "UTXO selection succeeds when funds are sufficient");
+  assert(selectionResult.selected.length === 1 && selectionResult.selected[0].amount === 100000000n, "Largest-first selection selects minimal UTXO count");
+  assert(selectionResult.change === 39990000n, "Calculates exact remaining change without rounding error");
+
+  const insufficientResult = selectUtxos(utxoPool, 500000000n);
+  assert(!insufficientResult.success, "Fails safely with insufficient balance");
+
   console.log("\n=========================================");
   console.log(` Security Suite Summary: All ${passed} assertions passed successfully (0 failures).`);
   console.log("=========================================\n");

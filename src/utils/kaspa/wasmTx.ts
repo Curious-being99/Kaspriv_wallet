@@ -283,45 +283,22 @@ export async function createSignedTransactionWasm(
   // Build the transaction utilizing internal WASM objects
   const tx = new Transaction(rawTx);
 
-  let signedTx: any;
-  const isP2SHTx = addressType === 'P2SH' || 
-    utxos.some((u: any) => 
-      (u.address && u.address.includes(':p')) || 
-      extractSpkHex(u.utxoEntry?.scriptPublicKey || u.scriptPublicKey).toLowerCase().startsWith('aa20')
-    ) ||
-    toAddress.includes(':p') ||
-    (changeAddress && changeAddress.includes(':p'));
-
-  if (isP2SHTx) {
-    let finalRedeemScriptHex = redeemScriptHex;
-    if (!finalRedeemScriptHex && pk) {
-      const xOnly = pk.toPublicKey().toXOnlyPublicKey();
-      finalRedeemScriptHex = '20' + xOnly.toString() + 'ac';
-    }
-    
-    if (finalRedeemScriptHex) {
-      for (let i = 0; i < tx.inputs.length; i++) {
-        const sig = createInputSignature(tx, i, pk);
-        const sigScript = payToScriptHashSignatureScript(finalRedeemScriptHex, sig);
-        tx.inputs[i].signatureScript = sigScript;
-      }
-      signedTx = tx;
-    }
+  let finalRedeemScriptHex = redeemScriptHex;
+  if (!finalRedeemScriptHex && pk) {
+    const xOnly = pk.toPublicKey().toXOnlyPublicKey();
+    finalRedeemScriptHex = '20' + xOnly.toString() + 'ac';
   }
   
-  if (!signedTx) {
-    try {
-      const pkHexStr = pk.toString();
-      signedTx = signTransaction(tx, [pkHexStr], true);
-    } catch (err: any) {
-      if (err.message && err.message.includes('Signature is empty')) {
-        const pkHexStr = pk.toString();
-        signedTx = signTransaction(tx, [pkHexStr], false);
-      } else {
-        throw err;
-      }
-    }
+  if (!finalRedeemScriptHex) {
+    throw new Error("P2SH signing failed: redeem script could not be determined.");
   }
+
+  for (let i = 0; i < tx.inputs.length; i++) {
+    const sig = createInputSignature(tx, i, pk);
+    const sigScript = payToScriptHashSignatureScript(finalRedeemScriptHex, sig);
+    tx.inputs[i].signatureScript = sigScript;
+  }
+  const signedTx: any = tx;
   
   const finalJson: any = signedTx.toJSON();
   
@@ -451,81 +428,52 @@ export async function createSignedTransactionIsolatedWasm(
 
     const tx = new Transaction(rawTx);
 
-    let signedTx: any;
-    const isP2SHTx = addressType === 'P2SH' || 
-      utxos.some((u: any) => 
-        (u.address && u.address.includes(':p')) || 
-        extractSpkHex(u.utxoEntry?.scriptPublicKey || u.scriptPublicKey).toLowerCase().startsWith('aa20')
-      ) ||
-      toAddress.includes(':p') ||
-      (changeAddress && changeAddress.includes(':p'));
+    const pksInfo = Object.entries(keysMap).map(([path, bytes]) => {
+      const pkHex = Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      const pk = new PrivateKey(pkHex);
+      allocatedPks.push(pk);
+      const pubKey = pk.toPublicKey();
+      const xOnly = pubKey.toXOnlyPublicKey();
+      const rsHex = '20' + xOnly.toString() + 'ac';
+      const p2shScript = payToScriptHashScript(rsHex);
+      pubKey.free();
+      xOnly.free();
+      return { path, pk, redeemScriptHex: rsHex, spkHex: p2shScript.script };
+    });
 
-    if (isP2SHTx) {
-      const pksInfo = Object.entries(keysMap).map(([path, bytes]) => {
-        const pkHex = Array.from(bytes)
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-        const pk = new PrivateKey(pkHex);
-        allocatedPks.push(pk);
-        const pubKey = pk.toPublicKey();
-        const xOnly = pubKey.toXOnlyPublicKey();
-        const rsHex = '20' + xOnly.toString() + 'ac';
-        const p2shScript = payToScriptHashScript(rsHex);
-        pubKey.free();
-        xOnly.free();
-        return { path, pk, redeemScriptHex: rsHex, spkHex: p2shScript.script };
-      });
-
-      for (let i = 0; i < tx.inputs.length; i++) {
-        const u = utxos[i];
-        let inputSpkHex = extractSpkHex(u?.utxoEntry?.scriptPublicKey) || extractSpkHex(u?.scriptPublicKey);
-        if (!inputSpkHex && u?.address) {
-          try {
-            const addrObj = new Address(u.address);
-            inputSpkHex = payToAddressScript(addrObj).script;
-          } catch {
-            // ignore fallback error
-          }
+    for (let i = 0; i < tx.inputs.length; i++) {
+      const u = utxos[i];
+      let inputSpkHex = extractSpkHex(u?.utxoEntry?.scriptPublicKey) || extractSpkHex(u?.scriptPublicKey);
+      if (!inputSpkHex && u?.address) {
+        try {
+          const addrObj = new Address(u.address);
+          inputSpkHex = payToAddressScript(addrObj).script;
+        } catch {
+          // ignore fallback error
         }
-
-        const inputPath = u?.derivationPath || u?.path;
-        let match = inputPath ? pksInfo.find(info => info.path === inputPath) : undefined;
-        
-        if (!match && inputSpkHex) {
-          match = pksInfo.find(info => info.spkHex.toLowerCase() === inputSpkHex.toLowerCase());
-        }
-        
-        if (!match) {
-          throw new Error(`Critical Security Failure: Missing signing key for UTXO at index ${i}`);
-        }
-        
-        const rsHexToUse = redeemScriptHex || match.redeemScriptHex;
-        const pkToUse = match.pk;
-        
-        const sig = createInputSignature(tx, i, pkToUse);
-        const sigScript = payToScriptHashSignatureScript(rsHexToUse, sig);
-        tx.inputs[i].signatureScript = sigScript;
       }
-      signedTx = tx;
-    } else {
-      const pks = Object.values(keysMap).map((bytes) => {
-        const pkHex = Array.from(bytes)
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-        const pk = new PrivateKey(pkHex);
-        allocatedPks.push(pk);
-        return pk;
-      });
 
-      try {
-        const pksHex = pks.map(pk => pk.toString());
-        signedTx = signTransaction(tx, pksHex, true);
-      } catch (err: any) {
-        console.warn('WASM signTransaction strict verification failed, falling back to signTransaction verify=false:', err);
-        const pksHex = pks.map(pk => pk.toString());
-        signedTx = signTransaction(tx, pksHex, false);
+      const inputPath = u?.derivationPath || u?.path;
+      let match = inputPath ? pksInfo.find(info => info.path === inputPath) : undefined;
+      
+      if (!match && inputSpkHex) {
+        match = pksInfo.find(info => info.spkHex.toLowerCase() === inputSpkHex.toLowerCase());
       }
+      
+      if (!match) {
+        throw new Error(`Critical Security Failure: Missing signing key for UTXO at index ${i}`);
+      }
+      
+      const rsHexToUse = redeemScriptHex || match.redeemScriptHex;
+      const pkToUse = match.pk;
+      
+      const sig = createInputSignature(tx, i, pkToUse);
+      const sigScript = payToScriptHashSignatureScript(rsHexToUse, sig);
+      tx.inputs[i].signatureScript = sigScript;
     }
+    const signedTx: any = tx;
 
     const finalJson: any = signedTx.toJSON();
     
