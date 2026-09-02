@@ -59,8 +59,8 @@ export const ScanModal: React.FC = () => {
     // Process text
     let cleanAddress = text.trim();
     
-    // Support URI format like: kaspa:qp79j3...?amount=10
-    if (cleanAddress.toLowerCase().startsWith('kaspa:') || cleanAddress.toLowerCase().startsWith('kaspadev:')) {
+    // Support URI format like: kaspa:qp79j3...?amount=10 or kaspatest:qp79j3...?amount=10
+    if (cleanAddress.includes('?') && cleanAddress.includes(':')) {
       const urlParts = cleanAddress.split('?');
       cleanAddress = urlParts[0];
     }

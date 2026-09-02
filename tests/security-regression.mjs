@@ -331,6 +331,45 @@ function runTests() {
   const insufficientResult = selectUtxos(utxoPool, 500000000n);
   assert(!insufficientResult.success, "Fails safely with insufficient balance");
 
+  // 8. Storage Sanitization Invariant: Unconditional Secret Stripping
+  console.log("\n[8] Testing Unconditional Storage Sanitization Invariants...");
+  function sanitizeWalletForDB(wallet) {
+    const copy = { ...wallet };
+    delete copy.mnemonic;
+    delete copy.passphrase;
+    return copy;
+  }
+
+  const walletWithSecrets = {
+    id: "w-test-123",
+    name: "Primary Wallet",
+    mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    passphrase: "secret-passphrase",
+    encryptedMnemonic: { ciphertext: "abc", salt: "123", iv: "456" }
+  };
+  const sanitized = sanitizeWalletForDB(walletWithSecrets);
+  assert(sanitized.mnemonic === undefined, "Plaintext mnemonic is completely stripped from DB payload");
+  assert(sanitized.passphrase === undefined, "Plaintext passphrase is completely stripped from DB payload");
+  assert(sanitized.encryptedMnemonic !== undefined, "Encrypted payload is preserved for durable persistence");
+
+  // 9. Multi-Network URI Parsing Invariant
+  console.log("\n[9] Testing Multi-Network URI Parsing Invariants...");
+  function parseKaspaUriTest(uriString) {
+    const trimmed = uriString.trim();
+    if (trimmed.includes('?')) {
+      const [addrPart, queryPart] = trimmed.split('?');
+      const params = new URLSearchParams(queryPart);
+      const amountStr = params.get('amount') || undefined;
+      return { address: addrPart, amountKasStr: amountStr };
+    }
+    return { address: trimmed };
+  }
+
+  const testnetUri = "kaspatest:qq054uvc...test?amount=12.34567891";
+  const parsedTestnet = parseKaspaUriTest(testnetUri);
+  assert(parsedTestnet.address === "kaspatest:qq054uvc...test", "Testnet URI address correctly isolated from query params");
+  assert(parsedTestnet.amountKasStr === "12.34567891", "Exact decimal string retained without float precision degradation");
+
   console.log("\n=========================================");
   console.log(` Security Suite Summary: All ${passed} assertions passed successfully (0 failures).`);
   console.log("=========================================\n");

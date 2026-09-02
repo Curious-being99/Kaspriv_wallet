@@ -271,82 +271,103 @@ export async function broadcastKaspaTransactionService(
 
   // Fast broadcast helper for a single endpoint with strict local TXID verification
   const sendToNode = async (baseUrl: string): Promise<BroadcastResult | null> => {
-    try {
-      let status = 0;
-      let data: any = null;
+    const pathsToTry = ['/transactions', '/submit_transaction'];
+    
+    for (const subPath of pathsToTry) {
+      try {
+        let status = 0;
+        let data: any = null;
 
-      if (Capacitor.isNativePlatform()) {
-        const capRes = await CapacitorHttp.request({
-          url: `${baseUrl}/transactions`,
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          data: serializedBody,
-          connectTimeout: 2500,
-          readTimeout: 2500,
-        });
-        status = capRes.status || 200;
-        data = typeof capRes.data === 'string' ? JSON.parse(capRes.data || '{}') : capRes.data;
-      } else {
-        const res = await fetch(`${baseUrl}/transactions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(serializedBody),
-          signal: AbortSignal.timeout(2500),
-        });
-        status = res.status;
-        data = await res.json().catch(() => null);
-      }
+        if (Capacitor.isNativePlatform()) {
+          const capRes = await CapacitorHttp.request({
+            url: `${baseUrl}${subPath}`,
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            data: serializedBody,
+            connectTimeout: 2500,
+            readTimeout: 2500,
+          });
+          status = capRes.status || 200;
+          data = typeof capRes.data === 'string' ? JSON.parse(capRes.data || '{}') : capRes.data;
+        } else {
+          const res = await fetch(`${baseUrl}${subPath}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(serializedBody),
+            signal: AbortSignal.timeout(2500),
+          });
+          status = res.status;
+          data = await res.json().catch(() => null);
+        }
 
-      const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result;
+        if (status === 404 && subPath === '/transactions') {
+          // Endpoint might be using /submit_transaction, try next path
+          continue;
+        }
 
-      if (status >= 200 && status < 300) {
-        // Enforce strict local TXID verification: node must return matching TXID
-        if (!returnedTxId) {
+        const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result || data?.tx_id || (typeof data === 'string' && /^[0-9a-fA-F]{64}$/.test(data.trim()) ? data.trim() : undefined);
+
+        if (status >= 200 && status < 300) {
+          // Enforce strict local TXID verification: node must return matching TXID
+          if (!returnedTxId) {
+            return {
+              status: 'rejected',
+              error: `Broadcast rejected: Node returned HTTP ${status} without a valid transaction ID.`,
+              endpointUsed: baseUrl,
+            };
+          }
+
+          const cleanReturnedTxId = String(returnedTxId).trim().toLowerCase();
+          if (cleanReturnedTxId !== localTxId) {
+            return {
+              status: 'rejected',
+              error: `TXID Mismatch: Node returned ${cleanReturnedTxId} but locally computed TXID was ${localTxId}`,
+              endpointUsed: baseUrl,
+            };
+          }
+
           return {
-            status: 'rejected',
-            error: `Broadcast rejected: Node returned HTTP ${status} without a valid transaction ID.`,
+            status: 'submitted',
+            txId: localTxId,
             endpointUsed: baseUrl,
           };
         }
 
-        const cleanReturnedTxId = String(returnedTxId).trim().toLowerCase();
-        if (cleanReturnedTxId !== localTxId) {
+        const nodeError = String(data?.message || data?.error || data?.detail || '').trim();
+        const lowerErr = nodeError.toLowerCase();
+
+        // If the transaction was already accepted into the mempool (e.g. by another node in parallel race), treat as successful submission
+        if (lowerErr.includes('already in mempool') || lowerErr.includes('already accepted')) {
           return {
-            status: 'rejected',
-            error: `TXID Mismatch: Node returned ${cleanReturnedTxId} but locally computed TXID was ${localTxId}`,
+            status: 'submitted',
+            txId: localTxId,
             endpointUsed: baseUrl,
           };
         }
 
-        return {
-          status: 'submitted',
-          txId: localTxId,
-          endpointUsed: baseUrl,
-        };
-      }
+        if (status === 400 || status === 422) {
+          return {
+            status: 'rejected',
+            error: `Mempool Rejected: ${nodeError || 'Node rejected rule validation'}`,
+            endpointUsed: baseUrl,
+          };
+        }
 
-      if (status === 400 || status === 422) {
-        const nodeError = data?.message || data?.error || 'Node rejected rule validation';
-        return {
-          status: 'rejected',
-          error: `Mempool Rejected: ${nodeError}`,
-          endpointUsed: baseUrl,
-        };
+        if (nodeError) {
+          lastErrorMsg = nodeError;
+        }
+        return null;
+      } catch (e: any) {
+        if (e?.message) {
+          lastErrorMsg = e.message;
+        }
+        return null;
       }
-
-      if (data?.message) {
-        lastErrorMsg = data.message;
-      }
-      return null;
-    } catch (e: any) {
-      if (e?.message) {
-        lastErrorMsg = e.message;
-      }
-      return null;
     }
+    return null;
   };
 
   // Ultra-Fast Zero-Delay Multi-Node Broadcast Dispatch
@@ -494,7 +515,7 @@ export async function fetchTransactionAcceptanceStatus(
         continue;
       }
 
-      const isAccepted = Boolean(data.isAccepted || data.acceptingBlockHash || data.accepting_block_hash);
+      const isAccepted = Boolean(data.isAccepted || data.is_accepted || data.acceptingBlockHash || data.accepting_block_hash);
       const acceptingBlockHash = data.acceptingBlockHash || data.accepting_block_hash || undefined;
       const acceptingBlockDaaScore = data.acceptingBlockDaaScore !== undefined ? BigInt(data.acceptingBlockDaaScore) : undefined;
       const confirmations = data.confirmations !== undefined ? Number(data.confirmations) : (isAccepted ? 1 : 0);

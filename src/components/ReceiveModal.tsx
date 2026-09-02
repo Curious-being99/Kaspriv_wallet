@@ -126,11 +126,9 @@ export const ReceiveModal: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-extrabold text-slate-100">Receive Funds</h3>
-                {activeWallet.addressType && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#70C7BA]/10 text-[#70C7BA] border border-[#70C7BA]/20 font-black uppercase">
-                    {activeWallet.addressType}
-                  </span>
-                )}
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 font-black uppercase">
+                  {activeWallet.addressType || 'P2SH'} STEALTH
+                </span>
               </div>
               <p className="text-xs text-slate-400">Share address or request a specific amount</p>
             </div>
@@ -188,8 +186,13 @@ export const ReceiveModal: React.FC = () => {
         </div>
 
         {/* Full Address Display Box */}
-        <div className="p-3 rounded-xl bg-[#080B0F] border border-[#161F28] text-xs font-mono text-[#70C7BA] break-all select-all leading-normal text-center">
-          {currentAddress}
+        <div className="space-y-1.5">
+          <div className="p-3 rounded-xl bg-[#080B0F] border border-[#161F28] text-xs font-mono text-[#70C7BA] break-all select-all leading-normal text-center">
+            {currentAddress}
+          </div>
+          <p className="text-[10px] text-slate-400 text-center">
+            This wallet operates exclusively on P2SH stealth addresses. Compatible with all standard Kaspa senders.
+          </p>
         </div>
 
         {/* Copy Button */}

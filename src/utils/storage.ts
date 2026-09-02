@@ -213,13 +213,9 @@ async function withSQLite<T>(operation: (db: SQLiteDatabase) => Promise<T>): Pro
 export async function saveWalletToDB(wallet: Wallet): Promise<void> {
   return withSQLite(async (db) => {
     const sanitizedWallet = { ...wallet };
-    // Only strip plaintext secrets if we actually have encrypted ciphertexts to rely on
-    if (sanitizedWallet.encryptedMnemonic) {
-      delete sanitizedWallet.mnemonic;
-    }
-    if (sanitizedWallet.encryptedPassphrase) {
-      delete sanitizedWallet.passphrase;
-    }
+    // Hardened Invariant: Plaintext secrets MUST NEVER be written to durable storage under any circumstance
+    delete sanitizedWallet.mnemonic;
+    delete sanitizedWallet.passphrase;
     
     const valuePayload = JSON.stringify({
       ...sanitizedWallet,

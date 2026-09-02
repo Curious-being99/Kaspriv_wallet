@@ -182,17 +182,18 @@ export function createKaspaUri(address: string, amountKas?: number, note?: strin
 }
 
 /**
- * Parse Kaspa URI
+ * Parse Kaspa URI (e.g., kaspa:address?amount=100&note=Coffee)
  */
-export function parseKaspaUri(uriString: string): { address: string; amountKas?: number; note?: string } {
+export function parseKaspaUri(uriString: string): { address: string; amountKas?: number; amountKasStr?: string; note?: string } {
   try {
     const trimmed = uriString.trim();
     if (trimmed.includes('?')) {
       const [addrPart, queryPart] = trimmed.split('?');
       const params = new URLSearchParams(queryPart);
-      const amount = params.get('amount') ? parseFloat(params.get('amount')!) : undefined;
+      const amountStr = params.get('amount') || undefined;
+      const amount = amountStr ? parseFloat(amountStr) : undefined;
       const note = params.get('note') || undefined;
-      return { address: addrPart, amountKas: amount, note };
+      return { address: addrPart, amountKas: amount, amountKasStr: amountStr, note };
     }
     return { address: trimmed };
   } catch {
@@ -227,8 +228,37 @@ export async function addressToScriptPublicKeyBytes(address: string, network: Ne
     }
     throw new Error('Failed to generate script from address');
   } catch (err: any) {
-    throw new Error(`Official Kaspa SDK failed or is not initialized: ${err.message || err}`);
+    // Robust fallback to internal parser for Standard (P2PK/ECDSA) and P2SH addresses
+    try {
+      return await addressToScriptPublicKeyBytes_INTERNAL(trimmed, network);
+    } catch {
+      throw new Error(`Official Kaspa SDK failed or is not initialized: ${err.message || err}`);
+    }
   }
+}
+
+export type KaspaAddressType = 'P2PK' | 'P2PK-ECDSA' | 'P2SH' | 'UNKNOWN';
+
+/**
+ * Identify address standard: Standard P2PK (Schnorr), P2PK-ECDSA, or P2SH (Script Hash).
+ * Note: While the wallet itself generates and operates P2SH accounts, transactions
+ * seamlessly support sending to standard P2PK/ECDSA addresses as well as P2SH addresses.
+ */
+export function getKaspaAddressType(address: string): KaspaAddressType {
+  if (!address || typeof address !== 'string') return 'UNKNOWN';
+  const trimmed = address.trim().toLowerCase();
+  const parts = trimmed.split(':');
+  const payload = parts.length > 1 ? parts[1] : parts[0];
+  if (!payload || payload.length < 8) return 'UNKNOWN';
+
+  if (payload.startsWith('q')) {
+    if (payload.startsWith('qy')) return 'P2PK-ECDSA';
+    return 'P2PK';
+  }
+  if (payload.startsWith('p')) {
+    return 'P2SH';
+  }
+  return 'UNKNOWN';
 }
 
 export function addressToScriptPublicKeyBytes_DEPRECATED_FALLBACK(address: string, network: NetworkType = 'mainnet'): Uint8Array {

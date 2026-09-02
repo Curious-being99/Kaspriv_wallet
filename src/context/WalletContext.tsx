@@ -886,6 +886,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setTransactions([]);
     setUtxos([]);
     utxosCacheByWalletId.current = {};
+    clearSeedCache();
+    setSessionId(null);
     
     setIsLoggedOut(true);
     try {
@@ -2218,19 +2220,25 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       const isOut = hasOurAddressInInputs || (outputs.length > 0 && !hasOurAddressInOutputs);
       
+      const isOutputOurAddress = (out: any) => {
+        const outAddr = out.script_public_key_address || out.address || out.scriptPublicKeyAddress;
+        if (outAddr && belongsToUs(outAddr)) return true;
+        const spk = out.scriptPublicKey || out.script_public_key;
+        if (spk && spkBelongsToUs(spk)) return true;
+        return false;
+      };
+
       let amountSompi = 0n;
       if (isOut) {
         amountSompi = outputs.reduce((acc: bigint, out: any) => {
-          const outAddr = out.script_public_key_address || out.address;
-          if (!belongsToUs(outAddr)) {
+          if (!isOutputOurAddress(out)) {
             return acc + BigInt(out.amount || out.value || 0);
           }
           return acc;
         }, 0n);
       } else {
         amountSompi = outputs.reduce((acc: bigint, out: any) => {
-          const outAddr = out.script_public_key_address || out.address;
-          if (belongsToUs(outAddr)) {
+          if (isOutputOurAddress(out)) {
             return acc + BigInt(out.amount || out.value || 0);
           }
           return acc;
@@ -2251,12 +2259,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       const feeSompi: bigint = (sumInputs > sumOutputs) ? (sumInputs - sumOutputs) : BigInt(tx.fee || tx.feeSompi || 0);
 
       const firstTargetOutput = outputs.find((out: any) => {
-        const outAddr = out.script_public_key_address || out.address;
-        return isOut ? !belongsToUs(outAddr) : belongsToUs(outAddr);
+        return isOut ? !isOutputOurAddress(out) : isOutputOurAddress(out);
       });
       
       const txAddress: string = firstTargetOutput?.script_public_key_address || 
                                firstTargetOutput?.address || 
+                               firstTargetOutput?.scriptPublicKeyAddress ||
                                (isOut ? (inputs[0]?.previous_outpoint_address || inputs[0]?.address || defaultAddress) : defaultAddress);
 
       const txType = isOut ? (amountSompi === 0n ? 'compound' : 'send') : 'receive';
@@ -3102,6 +3110,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             confirmations: 1,
           };
           setLocalPendingTxs((prev) => [newPendingTx, ...prev]);
+          localPendingTxsRef.current = [newPendingTx, ...(localPendingTxsRef.current || []).filter(t => t.txid !== newPendingTx.txid)];
           setTransactions((prev) => [newPendingTx, ...prev.filter(t => t.txid !== newPendingTx.txid)]);
 
           // 2. Add outpoints of spent UTXOs to local spent list with timestamp
@@ -3116,6 +3125,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             spentUtxoTimestampsRef.current[op] = nowSend;
           });
           setSpentUtxoOutpoints((prev) => Array.from(new Set([...prev, ...spentOutpoints])));
+          spentUtxoOutpointsRef.current = Array.from(new Set([...(spentUtxoOutpointsRef.current || []), ...spentOutpoints]));
 
           // 3. Compute change output and register change UTXO
           const changeSompi = accumulatedSum > (finalAmountSompi + finalFeeSompi)
@@ -3135,6 +3145,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
               timestamp: nowSend,
             };
             setLocalPendingChangeUtxos((prev) => [...prev.filter(u => u.txid !== broadcastResult.txId), newChangeUtxo!]);
+            localPendingChangeUtxosRef.current = [...(localPendingChangeUtxosRef.current || []).filter(u => u.txid !== broadcastResult.txId), newChangeUtxo];
           }
 
           // 4. Update local UTXOs immediately
@@ -3418,6 +3429,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             confirmations: 1,
           };
           setLocalPendingTxs((prev) => [newPendingTx, ...prev]);
+          localPendingTxsRef.current = [newPendingTx, ...(localPendingTxsRef.current || []).filter(t => t.txid !== newPendingTx.txid)];
           setTransactions((prev) => [newPendingTx, ...prev.filter(t => t.txid !== newPendingTx.txid)]);
 
           // 2. Add outpoints of spent UTXOs to local spent list with timestamp
@@ -3432,6 +3444,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             spentUtxoTimestampsRef.current[op] = nowCompound;
           });
           setSpentUtxoOutpoints((prev) => Array.from(new Set([...prev, ...spentOutpoints])));
+          spentUtxoOutpointsRef.current = Array.from(new Set([...(spentUtxoOutpointsRef.current || []), ...spentOutpoints]));
 
           // 3. Register consolidated output UTXO
           const consolidatedUtxo: UTXO & { timestamp: number } = {
@@ -3445,6 +3458,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             timestamp: nowCompound,
           };
           setLocalPendingChangeUtxos((prev) => [...prev.filter(u => u.txid !== broadcastResult.txId), consolidatedUtxo]);
+          localPendingChangeUtxosRef.current = [...(localPendingChangeUtxosRef.current || []).filter(u => u.txid !== broadcastResult.txId), consolidatedUtxo];
 
           // 4. Update local UTXOs immediately
           const spentSet = new Set(spentOutpoints);
@@ -3728,6 +3742,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (w.mnemonic) w.mnemonic = '';
       if (w.passphrase) w.passphrase = '';
     });
+
+    // Clear and zeroize seed cache
+    clearSeedCache();
+    setSessionId(null);
 
     // Purge state
     setWallets([]);

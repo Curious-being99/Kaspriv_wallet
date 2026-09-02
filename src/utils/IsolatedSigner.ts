@@ -280,14 +280,14 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
   }
 
   // 2. Verify outputs match the approved intent exactly
-  const expectedRecipientScriptPubKey = await addressToScriptPublicKey(intent.toAddress, intent.network);
+  const expectedRecipientScriptPubKey = (await addressToScriptPublicKey(intent.toAddress, intent.network) || '').toLowerCase();
   const expectedChangeAmount = totalActualInputSompi - intent.amountSompi - intent.feeSompi;
   const isSelfSend = intent.toAddress === intent.changeAddress;
 
   if (isSelfSend) {
     let combinedAmount = 0n;
     for (const out of signedTx.outputs) {
-      const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
+      const spk = String(out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey || '').toLowerCase();
       if (spk !== expectedRecipientScriptPubKey) {
         throw new Error(`Security failure: Signed transaction contains unauthorized output script ${spk} in self-send.`);
       }
@@ -306,13 +306,14 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
       throw new Error(`Security failure: Signed transaction has extra unauthorized outputs (${signedTx.outputs.length} outputs, expected at most 2).`);
     }
   } else {
-    const expectedChangeScriptPubKey = expectedChangeAmount > 0n 
+    const rawChangeSpk = expectedChangeAmount > 0n 
       ? await addressToScriptPublicKey(intent.changeAddress, intent.network)
       : null;
+    const expectedChangeScriptPubKey = rawChangeSpk ? rawChangeSpk.toLowerCase() : null;
 
     // Verify all outputs strictly belong to either recipient or change
     for (const out of signedTx.outputs) {
-      const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
+      const spk = String(out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey || '').toLowerCase();
       const isRecipient = spk === expectedRecipientScriptPubKey;
       const isChange = expectedChangeScriptPubKey !== null && spk === expectedChangeScriptPubKey;
       if (!isRecipient && !isChange) {
@@ -322,7 +323,7 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
 
     // Find the recipient output
     const recipientOutput = signedTx.outputs.find((out: any) => {
-      const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
+      const spk = String(out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey || '').toLowerCase();
       return spk === expectedRecipientScriptPubKey;
     });
 
@@ -338,7 +339,7 @@ async function verifyFinalSignedTransaction(signedTx: any, intent: UnsignedTxInt
     // Verify change output if present
     if (expectedChangeAmount > 0n) {
       const changeOutput = signedTx.outputs.find((out: any) => {
-        const spk = out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey;
+        const spk = String(out.scriptPublicKey?.scriptPublicKey || out.scriptPublicKey || '').toLowerCase();
         return spk === expectedChangeScriptPubKey;
       });
 
@@ -447,19 +448,35 @@ export class IsolatedSigner {
     // 2. Build and sign the transaction using authoritative Kaspa WASM engine.
     const resolvedUtxos = [...intent.utxos];
 
-    // Fast O(1) derivation path resolution using direct intent mappings
+    // Fast O(1) derivation path resolution using direct intent mappings with normalized lookups
+    const addrPaths = (intent as any).addressPaths || {};
+    const normalizedAddrPaths = new Map<string, string>();
+    for (const [k, v] of Object.entries(addrPaths)) {
+      if (typeof v === 'string') {
+        normalizedAddrPaths.set(k.trim().toLowerCase(), v);
+      }
+    }
+
     for (let i = 0; i < resolvedUtxos.length; i++) {
       const u = resolvedUtxos[i];
-      const addr = u.address;
-      const currentPath = u.derivationPath || u.path || (addr && (intent as any).addressPaths?.[addr]);
+      const addr = u.address || u.utxoEntry?.address;
+      let currentPath = u.derivationPath || u.path;
+      
+      if (!currentPath && addr) {
+        currentPath = addrPaths[addr] || normalizedAddrPaths.get(addr.trim().toLowerCase());
+      }
+      if (!currentPath && intent.changeAddress && addr && addr.trim().toLowerCase() === intent.changeAddress.trim().toLowerCase()) {
+        currentPath = addrPaths[intent.changeAddress] || normalizedAddrPaths.get(intent.changeAddress.trim().toLowerCase());
+      }
       if (!currentPath) {
         return {
           success: false,
-          error: `Missing derivation path for UTXO at address ${addr}`
+          error: `Missing derivation path for UTXO at address ${addr || 'unknown'}`
         };
       }
       resolvedUtxos[i] = {
         ...u,
+        address: addr || u.address,
         derivationPath: currentPath,
       };
     }

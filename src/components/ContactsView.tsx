@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useVirtualKeyboard } from '../context/KeyboardContext';
 import { Contact } from '../types';
-import { shortenAddress } from '../utils/kaspa';
+import { shortenAddress, validateKaspaAddress, getKaspaAddressType } from '../utils/kaspa';
 import { 
   Users, 
   UserPlus, 
@@ -20,7 +20,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 export const ContactsView: React.FC = () => {
-  const { contacts, addContact, updateContact, deleteContact, showToast, setIsSendOpen } = useWallet();
+  const { contacts, addContact, updateContact, deleteContact, showToast, setIsSendOpen, network } = useWallet();
   const { openKeyboard } = useVirtualKeyboard();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,10 +58,16 @@ export const ContactsView: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
-  const handleSaveContact = (e: React.FormEvent) => {
+  const handleSaveContact = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nameInput.trim() || !addressInput.trim()) {
       showToast('Name and address are required', 'error');
+      return;
+    }
+
+    const validation = await validateKaspaAddress(addressInput.trim(), network);
+    if (!validation.isValid) {
+      showToast(validation.error || 'Invalid Kaspa address for current network', 'error');
       return;
     }
 
@@ -156,9 +162,24 @@ export const ContactsView: React.FC = () => {
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-100 flex items-center gap-1.5">
-                    {contact.name}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-extrabold text-slate-100 flex items-center gap-1.5">
+                      {contact.name}
+                    </h3>
+                    {(() => {
+                      const type = getKaspaAddressType(contact.address);
+                      if (type === 'UNKNOWN') return null;
+                      return (
+                        <span className={`text-[8.5px] px-1.5 py-0.2 rounded font-bold border ${
+                          type === 'P2SH'
+                            ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                            : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                        }`}>
+                          {type === 'P2SH' ? 'P2SH' : 'Standard'}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <p className="text-[11px] font-mono text-[#70C7BA] mt-0.5 break-all">
                     {contact.address}
                   </p>
@@ -260,7 +281,7 @@ export const ContactsView: React.FC = () => {
                     onFocus={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
                     onClick={() => openKeyboard({ value: addressInput, onChange: setAddressInput })}
                     inputMode="none" onChange={() => {}}
-                    placeholder="kaspa:qp89... or kaspatest:..."
+                    placeholder="kaspa:q... (Standard) or kaspa:p... (P2SH)"
                     className="w-full bg-[#090D12] border border-[#212B38] rounded-xl px-3 py-2.5 text-xs text-slate-100 font-mono placeholder-slate-500 outline-none focus:border-[#70C7BA] cursor-pointer"
                   />
                 </div>

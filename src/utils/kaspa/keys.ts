@@ -132,10 +132,21 @@ export function clearSeedCache(): void {
   SEED_CACHE.clear();
 }
 
+/**
+ * Derives a secure cryptographic digest for seed caching so that
+ * plaintext mnemonics are NEVER retained as heap map keys.
+ */
+function computeSeedCacheKey(mnemonic: string, passphrase = ''): string {
+  const cleanMnemonicStr = mnemonic.trim();
+  const input = new TextEncoder().encode(`${cleanMnemonicStr}:::${passphrase}`);
+  const hash = blake2b(input, { dkLen: 32 });
+  return Array.from(hash).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export async function getCachedSeed(mnemonic: string, passphrase = ''): Promise<Uint8Array> {
   const cleanMnemonicStr = mnemonic.trim();
   const cleanPassphraseStr = passphrase;
-  const cacheKey = `${cleanMnemonicStr}:::${cleanPassphraseStr}`;
+  const cacheKey = computeSeedCacheKey(cleanMnemonicStr, cleanPassphraseStr);
 
   const now = Date.now();
   const cached = SEED_CACHE.get(cacheKey);

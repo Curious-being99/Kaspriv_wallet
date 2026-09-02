@@ -11,6 +11,7 @@ import {
   calculateDynamicFeeForTransaction,
   calculateMinFeeForInputs,
   getRecommendedFees,
+  getKaspaAddressType,
 } from '../utils/kaspa';
 import {
   X,
@@ -86,6 +87,11 @@ export const SendModal: React.FC = () => {
   const [isConfirmingStep, setIsConfirmingStep] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
+
+  const detectedAddrType = useMemo(() => {
+    if (!toAddress.trim() || addressError) return null;
+    return getKaspaAddressType(toAddress);
+  }, [toAddress, addressError]);
 
   const [successTx, setSuccessTx] = useState<SuccessTxData | null>(null);
   const [copiedTxid, setCopiedTxid] = useState(false);
@@ -581,9 +587,24 @@ export const SendModal: React.FC = () => {
             {/* Recipient Address */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-[10px] font-bold text-slate-300 uppercase tracking-wider">
-                  Recipient Kaspa Address
-                </label>
+                <div className="flex items-center gap-1.5">
+                  <label className="block text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                    Recipient Kaspa Address
+                  </label>
+                  {detectedAddrType && detectedAddrType !== 'UNKNOWN' ? (
+                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold border ${
+                      detectedAddrType === 'P2SH'
+                        ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                        : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                    }`}>
+                      {detectedAddrType === 'P2SH' ? 'P2SH Address' : detectedAddrType === 'P2PK-ECDSA' ? 'Standard ECDSA' : 'Standard Address (P2PK)'}
+                    </span>
+                  ) : (
+                    <span className="text-[8.5px] px-1.5 py-0.2 rounded bg-[#1C2F42] text-slate-400 font-medium">
+                      Supports Standard & P2SH
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2.5">
                   <button
                     type="button"
@@ -647,7 +668,7 @@ export const SendModal: React.FC = () => {
 
               <input
                 type="text"
-                placeholder={`kaspa:q...`}
+                placeholder="kaspa:q... (Standard) or kaspa:p... (P2SH)"
                 value={toAddress}
                 onFocus={() => openKeyboard({ value: toAddress, onChange: handleAddressChange })}
                 onClick={() => openKeyboard({ value: toAddress, onChange: handleAddressChange })}
@@ -909,7 +930,18 @@ export const SendModal: React.FC = () => {
                   </div>
                   <div className="flex items-center justify-between gap-1.5">
                     <span className="text-slate-400 font-medium shrink-0">Recipient:</span>
-                    <span className="font-mono text-slate-200 truncate text-[9px] font-bold">{toAddress}</span>
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="font-mono text-slate-200 truncate text-[9px] font-bold">{toAddress}</span>
+                      {detectedAddrType && detectedAddrType !== 'UNKNOWN' && (
+                        <span className={`text-[8px] px-1 py-0.2 rounded font-bold shrink-0 border ${
+                          detectedAddrType === 'P2SH'
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                        }`}>
+                          {detectedAddrType === 'P2SH' ? 'P2SH' : 'Standard'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
