@@ -61,6 +61,7 @@ export const SendModal: React.FC = () => {
     sendKaspa,
     isPasswordEnabled,
     password,
+    isBiometricsEnabled,
     showToast,
     transactions,
     refreshBalance,
@@ -340,8 +341,10 @@ export const SendModal: React.FC = () => {
     closeKeyboard();
     setPasswordError(null);
 
-    // If password security is enabled, delegate authorization to the Lock Wallet Screen to activate and authorize signing
-    if (isPasswordEnabled) {
+    // If password security is enabled and credentials are NOT available in session (and biometrics cannot auto-prompt),
+    // delegate authorization to the Lock Wallet Screen to activate and authorize signing
+    const hasSessionCredentials = !!password || !isPasswordEnabled;
+    if (isPasswordEnabled && !hasSessionCredentials && !isBiometricsEnabled) {
       setIsSending(true);
       setPendingTransaction({
         toAddress,
@@ -378,7 +381,7 @@ export const SendModal: React.FC = () => {
       return;
     }
 
-    // Otherwise (no password security or password available in session), sign and broadcast immediately
+    // Otherwise (credentials available in session or native biometrics enabled), sign and broadcast immediately
     setIsSending(true);
     try {
       const res = await sendKaspa(
@@ -391,9 +394,9 @@ export const SendModal: React.FC = () => {
         selectedUtxoOutpoints.length > 0 ? selectedUtxoOutpoints : undefined
       );
 
-      if (res.success) {
+      if (res.success && res.txid) {
         setSuccessTx({
-          txid: res.txid || 'kaspa-txid',
+          txid: res.txid,
           amountKas: numericAmount,
           feeKas: selectedFee,
           toAddress: toAddress.trim(),
@@ -408,10 +411,14 @@ export const SendModal: React.FC = () => {
         setPasswordError(null);
         showToast('Transaction successfully broadcast!', 'success');
       } else {
-        showToast(res.error || 'Failed to send Kaspa', 'error');
+        const errMsg = res.error || 'Failed to send Kaspa';
+        setPasswordError(errMsg);
+        showToast(errMsg, 'error');
       }
     } catch (err: any) {
-      showToast(err?.message || 'Failed to execute transaction', 'error');
+      const errMsg = err?.message || 'Failed to execute transaction';
+      setPasswordError(errMsg);
+      showToast(errMsg, 'error');
     } finally {
       setIsSending(false);
     }

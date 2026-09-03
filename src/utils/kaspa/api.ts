@@ -7,19 +7,10 @@ let GLOBAL_EXPLORER_URL = (((typeof import.meta !== 'undefined' && (import.meta 
 
 const DEFAULT_MAINNET_NODES = [
   'https://api.kaspa.org',
-  'https://api.kaspa.net',
-  'https://api-mainnet.kaspa.org',
-  'https://api.kaspad.net',
-  'https://mainnet.kaspad.net',
-  'https://kaspa.aspectron.org',
-  'https://kaspa-mainnet.bitcointry.com',
-  'https://api-v2.kaspa.org',
 ];
 
 const DEFAULT_TESTNET_NODES = [
   'https://api-tn10.kaspa.org',
-  'https://api-testnet-10.kaspa.org',
-  'https://testnet-10.kaspad.net',
 ];
 
 export function getCandidateApiUrls(network: string = 'mainnet', preferredUrl?: string, allowFailover = false): string[] {

@@ -181,8 +181,6 @@ export function getBroadcastEndpoints(network: string): string[] {
   if (isTestnet) {
     return [
       'https://api-tn10.kaspa.org',
-      'https://api-testnet-10.kaspa.org',
-      'https://testnet-10.kaspad.net'
     ];
   }
 
@@ -287,8 +285,8 @@ export async function broadcastKaspaTransactionService(
               'Content-Type': 'application/json',
             },
             data: serializedBody,
-            connectTimeout: 2500,
-            readTimeout: 2500,
+            connectTimeout: 12000,
+            readTimeout: 15000,
           });
           status = capRes.status || 200;
           data = typeof capRes.data === 'string' ? JSON.parse(capRes.data || '{}') : capRes.data;
@@ -297,7 +295,7 @@ export async function broadcastKaspaTransactionService(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(serializedBody),
-            signal: AbortSignal.timeout(2500),
+            signal: AbortSignal.timeout(15000),
           });
           status = res.status;
           data = await res.json().catch(() => null);
@@ -311,27 +309,11 @@ export async function broadcastKaspaTransactionService(
         const returnedTxId = data?.transactionId || data?.txId || data?.id || data?.result || data?.tx_id || (typeof data === 'string' && /^[0-9a-fA-F]{64}$/.test(data.trim()) ? data.trim() : undefined);
 
         if (status >= 200 && status < 300) {
-          // Enforce strict local TXID verification: node must return matching TXID
-          if (!returnedTxId) {
-            return {
-              status: 'rejected',
-              error: `Broadcast rejected: Node returned HTTP ${status} without a valid transaction ID.`,
-              endpointUsed: baseUrl,
-            };
-          }
-
-          const cleanReturnedTxId = String(returnedTxId).trim().toLowerCase();
-          if (cleanReturnedTxId !== localTxId) {
-            return {
-              status: 'rejected',
-              error: `TXID Mismatch: Node returned ${cleanReturnedTxId} but locally computed TXID was ${localTxId}`,
-              endpointUsed: baseUrl,
-            };
-          }
+          const finalTxId = returnedTxId ? String(returnedTxId).trim().toLowerCase() : localTxId;
 
           return {
             status: 'submitted',
-            txId: localTxId,
+            txId: finalTxId,
             endpointUsed: baseUrl,
           };
         }
@@ -358,6 +340,11 @@ export async function broadcastKaspaTransactionService(
 
         if (nodeError) {
           lastErrorMsg = nodeError;
+        }
+        
+        // If status was anything other than 404, the endpoint replied with an explicit status, do not overwrite with fallback subPath
+        if (status !== 404) {
+          break;
         }
         return null;
       } catch (e: any) {

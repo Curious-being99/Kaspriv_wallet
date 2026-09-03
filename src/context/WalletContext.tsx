@@ -2825,15 +2825,33 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
       }
 
-      // 1. Fetch real UTXOs for all discovered addresses in parallel
-      const addressesToFetch = activeWallet.discoveredAddresses && activeWallet.discoveredAddresses.length > 0
-        ? activeWallet.discoveredAddresses
-        : [activeWallet.receiveAddress];
+      // 1. Fetch real UTXOs: Prioritize active funded addresses to avoid stalling over dozens of empty discovered addresses
+      const memoryCachedUtxos = utxosRef.current || [];
+      const activeAddressesSet = new Set<string>();
+      if (activeWallet.receiveAddress) activeAddressesSet.add(activeWallet.receiveAddress);
+      if (activeWallet.changeAddress) activeAddressesSet.add(activeWallet.changeAddress);
+
+      // Add addresses with known cached UTXOs
+      memoryCachedUtxos.forEach((u) => {
+        if (u.address) activeAddressesSet.add(u.address);
+      });
+
+      // Add addresses with recorded non-zero balance
+      if (activeWallet.addressBalances) {
+        Object.entries(activeWallet.addressBalances).forEach(([addr, bal]) => {
+          if (bal && bal !== '0') activeAddressesSet.add(addr);
+        });
+      }
+
+      const addressesToFetch = activeAddressesSet.size > 0
+        ? Array.from(activeAddressesSet)
+        : (activeWallet.discoveredAddresses && activeWallet.discoveredAddresses.length > 0
+            ? activeWallet.discoveredAddresses.slice(0, 10)
+            : [activeWallet.receiveAddress]);
       
       const utxosResponse: any[] = [];
       
       // If we already have fresh cached UTXOs in memory, populate them as immediate base
-      const memoryCachedUtxos = utxosRef.current || [];
       if (memoryCachedUtxos.length > 0) {
         memoryCachedUtxos.forEach((cu) => {
           let devPath = activeWallet.addressPaths?.[cu.address] || cu.derivationPath;
@@ -2854,9 +2872,13 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         });
       }
 
-      // Fast network refresh: fetch bulk UTXOs in a single request or with fast fallback
+      // Fast network refresh: fetch bulk UTXOs for active funded addresses with 4s timeout guard
       try {
-        const liveUtxos = await fetchKaspaAddressesUtxos(addressesToFetch);
+        const liveUtxosPromise = fetchKaspaAddressesUtxos(addressesToFetch);
+        const liveUtxos = await Promise.race([
+          liveUtxosPromise,
+          new Promise<null>((res) => setTimeout(() => res(null), 4000))
+        ]);
         if (liveUtxos && Array.isArray(liveUtxos) && liveUtxos.length > 0) {
           const liveUtxosList = liveUtxos.map((u: any) => {
             const address = u.address || activeWallet.receiveAddress;
