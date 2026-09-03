@@ -1,7 +1,7 @@
 package com.kaspriv.wallet.crypto
 
 import org.bouncycastle.crypto.params.ECPrivateKeyParameters
-import org.bouncycastle.crypto.signers.BIP340DigestSigner
+import org.bouncycastle.crypto.signers.BIP340Signer
 import java.math.BigInteger
 
 object KaspaP2shTransactionSigner {
@@ -52,7 +52,7 @@ object KaspaP2shTransactionSigner {
         val domain = org.bouncycastle.crypto.ec.CustomNamedCurves.getByName("secp256k1")
         val privKeyParams = ECPrivateKeyParameters(BigInteger(1, privateKeyBytes), domain)
 
-        val signer = BIP340DigestSigner()
+        val signer = BIP340Signer()
         signer.init(true, privKeyParams)
         signer.update(messageHash, 0, messageHash.size)
 

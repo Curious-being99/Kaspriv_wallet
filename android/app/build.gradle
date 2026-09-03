@@ -140,6 +140,9 @@ dependencies {
 
     // ZXing Embedded QR Code Scanner
     implementation "com.journeyapps:zxing-android-embedded:4.3.0"
+
+    // Bouncy Castle Crypto for BIP340 Schnorr and Blake2b
+    implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
 }
 
 apply from: 'capacitor.build.gradle'
